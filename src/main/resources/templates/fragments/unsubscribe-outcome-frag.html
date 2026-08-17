@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<section id="unsubscribe-outcome" th:fragment="outcome"
+         aria-live="polite" aria-labelledby="unsubscribe-outcome-heading"
+         th:attr="role=${outcomeError == true ? 'alert' : null}">
+    <h3 id="unsubscribe-outcome-heading" tabindex="-1">Unsubscribe outcome</h3>
+
+    <div th:if="${outcomeError == true}">
+        <p class="badge badge-warning">Action blocked</p>
+        <p th:text="${outcomeErrorCopy}">
+            The confirmation is no longer valid. Inspect the candidate again.
+        </p>
+    </div>
+
+    <th:block th:if="${outcome != null}">
+        <p class="badge">Persisted outcome evidence</p>
+        <p>
+            Method:
+            <strong th:text="${#strings.replace(outcome.method, '_', ' ')}">Method</strong>
+            <span th:if="${outcome.destinationHost != null}"
+                  th:text="|for ${outcome.destinationHost}|">Destination host</span>
+        </p>
+        <ol class="outcome-timeline">
+            <li th:each="event : ${outcome.events}">
+                <h4 th:text="${event.label}">Outcome state</h4>
+                <p th:text="${event.copy}">Truthful outcome detail</p>
+                <p th:if="${event.confirmationSource != null}">
+                    Confirmation source:
+                    <strong th:text="${event.confirmationSource}">Source</strong>
+                </p>
+                <p th:if="${event.httpStatusClass != null}"
+                   th:text="|HTTP status class: ${event.httpStatusClass}xx|">
+                    HTTP status class
+                </p>
+            </li>
+        </ol>
+    </th:block>
+</section>
+</body>
+</html>

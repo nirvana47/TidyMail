@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TidyMail - Unread Only</title>
+    <link rel="stylesheet" th:href="@{/static/css/workspace.css}">
+    <script defer th:src="@{/static/js/htmx-lite.js}"></script>
+    <script defer th:src="@{/static/js/cleanup-categories.js}"></script>
+</head>
+<body>
+<a class="skip-link" href="#workspace-main">Skip to workspace content</a>
+<div th:replace="~{fragments/workspace-nav :: nav(${page.workspace})}"></div>
+<div class="workspace-shell cleanup-workspace">
+    <div th:replace="~{fragments/workspace-rail :: rail(${page.workspace})}"></div>
+    <main id="workspace-main">
+        <header class="page-header cleanup-page-header">
+            <div class="page-title-stack cleanup-title-stack">
+                <p class="eyebrow">Inbox cleanup</p>
+                <div class="cleanup-header-control-row">
+                    <h1>Unread Only</h1>
+                    <span class="page-help" tabindex="0"
+                          aria-label="How Unread Only staging works"
+                          aria-describedby="unread-page-help">
+                        <sup class="page-help-icon" aria-hidden="true">?</sup>
+                        <span id="unread-page-help" class="page-help-tooltip" role="tooltip">
+                            Unread Only uses indexed messages that are both unread and currently in the provider Inbox.
+                        </span>
+                    </span>
+                    <button type="button" class="cleanup-header-toggle" data-category-toggle-all
+                            data-expand-label="Expand all" data-collapse-label="Collapse all">
+                        Expand all
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <section class="unread-total-panel"
+                 aria-label="Inbox unread message total">
+            <span>Inbox unread</span>
+            <strong th:if="${page.workspace.inboxUnreadCountAvailable()}"
+                    th:text="${#numbers.formatInteger(page.workspace.inboxUnreadCount, 1, 'COMMA')}">
+                0
+            </strong>
+            <strong th:unless="${page.workspace.inboxUnreadCountAvailable()}">
+                Unavailable
+            </strong>
+            <small th:if="${page.workspace.inboxUnreadCountAvailable()}">
+                Provider Inbox messages that are still unread.
+            </small>
+            <small th:unless="${page.workspace.inboxUnreadCountAvailable()}">
+                Inbox unread total is temporarily unavailable; category rows remain based on the indexed provider Inbox.
+            </small>
+        </section>
+
+        <form id="unread-bulk-stage" class="cleanup-bulk-stage"
+              method="post" action="/api/cleanup-actions"
+              hx-post="/api/cleanup-actions" hx-swap="none"
+              data-cleanup-stage data-selection-bar hidden>
+            <input type="hidden" name="surface" value="UNREAD">
+            <input type="hidden" name="requestToken"
+                   th:value="${T(java.util.UUID).randomUUID()}">
+            <input th:each="entry : ${page.canonicalQuery.entrySet()}"
+                   type="hidden" th:name="${entry.key}" th:value="${entry.value}">
+            <input type="hidden" th:if="${_csrf != null}"
+                   th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+            <p data-selection-summary>Select senders first, then stage their exact Inbox-unread messages.</p>
+            <p class="cleanup-stage-feedback visually-hidden"
+               role="status" aria-live="polite" tabindex="-1"
+               data-cleanup-feedback></p>
+            <button type="button" data-clear-selection>Clear selection</button>
+            <button type="button" data-dialog-open="unread-category-dialog">
+                Change type
+            </button>
+            <button type="submit" class="cleanup-action"
+                    name="action" value="MARK_READ">
+                Mark as Read
+            </button>
+            <button type="submit" class="cleanup-action"
+                    name="action" value="ARCHIVE">
+                Archive
+            </button>
+            <button type="button" class="cleanup-action"
+                    data-delete-source="unread-bulk-stage"
+                    data-delete-action="TRASH">
+                Delete selected
+            </button>
+        </form>
+        <div th:replace="~{fragments/unread-results-frag :: results(${page})}"></div>
+    </main>
+</div>
+
+<dialog id="unread-correction-dialog" class="cleanup-dialog"
+        aria-labelledby="unread-correction-title">
+    <form method="post" action="/api/sender-categories/correct"
+          hx-post="/api/sender-categories/correct"
+          hx-swap="none" data-category-organize>
+        <h2 id="unread-correction-title">Change type</h2>
+        <p>Choose the sender type or account-owned category that fits this sender.</p>
+        <input type="hidden" name="accountId" th:value="${page.categoryAccountId}"
+               data-dialog-account>
+        <input type="hidden" name="returnTo" value="unread">
+        <input type="hidden" name="senderAddress" data-dialog-sender>
+        <input type="hidden" th:if="${_csrf != null}"
+               th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+        <label for="unread-correction-target">Type or category</label>
+        <select id="unread-correction-target" name="correctionTarget" required>
+            <option value="">Choose a correction</option>
+            <optgroup label="Semantic type">
+                <option value="semantic:LIST">Lists and newsletters</option>
+                <option value="semantic:AUTOMATED">Automated notifications</option>
+                <option value="semantic:TRANSACTIONAL">Receipts and transactions</option>
+                <option value="semantic:PERSONAL">Personal senders</option>
+            </optgroup>
+            <optgroup label="Custom placement">
+                <option value="custom:none">Remove custom placement</option>
+                <option th:each="category : ${page.categoryOptions}"
+                        th:value="|custom:${category.id}|"
+                        th:text="${category.name}">Custom category</option>
+            </optgroup>
+        </select>
+        <div id="unread-correction-status" role="status" aria-live="polite"></div>
+        <div class="dialog-actions">
+            <button type="button" data-dialog-close>Cancel</button>
+            <button type="submit" class="primary-button">Save change</button>
+        </div>
+    </form>
+</dialog>
+
+<dialog id="unread-category-dialog" class="cleanup-dialog"
+        aria-labelledby="unread-category-title">
+    <form id="unread-category-organize" method="post"
+          action="/api/sender-categories/organize"
+          hx-post="/api/sender-categories/organize" hx-swap="none"
+          data-category-organize>
+        <h2 id="unread-category-title">Change categorization</h2>
+        <p>Select one or more senders, then move them to an existing category or create a new one. New categories appear with a User generated tag.</p>
+        <input type="hidden" name="accountId" th:value="${page.categoryAccountId}">
+        <input type="hidden" name="returnTo" value="unread">
+        <input type="hidden" name="returnAccount" th:value="${page.query.account}">
+        <input type="hidden" th:if="${_csrf != null}"
+               th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+        <div data-selected-senders></div>
+        <label for="unread-category-target">Move to</label>
+        <select id="unread-category-target" name="categoryTarget">
+            <option value="">Create a new category</option>
+            <optgroup label="Built-in category">
+                <option value="semantic:LIST">Lists and newsletters</option>
+                <option value="semantic:AUTOMATED">Automated notifications</option>
+                <option value="semantic:TRANSACTIONAL">Receipts and transactions</option>
+                <option value="semantic:PERSONAL">Personal senders</option>
+            </optgroup>
+            <optgroup label="Custom category">
+                <option value="custom:none">Remove custom placement</option>
+                <option th:each="category : ${page.categoryOptions}"
+                        th:value="|custom:${category.id}|"
+                        th:text="${category.name}">Category</option>
+            </optgroup>
+        </select>
+        <label for="unread-new-category">New category name</label>
+        <input id="unread-new-category" name="categoryName" type="text" maxlength="80"
+               autocomplete="off">
+        <p>Names are accepted only through the server category sanitization contract.</p>
+        <div class="dialog-actions">
+            <button type="button" data-dialog-close>Cancel</button>
+            <button type="submit" class="primary-button">Save category</button>
+        </div>
+    </form>
+</dialog>
+
+<dialog id="unread-delete-dialog" class="cleanup-dialog cleanup-delete-dialog"
+        aria-labelledby="unread-delete-title">
+    <form id="unread-delete-confirmation" method="post"
+          action="/api/cleanup-actions"
+          hx-post="/api/cleanup-actions" hx-swap="none"
+          data-cleanup-stage>
+        <h2 id="unread-delete-title">Stage Delete for Review?</h2>
+        <p>Messages moved to Gmail Trash can typically be restored for up to 30 days.</p>
+        <label class="delete-acknowledgement">
+            <input type="checkbox" name="deleteAcknowledged" value="true" required>
+            I understand the typical 30-day Trash recovery window.
+        </label>
+        <div data-delete-fields></div>
+        <p class="cleanup-stage-feedback visually-hidden"
+           role="status" aria-live="polite" tabindex="-1"
+           data-cleanup-feedback></p>
+        <div class="dialog-actions">
+            <button type="button" data-dialog-close>Cancel</button>
+            <button type="submit" class="cleanup-action">Stage Delete</button>
+        </div>
+    </form>
+</dialog>
+</body>
+</html>

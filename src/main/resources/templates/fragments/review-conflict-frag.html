@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<section th:fragment="conflict(conflict, page)" id="review-conflict"
+         class="review-feedback review-conflict" role="alert"
+         aria-labelledby="review-conflict-heading" tabindex="-1">
+    <h2 id="review-conflict-heading">Review conflict</h2>
+    <p>
+        <strong th:text="${conflict.lowerActionLabel}">Archive</strong> and
+        <strong th:text="${conflict.higherActionLabel}">Trash</strong>
+        overlap for <strong th:text="${conflict.overlapCount}">0</strong>
+        exact targets in <strong th:text="${conflict.accountLabel}">Account</strong>.
+    </p>
+    <p th:text="${conflict.explanation}">These actions cannot execute together.</p>
+    <dl>
+        <div><dt>First target</dt><dd th:text="${conflict.lowerTargetLabel}">Target</dd></div>
+        <div><dt>Second target</dt><dd th:text="${conflict.higherTargetLabel}">Target</dd></div>
+        <div><dt>Detected</dt><dd><time th:datetime="${conflict.createdAt}" th:text="${conflict.createdAt}">Time</time></dd></div>
+    </dl>
+    <form method="post" th:action="@{/review/conflicts/{id}/resolve(id=${conflict.conflictPublicId})}">
+        <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+        <input type="hidden" name="operationIntent" th:value="${conflict.resolutionIntent}">
+        <input type="hidden" name="account" th:value="${page.query.account}">
+        <button type="submit" name="command" value="CANCEL_HIGHER"
+                th:text="${'Keep ' + conflict.lowerActionLabel + '; remove ' + conflict.higherActionLabel}">Keep first</button>
+        <button type="submit" name="command" value="CANCEL_LOWER"
+                th:text="${'Keep ' + conflict.higherActionLabel + '; remove ' + conflict.lowerActionLabel}">Keep second</button>
+        <button th:if="${conflict.keepBothAllowed}" type="submit"
+                name="command" value="KEEP_BOTH">Keep both</button>
+        <a th:href="@{/review(view='queued',account=${page.query.account})}">Return without changes</a>
+    </form>
+</section>
+</body>
+</html>

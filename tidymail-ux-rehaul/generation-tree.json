@@ -1,0 +1,64 @@
+{
+  "root": {
+    "id": "project-root",
+    "type": "project",
+    "status": "generated",
+    "children": [
+      {
+        "id": "page-by-sender-compact-suite",
+        "type": "page",
+        "status": "generated",
+        "htmlSrc": "pages/by-sender-compact-suite.html",
+        "generationPath": [
+          "project-root",
+          "page-by-sender-compact-suite"
+        ],
+        "children": []
+      },
+      {
+        "id": "page-unread-compact-suite",
+        "type": "page",
+        "status": "generated",
+        "htmlSrc": "pages/unread-compact-suite.html",
+        "generationPath": [
+          "project-root",
+          "page-unread-compact-suite"
+        ],
+        "children": []
+      },
+      {
+        "id": "page-unsubscribe-compact-suite",
+        "type": "page",
+        "status": "generated",
+        "htmlSrc": "pages/unsubscribe-compact-suite.html",
+        "generationPath": [
+          "project-root",
+          "page-unsubscribe-compact-suite"
+        ],
+        "children": []
+      },
+      {
+        "id": "page-review-timeline-compact-suite",
+        "type": "page",
+        "status": "generated",
+        "htmlSrc": "pages/review-timeline-compact-suite.html",
+        "generationPath": [
+          "project-root",
+          "page-review-timeline-compact-suite"
+        ],
+        "children": []
+      },
+      {
+        "id": "page-analytics-compact-suite",
+        "type": "page",
+        "status": "generated",
+        "htmlSrc": "pages/analytics-compact-suite.html",
+        "generationPath": [
+          "project-root",
+          "page-analytics-compact-suite"
+        ],
+        "children": []
+      }
+    ]
+  }
+}

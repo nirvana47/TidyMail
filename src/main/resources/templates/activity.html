@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TidyMail - Sync / Activity</title>
+    <link rel="stylesheet" th:href="@{/static/css/workspace.css}">
+    <script defer th:src="@{/static/js/htmx-lite.js}"></script>
+</head>
+<body>
+<a class="skip-link" href="#workspace-main">Skip to workspace content</a>
+<div th:replace="~{fragments/workspace-nav :: nav(${page.workspace})}"></div>
+<div class="workspace-shell activity-page">
+    <div th:replace="~{fragments/workspace-rail :: rail(${page.workspace})}"></div>
+    <main id="workspace-main">
+        <header class="page-header">
+            <div class="page-title-stack">
+                <p class="eyebrow">Mailbox status</p>
+                <h1>Sync / Activity</h1>
+            </div>
+            <span class="page-help" tabindex="0"
+                  aria-label="How mailbox activity is calculated"
+                  aria-describedby="activity-page-help">
+                <sup class="page-help-icon" aria-hidden="true">?</sup>
+                <span id="activity-page-help" class="page-help-tooltip" role="tooltip">
+                    Counts and freshness come from the selected provider account.
+                    Totals, remaining work, and estimated time appear only when their
+                    source is reliable.
+                </span>
+            </span>
+        </header>
+
+        <p class="activity-account-context">
+            <span>Account</span>
+            <strong th:text="${page.workspace.selectedAccountLabel}">owner@example.com</strong>
+            <span aria-hidden="true">/</span>
+            <span>Provider</span>
+            <strong th:text="${page.providerName}">Gmail</strong>
+        </p>
+
+        <div th:replace="~{fragments/activity-status :: status(${page.workspace}, ${page.status}, ${page.providerName})}"></div>
+    </main>
+</div>
+</body>
+</html>

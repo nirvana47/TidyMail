@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: tidymail-db
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: tidymail
+      POSTGRES_PASSWORD: tidymaildev
+      POSTGRES_DB: tidymail
+    volumes:
+      - tidymail-db-data:/var/lib/postgresql/data
+
+volumes:
+  tidymail-db-data:
+    external: false

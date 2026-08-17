@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<aside class="workspace-rail" aria-label="TidyMail workspace"
+       th:fragment="rail(workspace)">
+    <details class="workspace-rail-frame" open>
+        <summary class="rail-collapse-control">
+            <span class="rail-collapse-affordance rail-collapse-affordance-open" aria-hidden="true">‹</span>
+            <span class="rail-collapse-affordance rail-collapse-affordance-closed" aria-hidden="true">›</span>
+            <span class="rail-collapse-open">Collapse rail</span>
+            <span class="rail-collapse-closed">Expand rail</span>
+        </summary>
+
+        <div class="rail-layout">
+            <a class="rail-brand" th:href="@{/senders}" aria-label="TidyMail home">
+                <span class="rail-brand-mark" aria-hidden="true">T</span>
+                <span>
+                    <strong>TidyMail</strong>
+                    <small>Inbox cleanup</small>
+                </span>
+            </a>
+
+            <div th:replace="~{fragments/workspace-rail :: accountControls(${workspace})}"></div>
+
+            <nav class="rail-navigation" aria-label="Primary">
+                <p class="rail-label">Cleanup</p>
+                <a th:href="@{/senders}"
+                     th:attr="aria-current=${workspace.route.value == 'senders' ? 'page' : null}">
+                      <span>Bulk Archive/Delete</span>
+                  </a>
+                <a th:href="@{/unread}"
+                     th:attr="aria-current=${workspace.route.value == 'unread' ? 'page' : null},
+                              aria-label=${workspace.inboxUnreadCountAvailable()
+                                  ? 'Unread Only, ' + workspace.inboxUnreadCount + ' Inbox unread messages'
+                                  : 'Unread Only'}">
+                      <span>Unread Only</span>
+                  </a>
+                <a th:href="@{/unsubscribe}"
+                     th:attr="aria-current=${workspace.route.value == 'unsubscribe' ? 'page' : null}">
+                      <span>Bulk Unsubscribe</span>
+                  </a>
+                <p class="rail-label">Manage</p>
+                <a th:href="@{/review}"
+                     th:attr="aria-current=${workspace.route.value == 'review' ? 'page' : null},
+                              aria-label=${workspace.queueCountAvailable()
+                                  ? 'Review, ' + workspace.queuedActionCount + ' queued actions'
+                                  : 'Review'}">
+                      <span>Review</span>
+                  </a>
+                <a th:href="@{/activity}"
+                     th:attr="aria-current=${workspace.route.value == 'activity' ? 'page' : null}">
+                      <span>Sync / Activity</span>
+                  </a>
+                <a th:href="@{/analytics}"
+                     th:attr="aria-current=${workspace.route.value == 'analytics' ? 'page' : null}">
+                      <span>Analytics</span>
+                  </a>
+            </nav>
+
+            <div class="rail-footer">
+                <div th:replace="~{fragments/workspace-rail :: utilityControls}"></div>
+            </div>
+        </div>
+    </details>
+</aside>
+
+<div class="rail-account-control" th:fragment="accountControls(workspace)">
+    <details class="rail-account-menu">
+        <summary aria-label="Switch account">
+            <span class="rail-account-email"
+                  th:title="${workspace.selectedAccountLabel}"
+                  th:text="${workspace.selectedAccountLabel}">owner@example.com</span>
+        </summary>
+        <div class="rail-menu-panel" role="menu">
+            <form th:each="option : ${workspace.accountOptions}"
+                  method="get" th:action="${workspace.route.path}">
+                <input type="hidden" name="account" th:value="${option.value}">
+                <button type="submit"
+                        th:classappend="${option.selected} ? ' is-selected' : ''"
+                        th:attr="aria-current=${option.selected ? 'true' : null}"
+                        th:text="${option.label}">Account</button>
+            </form>
+            <a class="rail-menu-link" th:href="@{/accounts/connect/google}">Add new account</a>
+        </div>
+    </details>
+</div>
+
+<div class="rail-utility-controls" th:fragment="utilityControls">
+    <details class="rail-utility-menu">
+        <summary>Settings</summary>
+        <div class="rail-menu-panel">
+        <a class="rail-menu-link" href="mailto:feedback@example.com">Feedback</a>
+        <form method="post" action="/logout">
+            <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"
+                   th:if="${_csrf != null}">
+            <button type="submit" class="rail-logout">Logout</button>
+        </form>
+        <details class="delete-data-control">
+            <summary class="rail-menu-row delete-data-summary">Delete my data and logout</summary>
+            <p>This permanently removes every connected account and all TidyMail data.</p>
+            <form method="post" action="/logout/delete-data"
+                  onsubmit="return window.confirm('Delete every connected account and all TidyMail data, then log out? This permanently removes provider tokens, indexed metadata, sender statistics, queued actions, history, analytics, logs, and settings.')">
+                <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"
+                       th:if="${_csrf != null}">
+                <input type="hidden" name="confirmation" value="DELETE">
+                <button type="submit" class="danger-button">Confirm delete and logout</button>
+            </form>
+        </details>
+        </div>
+    </details>
+</div>
+</body>
+</html>

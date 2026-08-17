@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TidyMail - Bulk Unsubscribe</title>
+    <link rel="stylesheet" th:href="@{/static/css/workspace.css}">
+    <script defer th:src="@{/static/js/htmx-lite.js}"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            let lastStatsTrigger = null;
+            document.body.addEventListener("htmx:beforeRequest", (event) => {
+                if (event.target && event.target.matches("[data-sender-stats-trigger]")) {
+                    lastStatsTrigger = event.target;
+                }
+            });
+            document.body.addEventListener("htmx:afterSwap", (event) => {
+                if (event.detail.target?.id !== "sender-stats-modal-slot") return;
+                const dialog = event.detail.target.querySelector(".stats-modal[role='dialog']");
+                if (dialog) dialog.focus({ preventScroll: true });
+            });
+            document.addEventListener("click", (event) => {
+                if (!event.target.closest("[data-stats-modal-close]")) return;
+                const slot = document.getElementById("sender-stats-modal-slot");
+                if (slot) slot.replaceChildren();
+                if (lastStatsTrigger && document.contains(lastStatsTrigger)) {
+                    lastStatsTrigger.focus({ preventScroll: true });
+                }
+            });
+            document.addEventListener("keydown", (event) => {
+                if (event.key !== "Escape") return;
+                const slot = document.getElementById("sender-stats-modal-slot");
+                if (!slot || !slot.querySelector(".stats-modal-overlay")) return;
+                slot.replaceChildren();
+                if (lastStatsTrigger && document.contains(lastStatsTrigger)) {
+                    lastStatsTrigger.focus({ preventScroll: true });
+                }
+            });
+            document.body.addEventListener("htmx:responseError", (event) => {
+                if (event.target && event.target.matches("[data-sender-stats-trigger]")) {
+                    const target = document.querySelector("#sender-stats-modal-slot");
+                    if (!target) return;
+                    target.innerHTML = "<div class=\"stats-modal-error\" role=\"alert\" tabindex=\"-1\">Stats are taking too long to load. Close this menu and try again.</div>";
+                    target.querySelector("[role='alert']")?.focus({ preventScroll: true });
+                    return;
+                }
+                if (!event.target || !event.target.matches("[data-unsubscribe-inspection-trigger]")) return;
+                const target = document.querySelector("#unsubscribe-inspection-slot");
+                if (!target) return;
+                target.innerHTML = "<div class=\"unsubscribe-inline-error\" role=\"alert\" tabindex=\"-1\">Unsubscribe is not available right now. Refresh this sender or try again.</div>";
+                target.querySelector("[role='alert']")?.focus({ preventScroll: true });
+            });
+        });
+    </script>
+</head>
+<body>
+<a class="skip-link" href="#workspace-main">Skip to workspace content</a>
+<div th:replace="~{fragments/workspace-nav :: nav(${page.workspace})}"></div>
+<div class="workspace-shell">
+    <div th:replace="~{fragments/workspace-rail :: rail(${page.workspace})}"></div>
+    <main id="workspace-main">
+        <header class="page-header">
+            <div class="page-title-stack">
+                <p class="eyebrow">Bulk unsubscribe</p>
+                <h1>Bulk Unsubscribe</h1>
+            </div>
+            <span class="page-help" tabindex="0"
+                  aria-label="How Bulk Unsubscribe works"
+                  aria-describedby="unsubscribe-page-help">
+                <sup class="page-help-icon" aria-hidden="true">?</sup>
+                <span id="unsubscribe-page-help" class="page-help-tooltip" role="tooltip">
+                    Each sender keeps explicit consent, protected-sender checks, and honest unsubscribe outcome states.
+                </span>
+            </span>
+        </header>
+        <form class="unsubscribe-top-controls" method="get" action="/unsubscribe"
+              aria-label="Unsubscribe controls">
+            <input type="hidden" name="account" th:value="${page.query.account}">
+            <input type="hidden" name="page" value="0">
+              <input type="hidden" name="defaultAction"
+                     th:value="${page.query.defaultAction.value()}">
+            <label class="unsubscribe-category-filter">
+                <span>Category</span>
+                <select name="category">
+                    <option value="unhandled"
+                            th:selected="${page.query.category.value() == 'unhandled'}">Unhandled</option>
+                    <option value="unsubscribed"
+                            th:selected="${page.query.category.value() == 'unsubscribed'}">Unsubscribed</option>
+                    <option value="archived_deleted"
+                            th:selected="${page.query.category.value() == 'archived_deleted'}">Archived-Deleted</option>
+                    <option value="all"
+                            th:selected="${page.query.category.value() == 'all'}">All</option>
+                </select>
+            </label>
+
+            <details class="unsubscribe-date-trigger">
+                <summary>
+                    Date range:
+                    <strong th:text="|${page.query.from} to ${page.query.to}|">Exact dates</strong>
+                </summary>
+                <div class="unsubscribe-date-popover">
+                    <label>From <input type="date" name="from" th:value="${page.query.from}"></label>
+                    <label>To <input type="date" name="to" th:value="${page.query.to}"></label>
+                    <input type="hidden" name="range" value="custom">
+                    <nav aria-label="Quick date ranges">
+                        <a th:href="@{/unsubscribe(account=${page.query.account},category=${page.query.category.value()},range=week,q=${page.query.search},defaultAction=${page.query.defaultAction.value()})}">Last week</a>
+                        <a th:href="@{/unsubscribe(account=${page.query.account},category=${page.query.category.value()},range=month,q=${page.query.search},defaultAction=${page.query.defaultAction.value()})}">Last month</a>
+                        <a th:href="@{/unsubscribe(account=${page.query.account},category=${page.query.category.value()},range=3months,q=${page.query.search},defaultAction=${page.query.defaultAction.value()})}">Last 3 months</a>
+                        <a th:href="@{/unsubscribe(account=${page.query.account},category=${page.query.category.value()},range=year,q=${page.query.search},defaultAction=${page.query.defaultAction.value()})}">Last year</a>
+                        <a th:href="@{/unsubscribe(account=${page.query.account},category=${page.query.category.value()},range=all,q=${page.query.search},defaultAction=${page.query.defaultAction.value()})}">All</a>
+                    </nav>
+                </div>
+            </details>
+
+            <label class="unsubscribe-compact-search">
+                <span>Search</span>
+                <input type="search" name="q" maxlength="200"
+                       th:value="${page.query.search}" placeholder="Sender or domain">
+            </label>
+
+            <button type="submit" class="primary-button">Apply controls</button>
+        </form>
+
+        <div th:replace="~{fragments/unsubscribe-results-frag :: results(${page})}"></div>
+        <div id="unsubscribe-inspection-slot" aria-live="polite">
+            <th:block th:if="${#ctx.containsVariable('inspection')}">
+                <div th:replace="~{fragments/unsubscribe-inspection-frag :: inspection(${inspection})}"></div>
+            </th:block>
+        </div>
+        <div id="unsubscribe-action-preview-slot" aria-live="polite"></div>
+        <div id="sender-stats-modal-slot" aria-live="polite"></div>
+
+        <p class="privacy-note">
+            Counts, read percentages, and actions use only indexed metadata inside the exact range.
+        </p>
+    </main>
+</div>
+</body>
+</html>

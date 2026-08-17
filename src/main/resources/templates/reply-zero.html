@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>TidyMail — Reply Zero</title>
+        <script th:src="@{/static/js/htmx-lite.js}"></script>
+        <style>
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: #f8fafc; color: #1a202c; min-height: 100vh; }
+            .app { min-height: 100vh; display: flex; flex-direction: column; }
+            nav.top-nav { background: #ffffff; border-bottom: 1px solid #e2e8f0; padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; }
+            .nav-brand { display: flex; align-items: center; gap: 10px; }
+            .nav-logo { width: 30px; height: 30px; border-radius: 8px; background: linear-gradient(135deg, #4f46e5, #7c3aed); display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 14px; }
+            .nav-brand-text { font-size: 16px; font-weight: 700; color: #0f172a; }
+            .nav-links { display: flex; gap: 4px; margin-left: 24px; }
+            .nav-link { padding: 8px 14px; border-radius: 8px; font-size: 14px; font-weight: 500; color: #475569; text-decoration: none; transition: all 0.12s; }
+            .nav-link:hover { background: #f1f5f9; color: #0f172a; }
+            .nav-link.active { background: #eef2ff; color: #4338ca; }
+            .nav-right { display: flex; align-items: center; gap: 16px; }
+            .user-pill { display: flex; align-items: center; gap: 10px; padding: 4px 4px 4px 12px; border-radius: 9999px; background: #f8fafc; border: 1px solid #e2e8f0; }
+            .avatar { width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; }
+            .user-email { font-size: 13px; font-weight: 500; color: #334155; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .logout-btn { padding: 6px 14px; border-radius: 8px; background: #f1f5f9; border: 1px solid #e2e8f0; color: #334155; font-size: 13px; font-weight: 500; cursor: pointer; text-decoration: none; transition: background 0.12s; }
+            .logout-btn:hover { background: #e2e8f0; }
+            main { flex: 1; padding: 40px 24px; max-width: 900px; margin: 0 auto; width: 100%; }
+            .empty-state { background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 48px 32px; text-align: center; color: #64748b; }
+            .empty-state.empty-reply-zero { color: #059669; background: #ecfdf5; border-color: #a7f3d0; }
+            .undo-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 20px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 10px; margin-bottom: 20px; }
+            .undo-banner-text { font-size: 14px; color: #065f46; font-weight: 500; }
+            .undo-btn { padding: 6px 14px; border-radius: 6px; background: #059669; color: white; border: none; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.12s; }
+            .undo-btn:hover { background: #047857; }
+            .rz-card { background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px 20px; margin-bottom: 12px; }
+            .rz-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 10px; }
+            .rz-from { font-weight: 600; color: #0f172a; font-size: 15px; }
+            .rz-age { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 9999px; font-size: 12px; font-weight: 500; background: #fef3c7; color: #92400e; }
+            .rz-subject { font-size: 14px; color: #334155; margin-bottom: 8px; }
+            .rz-meta { display: flex; gap: 12px; align-items: center; font-size: 12px; color: #64748b; }
+            .bulkSender { display: inline-flex; padding: 2px 8px; border-radius: 4px; background: #fee2e2; color: #991b1b; font-size: 11px; font-weight: 600; }
+            h1.rz-title { font-size: 28px; font-weight: 700; color: #0f172a; margin-bottom: 8px; }
+            p.lead { font-size: 16px; color: #64748b; margin-bottom: 24px; line-height: 1.5; }
+            footer { padding: 24px; text-align: center; font-size: 12px; color: #94a3b8; }
+            @media (max-width: 640px) { nav.top-nav { padding: 12px 16px; } main { padding: 24px 16px; } .user-email { display: none; } .reply-zero-grid { grid-template-columns: 1fr; } .rz-participants-text { font-size: 0.8rem; } }
+            @media (max-width: 375px) { body { padding: 0 0.5rem; } h1 { font-size: 1.2rem; } .rz-card { padding: 0.75rem; margin-bottom: 0.75rem; } .btn { min-height: 44px; min-width: 44px; font-size: 1rem; } }
+        </style>
+    </head>
+    <body>
+        <div class="app">
+            <nav class="top-nav">
+                <div style="display: flex; align-items: center;">
+                    <div class="nav-brand">
+                        <div class="nav-logo">TM</div>
+                        <div class="nav-brand-text">TidyMail</div>
+                    </div>
+                    <div class="nav-links">
+                        <a class="nav-link" href="/dashboard">Senders</a>
+                        <a class="nav-link active" href="/reply-zero">Reply Zero</a>
+                    </div>
+                </div>
+                <div class="nav-right">
+                    <div class="user-pill">
+                        <div class="avatar" th:text="${#strings.substring(email != null ? email : 'JD', 0, 1) != null ? #strings.toUpperCase(#strings.substring(email != null ? email : 'JD', 0, 1)) : 'JD'}">JD</div>
+                        <span class="user-email" th:text="${email}">user@example.com</span>
+                    </div>
+                    <form th:action="@{/logout}" method="post" style="margin: 0;">
+                        <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}" th:if="${_csrf != null}">
+                        <button type="submit" class="logout-btn">Sign out</button>
+                    </form>
+                </div>
+            </nav>
+            <main>
+                <div id="undo-banner-slot"></div>
+                <h1 class="rz-title">Reply Zero</h1>
+                <p class="lead">Threads waiting for your reply.</p>
+                <div id="rz-slot" hx-get="/reply-zero-frag?olderThanDays=3" hx-trigger="load" hx-swap="innerHTML">
+                    <div class="empty-state">Loading threads…</div>
+                </div>
+            </main>
+            <footer>
+                Signed in as <span th:text="${email}">user@example.com</span> · © 2026 TidyMail · All processing runs locally.
+            </footer>
+        </div>
+    </body>
+</html>

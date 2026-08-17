@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<section th:fragment="history(history)" id="review-history"
+         class="review-data-view"
+         aria-labelledby="review-history-heading">
+    <h2 id="review-history-heading" tabindex="-1">History</h2>
+
+    <form method="get" action="/review" class="review-filter-form review-filters"
+          aria-label="History filters">
+        <input type="hidden" name="view" value="history">
+        <input type="hidden" name="account" th:value="${workspace.selectedAccountQuery}">
+        <label>From date
+            <input type="date" name="from" th:value="${history.query.from}">
+        </label>
+        <label>To date
+            <input type="date" name="to" th:value="${history.query.to}">
+        </label>
+        <label>Action type
+            <select name="action">
+                <option value="all" th:selected="${history.query.action == 'all'}">All actions</option>
+                <option value="archive" th:selected="${history.query.action == 'archive'}">Archive</option>
+                <option value="trash" th:selected="${history.query.action == 'trash'}">Trash</option>
+                <option value="mark_read" th:selected="${history.query.action == 'mark_read'}">Mark read</option>
+                <option value="unsubscribe" th:selected="${history.query.action == 'unsubscribe'}">Unsubscribe</option>
+                <option value="keep" th:selected="${history.query.action == 'keep'}">Keep</option>
+                <option value="protect" th:selected="${history.query.action == 'protect'}">Protect</option>
+                <option value="review" th:selected="${history.query.action == 'review'}">Review</option>
+                <option value="remove_protection" th:selected="${history.query.action == 'remove_protection'}">Remove protection</option>
+            </select>
+        </label>
+        <label>Status
+            <select name="status">
+                <option value="all" th:selected="${history.query.status == 'all'}">All statuses</option>
+                <option value="in_progress" th:selected="${history.query.status == 'in_progress'}">In progress</option>
+                <option value="applied" th:selected="${history.query.status == 'applied'}">Applied</option>
+                <option value="partial" th:selected="${history.query.status == 'partial'}">Partial</option>
+                <option value="verification_pending" th:selected="${history.query.status == 'verification_pending'}">Verification pending</option>
+                <option value="failed" th:selected="${history.query.status == 'failed'}">Failed</option>
+                <option value="cancelled" th:selected="${history.query.status == 'cancelled'}">Cancelled</option>
+                <option value="undone" th:selected="${history.query.status == 'undone'}">Undone</option>
+            </select>
+        </label>
+        <label>Target search
+            <input type="search" name="target" maxlength="160"
+                   th:value="${history.query.target}">
+        </label>
+        <button type="submit">Filter history</button>
+        <a th:href="${history.clearUrl}">Clear filters</a>
+    </form>
+
+    <p th:if="${history.rows.isEmpty()}">No completed actions yet.</p>
+    <div class="review-data-table-wrap history-table-wrap" tabindex="0"
+         aria-label="Action history table"
+         th:if="${!history.rows.isEmpty()}">
+        <table class="review-data-table history-table">
+            <caption>Durable actions and outcomes in the current filters</caption>
+            <thead><tr>
+                <th scope="col">Action</th><th scope="col">Target</th>
+                <th scope="col">Outcome</th><th scope="col">Counts</th>
+                <th scope="col">Time</th><th scope="col">Follow-up</th>
+                <th scope="col">Details</th>
+            </tr></thead>
+            <tbody>
+            <tr th:each="row : ${history.rows}"
+                th:id="|action-${row.actionPublicId}|"
+                class="history-compact-row">
+                <td data-label="Action">
+                    <strong class="history-action-label" th:text="${row.action}">Action</strong>
+                    <span class="history-muted" th:text="${row.mode}">Mode</span>
+                </td>
+                <td data-label="Target" class="history-target-cell long-value">
+                    <span th:text="${row.targetLabel}">Target</span>
+                    <span class="history-muted" th:text="${row.accountLabel}">Account</span>
+                </td>
+                <td data-label="Outcome">
+                    <span th:if="${row.legacy}" class="history-status-chip"
+                          th:text="${row.status}">Status</span>
+                    <p th:if="${row.legacy}" class="history-muted">
+                        Legacy action - per-target outcome detail is unavailable.
+                    </p>
+                    <div th:unless="${row.legacy}"
+                         th:replace="~{fragments/action-outcome-frag :: outcomeCompact(${row.outcome})}"></div>
+                </td>
+                <td data-label="Counts">
+                    <span class="history-count-label" th:text="${row.countLabel}">
+                        0 requested / 0 applied
+                    </span>
+                </td>
+                <td data-label="Time">
+                    <time th:datetime="${row.occurredAt}"
+                          th:text="${row.primaryTimeLabel}">Aug 13, 12:00 UTC</time>
+                </td>
+                <td data-label="Follow-up">
+                    <span class="history-followup-chip"
+                          th:text="${row.availabilityLabel}">Details available</span>
+                    <form th:if="${row.undoEligible && history.query.account != 'all'}"
+                          method="post" class="history-inline-action"
+                          th:action="@{|/review/actions/${row.actionPublicId}/undo/confirm|}">
+                        <input type="hidden" name="account"
+                               th:value="${history.query.account}">
+                        <button type="submit"
+                                th:text="|Undo ${row.undoAppliedCount} applied|">
+                            Undo applied
+                        </button>
+                    </form>
+                </td>
+                <td data-label="Details">
+                    <details class="history-row-details">
+                        <summary>
+                            <span class="history-details-open">Details</span>
+                            <span class="history-details-closed">Hide details</span>
+                        </summary>
+                        <div class="history-details-panel">
+                            <dl class="history-audit-list">
+                                <div><dt>Completed</dt><dd th:text="${row.detailTimeLabel}">Time</dd></div>
+                                <div><dt>Account</dt><dd th:text="${row.accountLabel}">Account</dd></div>
+                                <div><dt>Mode</dt><dd th:text="${row.mode}">Mode</dd></div>
+                                <div><dt>Status</dt><dd th:text="${row.status}">Status</dd></div>
+                                <div><dt>Scope</dt><dd th:text="${row.countLabel}">Counts</dd></div>
+                            </dl>
+                            <p th:if="${row.undoEligible}"
+                               th:text="|Undo will target only the ${row.undoAppliedCount} messages recorded as applied. Failed and verification-pending messages are excluded.|">
+                                Applied-only undo
+                            </p>
+                            <p th:if="${!row.undoEligible && row.undoUnavailableReason != null}"
+                               th:text="${row.undoUnavailableReason}">Undo unavailable</p>
+                            <div th:if="${row.legacy}">
+                                <p>Legacy action - per-target outcome detail is unavailable.</p>
+                            </div>
+                            <div th:unless="${row.legacy}"
+                                 th:replace="~{fragments/action-outcome-frag :: outcomeDetails(${row.outcome})}"></div>
+                            <div th:if="${row.unsubscribe}">
+                                <strong>No automatic undo</strong>
+                                <p th:if="${row.linkedUnsubscribeOutcome != null}"
+                                   th:text="|Linked unsubscribe outcome: ${row.linkedUnsubscribeOutcome}|">
+                                    Linked unsubscribe outcome
+                                </p>
+                                <p>TidyMail cannot guarantee resubscription. Open the account page to review external options.</p>
+                                <a th:if="${row.externalOptionsUrl != null}"
+                                   th:href="${row.externalOptionsUrl}" target="_blank"
+                                   rel="noopener noreferrer">
+                                    Open provider options
+                                    <span class="visually-hidden"> (opens in a new tab)</span>
+                                </a>
+                            </div>
+                            <div th:if="${row.protect}">
+                                <strong>No automatic undo</strong>
+                                <p>Removing protection creates a new reviewed action and does not erase this history.</p>
+                                <form th:if="${history.query.account != 'all'}" method="post"
+                                      th:action="@{|/review/actions/${row.actionPublicId}/remove-protection/confirm|}">
+                                    <input type="hidden" name="account"
+                                           th:value="${history.query.account}">
+                                    <button type="submit">Review removing protection</button>
+                                </form>
+                                <span th:if="${history.query.account == 'all'}">
+                                    Choose one account to review removing protection.
+                                </span>
+                            </div>
+                            <p th:if="${row.compensatesActionPublicId != null}">
+                                This action compensates an
+                                <a th:href="|/review?view=history&amp;account=${history.query.account}#action-${row.compensatesActionPublicId}|">
+                                    earlier protection decision
+                                </a>.
+                            </p>
+                        </div>
+                    </details>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <nav class="pagination" aria-label="History pages">
+        <a th:if="${!#strings.isEmpty(history.previousUrl)}"
+           th:href="${history.previousUrl}">Previous</a>
+        <a th:if="${!#strings.isEmpty(history.nextUrl)}"
+           th:href="${history.nextUrl}">Next</a>
+    </nav>
+</section>
+</body>
+</html>

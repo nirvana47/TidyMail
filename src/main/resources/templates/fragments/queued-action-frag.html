@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+    <body>
+        <div id="action-feedback-slot" class="action-feedback" role="status">
+            <strong th:text="${action.affectedCount}">0</strong>
+            <span>messages queued for</span>
+            <span th:text="${#strings.toLowerCase(action.actionType)}">trash</span>.
+            <a href="/review">Review actions before applying</a>
+        </div>
+    </body>
+</html>

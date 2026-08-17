@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+    <body>
+        <div class="undo-banner" role="status">
+            <th:block th:if="${action != null}">
+                <th:block th:if="${reverted != null and reverted}">
+                    <span class="undo-banner-text">Action reverted.</span>
+                </th:block>
+                <th:block th:unless="${reverted != null and reverted}">
+                    <span class="undo-banner-text">
+                        <th:block th:if="${action.actionType == 'ARCHIVE'}">Archived</th:block>
+                        <th:block th:if="${action.actionType == 'TRASH'}">Trashed</th:block>
+                        <th:block th:if="${action.actionType == 'MARK_READ'}">Marked read</th:block>
+                        <span th:text="${' ' + action.affectedCount + ' messages from ' + action.senderGroupKey}"> 12 messages from a@b</span>
+                    </span>
+                    <form method="post" th:attr="hx-post=|/api/actions/${action.id}/undo|" hx-target="#undo-banner-slot" hx-swap="outerHTML" style="margin:0;">
+                        <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}" th:if="${_csrf != null}">
+                        <button type="submit" class="undo-btn">Undo</button>
+                    </form>
+                </th:block>
+            </th:block>
+        </div>
+    </body>
+</html>

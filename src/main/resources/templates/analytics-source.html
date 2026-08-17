@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TidyMail - Analytics source rows</title>
+    <link rel="stylesheet" th:href="@{/static/css/workspace.css}">
+</head>
+<body>
+<a class="skip-link" href="#workspace-main">Skip to workspace content</a>
+<div th:replace="~{fragments/workspace-nav :: nav(${workspace})}"></div>
+<div class="workspace-shell">
+    <div th:replace="~{fragments/workspace-rail :: rail(${workspace})}"></div>
+    <main id="workspace-main">
+        <header class="route-heading analytics-heading">
+            <p class="eyebrow">Analytics evidence</p>
+            <h1>Analytics source rows</h1>
+            <p>
+                Exact UTC bucket
+                <time th:datetime="${page.query.bucketStart}" th:text="${page.query.bucketStart}">start</time>
+                through
+                <time th:datetime="${page.query.bucketEnd}" th:text="${page.query.bucketEnd}">end</time>.
+            </p>
+        </header>
+        <div th:replace="~{fragments/workspace-state :: state(${workspace})}"></div>
+        <div th:replace="~{fragments/analytics-source-frag :: source(${page})}"></div>
+        <p class="privacy-note">Bodies, subjects, raw headers, provider IDs, and attachments are not exposed.</p>
+    </main>
+</div>
+</body>
+</html>

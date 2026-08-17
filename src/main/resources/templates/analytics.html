@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TidyMail - Analytics</title>
+    <link rel="stylesheet" th:href="@{/static/css/workspace.css}">
+</head>
+<body>
+<a class="skip-link" href="#workspace-main">Skip to workspace content</a>
+<div th:replace="~{fragments/workspace-nav :: nav(${page.workspace})}"></div>
+<div class="workspace-shell">
+    <div th:replace="~{fragments/workspace-rail :: rail(${page.workspace})}"></div>
+    <main id="workspace-main">
+        <header class="page-header">
+            <div class="page-title-stack">
+                <p class="eyebrow">Analytics</p>
+                <h1>Analytics</h1>
+            </div>
+            <span class="page-help" tabindex="0"
+                  aria-label="How Analytics metrics are calculated"
+                  aria-describedby="analytics-page-help">
+                <sup class="page-help-icon" aria-hidden="true">?</sup>
+                <span id="analytics-page-help" class="page-help-tooltip" role="tooltip">
+                    Metrics use indexed metadata and recorded action facts for the selected account and time range.
+                </span>
+            </span>
+        </header>
+
+        <section class="analytics-coverage" aria-label="Mail loading status">
+            <strong th:if="${page.workspace.syncActive}">Mail is still loading.</strong>
+            <span th:text="${page.loadingCopy}">Loaded messages.</span>
+        </section>
+
+        <form class="analytics-control-row" method="get" action="/analytics"
+              aria-label="Analytics filters">
+            <input type="hidden" name="account"
+                   th:value="${page.workspace.selectedAccountQuery}">
+            <input type="hidden" name="action" th:value="${page.query.actionValue}">
+            <input type="hidden" name="compare" th:value="${page.query.comparisonValue}">
+            <label class="analytics-control analytics-period-control">
+                <span>Time period</span>
+                <select name="period">
+                    <option value="week" th:selected="${page.query.period.value == 'week'}">Last week</option>
+                    <option value="month" th:selected="${page.query.period.value == 'month'}">Last month</option>
+                    <option value="3months" th:selected="${page.query.period.value == '3months'}">Last 3 months</option>
+                    <option value="year" th:selected="${page.query.period.value == 'year'}">Last year</option>
+                    <option value="all" th:selected="${page.query.period.value == 'all'}">All</option>
+                    <option value="custom" th:selected="${page.query.period.value == 'custom'}">Custom</option>
+                </select>
+                <span class="analytics-range-copy" th:text="${page.rangeSummary}">
+                    Exact range
+                </span>
+                <span class="analytics-custom-range">
+                    <span>From</span>
+                    <input type="date" name="from" th:value="${page.query.from}"
+                           aria-label="Analytics start date">
+                    <span>To</span>
+                    <input type="date" name="to" th:value="${page.query.to}"
+                           aria-label="Analytics end date">
+                </span>
+            </label>
+            <label class="analytics-control analytics-group-control">
+                <span>Group by</span>
+                <select name="group">
+                    <option value="day" th:selected="${page.query.groupingValue == 'day'}">Day</option>
+                    <option value="week" th:selected="${page.query.groupingValue == 'week'}">Week</option>
+                    <option value="month" th:selected="${page.query.groupingValue == 'month'}">Month</option>
+                    <option value="year" th:selected="${page.query.groupingValue == 'year'}">Year</option>
+                </select>
+            </label>
+            <button class="button-primary analytics-apply" type="submit">Apply</button>
+        </form>
+
+        <div th:replace="~{fragments/analytics-results-frag :: results(${page})}"></div>
+    </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<section th:fragment="confirmation(confirmation)" id="review-confirmation"
+         class="review-feedback" aria-labelledby="review-confirmation-heading" tabindex="-1">
+    <h2 id="review-confirmation-heading">Confirm execute</h2>
+    <p>
+        Execute <strong th:text="${confirmation.actionCount}">0</strong>
+        actions across <strong th:text="${confirmation.accountCount}">0</strong>
+        accounts affecting exactly <strong th:text="${confirmation.targetCount}">0</strong>
+        emails. Each action will record its own outcome.
+    </p>
+    <aside class="review-confirmation-warning"
+           th:classappend="${confirmation.warning.destructive ? ' destructive' : ''}">
+        <h3 th:text="${confirmation.warning.title}">Warning</h3>
+        <p th:text="${confirmation.warning.message}">Warning details</p>
+    </aside>
+    <dl th:if="${!confirmation.excludedReasonCounts.isEmpty()}">
+        <div th:each="entry : ${confirmation.excludedReasonCounts.entrySet()}">
+            <dt th:text="${entry.key == 'FRESH_CONSENT_REQUIRED' ? 'Fresh consent required' : (entry.key == 'NEEDS_DECISION' ? 'Needs decision' : 'Conflicted')}">Excluded</dt>
+            <dd th:text="${entry.value}">0</dd>
+        </div>
+    </dl>
+    <form method="post"
+          th:action="${confirmation.kind == 'all' ? '/review/approve-all' : '/review/approve-selected'}">
+        <input type="hidden" name="operationIntent" th:value="${confirmation.intent}">
+        <input th:each="entry : ${confirmation.filterParameters.entrySet()}"
+               type="hidden" th:name="${entry.key}" th:value="${entry.value}">
+        <input th:each="actionId : ${confirmation.actionPublicIds}"
+               type="hidden" name="selectedAction" th:value="${actionId}">
+        <button type="submit" class="primary-button"
+                th:text="${'Execute ' + confirmation.actionCount}">Execute</button>
+        <a th:href="@{/review(view='queued',account=${confirmation.filterParameters.get('account')})}">Return without changes</a>
+    </form>
+</section>
+
+<section th:fragment="undoConfirmation" id="review-undo-confirmation"
+         class="review-feedback review-undo-confirmation"
+         aria-labelledby="review-undo-confirmation-heading" tabindex="-1">
+    <h2 id="review-undo-confirmation-heading">Confirm undo</h2>
+    <p>
+        Undo <strong th:text="${reviewUndoConfirmation.actionCount}">0</strong>
+        staged actions across
+        <strong th:text="${reviewUndoConfirmation.accountCount}">0</strong>
+        accounts affecting exactly
+        <strong th:text="${reviewUndoConfirmation.affectedCount}">0</strong>
+        emails. No mailbox change has run for these staged actions.
+    </p>
+    <form method="post" action="/review/undo-selected">
+        <input type="hidden" name="operationIntent"
+               th:value="${reviewUndoConfirmation.intent}">
+        <input th:each="entry : ${reviewUndoConfirmation.filterParameters.entrySet()}"
+               type="hidden" th:name="${entry.key}" th:value="${entry.value}">
+        <input th:each="actionId : ${reviewUndoConfirmation.actionPublicIds}"
+               type="hidden" name="selectedAction" th:value="${actionId}">
+        <button type="submit" class="review-undo-button"
+                th:text="${'Undo ' + reviewUndoConfirmation.actionCount}">Undo</button>
+        <a th:href="@{/review(view='queued',account=${reviewUndoConfirmation.filterParameters.get('account')})}">Return without changes</a>
+    </form>
+</section>
+
+<section th:fragment="unsubscribeConfirmation(confirmation)"
+         id="review-unsubscribe-confirmation" class="review-feedback"
+         aria-labelledby="review-unsubscribe-confirmation-heading" tabindex="-1">
+    <h2 id="review-unsubscribe-confirmation-heading">Confirm unsubscribe request</h2>
+    <p>
+        Approve the current <strong th:text="${confirmation.method}">method</strong>
+        for <strong th:text="${confirmation.targetLabel}">target</strong>.
+        The destination and safety facts were re-inspected for this confirmation.
+    </p>
+    <p>The request may be accepted without proving that future mail has stopped.</p>
+    <form method="post"
+          th:action="@{/api/actions/{id}/approve(id=${confirmation.actionPublicId})}">
+        <input type="hidden" name="confirmation" th:value="${confirmation.confirmation}">
+        <input type="hidden" name="unsubscribeMethod" th:value="${confirmation.method}">
+        <button type="submit" class="primary-button">Confirm and execute unsubscribe request</button>
+        <a href="/review?view=queued&amp;account=all">Return without changes</a>
+    </form>
+</section>
+</body>
+</html>

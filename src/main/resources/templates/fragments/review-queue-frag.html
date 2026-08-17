@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<section th:fragment="queue(page)" id="review-queue" class="review-data-view review-queue"
+         aria-labelledby="queued-actions-heading">
+    <h2 id="queued-actions-heading">Queue</h2>
+
+    <form class="review-filter-form" method="get" action="/review">
+        <fieldset>
+            <legend>Filter queued actions</legend>
+            <input type="hidden" name="view" value="queued">
+            <input type="hidden" name="account"
+                   th:value="${page.workspace.selectedAccountQuery}">
+            <label>Action
+                <select name="action">
+                    <option value="all" th:selected="${page.query.action == 'all'}">All actions</option>
+                    <option value="archive" th:selected="${page.query.action == 'archive'}">Archive</option>
+                    <option value="trash" th:selected="${page.query.action == 'trash'}">Trash</option>
+                    <option value="mark_read" th:selected="${page.query.action == 'mark_read'}">Mark read</option>
+                    <option value="unsubscribe" th:selected="${page.query.action == 'unsubscribe'}">Unsubscribe</option>
+                    <option value="keep" th:selected="${page.query.action == 'keep'}">Keep</option>
+                    <option value="protect" th:selected="${page.query.action == 'protect'}">Protect</option>
+                    <option value="needs_decision" th:selected="${page.query.action == 'needs_decision'}">Needs decision</option>
+                </select>
+            </label>
+            <label>State
+                <select name="state">
+                    <option value="all" th:selected="${page.query.state == 'all'}">All states</option>
+                    <option value="eligible" th:selected="${page.query.state == 'eligible'}">Eligible</option>
+                    <option value="conflicted" th:selected="${page.query.state == 'conflicted'}">Conflicted</option>
+                    <option value="needs_decision" th:selected="${page.query.state == 'needs_decision'}">Needs decision</option>
+                </select>
+            </label>
+            <label>Target
+                <input name="target" maxlength="160" th:value="${page.query.target}" autocomplete="off">
+            </label>
+            <button type="submit">Apply filters</button>
+            <a class="clear-link" th:href="${page.clearUrl}">Clear filters</a>
+        </fieldset>
+    </form>
+
+    <div th:if="${page.filteredCount == 0}" class="review-empty">
+        <h3>No actions are waiting for review</h3>
+        <p>Staged decisions appear here without changing the mailbox.</p>
+    </div>
+
+    <form id="selected-review-form" method="post">
+        <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+        <input th:each="entry : ${page.query.withoutPage().entrySet()}"
+               type="hidden" th:name="${entry.key}" th:value="${entry.value}">
+    </form>
+
+    <div th:if="${page.filteredCount > 0}"
+         class="review-data-table-wrap table-scroll" tabindex="0"
+         aria-label="Queued actions table">
+        <table class="review-data-table review-table">
+            <caption>Queued review actions</caption>
+            <thead>
+            <tr>
+                <th scope="col">
+                    <input id="select-visible-review" type="checkbox"
+                           aria-label="Select all visible eligible rows">
+                </th>
+                <th scope="col">Sender</th>
+                <th scope="col">Source</th>
+                <th scope="col">Scope</th>
+                <th scope="col">Actions</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:each="row : ${page.rows}">
+                <td data-label="Select">
+                    <input th:if="${row.eligible}" form="selected-review-form"
+                           class="review-row-select" type="checkbox"
+                           name="selectedAction" th:value="${row.actionPublicId}"
+                           th:attr="aria-label=${'Select ' + row.actionLabel + ' for ' + row.targetLabel}">
+                    <span th:unless="${row.eligible}">Not eligible</span>
+                </td>
+                <td data-label="Sender">
+                    <strong th:text="${row.targetLabel}">Sender</strong>
+                    <small th:text="${row.accountLabel}">Account</small>
+                </td>
+                <td data-label="Source" th:text="${row.sourceLabel}">By Sender</td>
+                <td data-label="Scope">
+                    <strong th:text="${row.targetCount + (row.targetCount == 1 ? ' email' : ' emails')}">0 emails</strong>
+                    <span th:text="${row.actionLabel}">Archive</span>
+                    <ul class="reason-list" th:if="${!row.reasons.isEmpty()}">
+                        <li th:each="reason : ${row.reasons}"
+                            th:text="${reason == 'FRESH_CONSENT_REQUIRED' ? 'Fresh unsubscribe consent required' : (reason == 'NEEDS_DECISION' ? 'Needs decision' : 'Conflict must be resolved')}">Reason</li>
+                    </ul>
+                </td>
+                <td data-label="Actions" class="review-row-controls">
+                    <form th:if="${row.eligible && row.group.name() != 'UNSUBSCRIBE'}"
+                          method="post"
+                          th:action="@{/review/actions/{id}/execute/confirm(id=${row.actionPublicId})}">
+                        <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+                        <input type="hidden" name="account" th:value="${page.query.account}">
+                        <button type="submit">Execute</button>
+                    </form>
+                    <form th:if="${row.group.name() == 'UNSUBSCRIBE'}" method="post"
+                          th:action="@{/review/unsubscribe/{id}/confirm(id=${row.actionPublicId})}">
+                        <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+                        <input type="hidden" name="account" th:value="${page.query.account}">
+                        <button type="submit">Execute</button>
+                    </form>
+                    <form method="post"
+                          th:action="@{/review/actions/{id}/undo-staged/confirm(id=${row.actionPublicId})}">
+                        <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+                        <input type="hidden" name="account" th:value="${page.query.account}">
+                        <button type="submit" class="review-undo-button">Undo</button>
+                    </form>
+                    <details class="review-more">
+                        <summary th:attr="aria-label=${'More actions for ' + row.targetLabel}">
+                            &hellip;
+                        </summary>
+                        <a th:href="@{/review/actions/{id}/emails(id=${row.actionPublicId},account=${page.query.account})}"
+                           th:attr="hx-get=@{/review/actions/{id}/emails(id=${row.actionPublicId},account=${page.query.account})}"
+                           hx-target="#review-email-modal-slot" hx-swap="innerHTML">
+                            View Emails
+                        </a>
+                        <form th:if="${row.eligible && row.group.name() != 'UNSUBSCRIBE'}"
+                              method="post"
+                              th:action="@{/review/actions/{id}/execute/confirm(id=${row.actionPublicId})}">
+                            <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+                            <input type="hidden" name="account" th:value="${page.query.account}">
+                            <button type="submit">Execute</button>
+                        </form>
+                        <form th:if="${row.group.name() == 'UNSUBSCRIBE'}" method="post"
+                              th:action="@{/review/unsubscribe/{id}/confirm(id=${row.actionPublicId})}">
+                            <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+                            <input type="hidden" name="account" th:value="${page.query.account}">
+                            <button type="submit">Execute</button>
+                        </form>
+                    </details>
+                    <a th:if="${row.conflictPublicId != null}"
+                       th:href="@{/review/conflicts/{id}(id=${row.conflictPublicId},view='queued',account=${page.query.account})}">Review conflict</a>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <aside id="review-selection-actions" class="review-approval-summary review-selection-bar"
+           aria-labelledby="review-bulk-heading" hidden>
+        <h3 id="review-bulk-heading">Selected actions</h3>
+        <p id="review-selection-count" aria-live="polite">0 selected</p>
+        <button id="execute-selected" form="selected-review-form" type="submit"
+                formaction="/review/approve-selected/confirm" disabled>Execute</button>
+        <button id="undo-selected" form="selected-review-form" type="submit"
+                formaction="/review/undo-selected/confirm" class="review-undo-button"
+                disabled>Undo</button>
+    </aside>
+
+    <nav class="pagination" aria-label="Queued action pages">
+        <a th:if="${page.previousUrl != null}" th:href="${page.previousUrl}">Previous</a>
+        <span th:unless="${page.previousUrl != null}">Previous</span>
+        <span th:text="${page.totalPages == 0 ? 'Page 0 of 0' : 'Page ' + (page.query.page + 1) + ' of ' + page.totalPages}">Page</span>
+        <a th:if="${page.nextUrl != null}" th:href="${page.nextUrl}">Next</a>
+        <span th:unless="${page.nextUrl != null}">Next</span>
+    </nav>
+
+    <script>
+        (() => {
+            const rows = [...document.querySelectorAll(".review-row-select")];
+            const header = document.getElementById("select-visible-review");
+            const execute = document.getElementById("execute-selected");
+            const undo = document.getElementById("undo-selected");
+            const count = document.getElementById("review-selection-count");
+            if (!header || !execute || !undo || !count) return;
+            const update = () => {
+                const selected = rows.filter(row => row.checked).length;
+                count.textContent = selected + " selected";
+                execute.textContent = selected > 1 ? "Execute " + selected : "Execute";
+                undo.textContent = selected > 1 ? "Undo " + selected : "Undo";
+                execute.disabled = selected === 0;
+                undo.disabled = selected === 0;
+                document.getElementById("review-selection-actions").hidden = selected === 0;
+                header.checked = rows.length > 0 && selected === rows.length;
+                header.indeterminate = selected > 0 && selected < rows.length;
+            };
+            header.addEventListener("change", () => {
+                rows.forEach(row => row.checked = header.checked);
+                update();
+            });
+            rows.forEach(row => row.addEventListener("change", update));
+            update();
+        })();
+    </script>
+</section>
+</body>
+</html>

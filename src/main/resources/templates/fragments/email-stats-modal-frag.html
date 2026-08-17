@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<div th:fragment="modal(emailStats)" id="email-stats-modal"
+     class="stats-modal-overlay">
+    <section class="stats-modal" role="dialog" aria-modal="true"
+             aria-labelledby="email-stats-title" tabindex="-1">
+        <header class="stats-modal-header">
+            <div class="stats-modal-title">
+                <p class="eyebrow">Sender stats</p>
+                <h2 id="email-stats-title" th:text="${emailStats.title}">Emails</h2>
+                <p class="stats-modal-context">
+                    <strong th:text="${emailStats.senderLabel}">Sender</strong>
+                    <span aria-hidden="true"> · </span>
+                    <span th:text="${emailStats.sourceLabel}">Source</span>
+                    <span aria-hidden="true"> · </span>
+                    <span th:text="|${emailStats.emailCount} emails in the selected range|">Selected range</span>
+                </p>
+            </div>
+            <button type="button" class="stats-modal-close"
+                    data-stats-modal-close aria-label="Close">
+                Close
+            </button>
+        </header>
+
+        <div class="modal-action-row" aria-label="Available sender actions">
+            <form th:each="action : ${emailStats.topActions}"
+                  th:if="${action.method == 'post'}" method="post"
+                  th:action="${action.url}" th:attr="hx-post=${action.url}"
+                  hx-target="#unsubscribe-action-preview-slot" hx-swap="innerHTML">
+                <input type="hidden" th:if="${_csrf != null}"
+                       th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+                <button type="submit" th:classappend="${action.tone}"
+                        th:text="${action.label}">Execute</button>
+            </form>
+            <a th:each="action : ${emailStats.topActions}"
+               th:if="${action.method == 'get'}" th:href="${action.url}"
+               th:attr="hx-get=${action.url}"
+               hx-target="#unsubscribe-inspection-slot" hx-swap="innerHTML"
+               th:classappend="${action.tone}" th:text="${action.label}">Open</a>
+        </div>
+
+        <section class="stats-distribution" aria-labelledby="email-distribution-heading">
+            <div>
+                <h3 id="email-distribution-heading">Incoming email distribution</h3>
+                <p th:text="${emailStats.distribution.isEmpty()
+                    ? 'No indexed email metadata is available for this range.'
+                    : 'Selected range: ' + emailStats.rangeLabel()}">
+                    Selected range
+                </p>
+            </div>
+            <figure class="stats-chart"
+                    th:if="${!emailStats.distribution.isEmpty()}"
+                    aria-labelledby="email-distribution-heading">
+                <div class="stats-chart-layout">
+                    <ol class="stats-chart-y-axis" aria-label="Email count axis">
+                        <li th:each="tick : ${emailStats.distributionAxisTicks()}"
+                            th:text="${tick}">0</li>
+                    </ol>
+                    <ol class="stats-chart-bars"
+                        aria-label="Incoming email count by date range">
+                        <li th:each="bucket, bucketStatus : ${emailStats.distribution}"
+                            tabindex="0"
+                            th:attr="aria-label=|${bucket.label}: ${bucket.count} emails|"
+                            th:style="|--bar-height:${bucket.heightPercent(emailStats.distributionAxisMax())}%|">
+                            <div class="stats-chart-plot">
+                                <strong th:text="${bucket.count}">0</strong>
+                                <span class="stats-chart-fill"
+                                      aria-hidden="true"></span>
+                            </div>
+                            <span class="stats-chart-label"
+                                  th:if="${emailStats.showDistributionLabel(bucketStatus.index)}"
+                                  th:text="${bucket.chartLabel()}">May 1</span>
+                        </li>
+                    </ol>
+                </div>
+            </figure>
+        </section>
+
+        <div class="table-scroll stats-email-table" tabindex="0"
+             aria-label="Recent sender email metadata table">
+            <table class="review-table">
+                <colgroup>
+                    <col class="stats-sender-column">
+                    <col class="stats-subject-column">
+                    <col class="stats-received-column">
+                    <col class="stats-state-column">
+                    <col class="stats-state-column">
+                </colgroup>
+                <caption th:text="${(emailStats.emailCount > emailStats.emails.size()
+                    ? emailStats.scopeLabel + ' metadata: showing the '
+                        + emailStats.emails.size() + ' most recent of '
+                        + emailStats.emailCount
+                    : emailStats.scopeLabel + ' metadata')
+                    + (emailStats.hasUnknownAttachmentState()
+                        ? '. Attachment coverage is still being checked; Present and None apply only to reconciled messages.'
+                        : '')}">
+                    Email metadata
+                </caption>
+                <thead>
+                <tr>
+                    <th scope="col">Sender</th>
+                    <th scope="col">Subject</th>
+                    <th scope="col">Received</th>
+                    <th scope="col">State</th>
+                    <th scope="col">Attachment</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr th:each="email : ${emailStats.emails}">
+                    <td class="stats-sender-cell" data-label="Sender"
+                        th:text="${email.sender}" th:title="${email.sender}">Sender</td>
+                    <td class="stats-subject-cell" data-label="Subject"
+                        th:text="${email.subject}" th:title="${email.subject}">Subject</td>
+                    <td data-label="Received">
+                        <time th:if="${email.receivedAt != null}"
+                              th:datetime="${email.receivedAt}"
+                              data-local-date
+                              th:text="${email.receivedAt}">Received</time>
+                        <span th:unless="${email.receivedAt != null}">Unknown</span>
+                    </td>
+                    <td data-label="State" th:text="${email.unread ? 'Unread' : 'Read'}">Unread</td>
+                    <td data-label="Attachment"
+                        th:text="${email.attachmentLabel()}">Checking</td>
+                </tr>
+                <tr th:if="${emailStats.emails.isEmpty()}">
+                    <td colspan="5">No indexed email metadata is available for this scope.</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+</body>
+</html>

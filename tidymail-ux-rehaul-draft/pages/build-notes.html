@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TidyMail Build Notes</title>
+    <style id="theme-vars">
+:root {
+  --tmux-background: #f4f6fb;
+  --tmux-foreground: #111827;
+  --tmux-card: #ffffff;
+  --tmux-card-foreground: #111827;
+  --tmux-popover: #ffffff;
+  --tmux-popover-foreground: #111827;
+  --tmux-primary: #3f5cff;
+  --tmux-primary-foreground: #ffffff;
+  --tmux-muted: #eef2ff;
+  --tmux-muted-foreground: #5b6478;
+  --tmux-border: #d9e0ee;
+  --tmux-input: #d9e0ee;
+  --tmux-ring: #3f5cff;
+  --tmux-radius-sm: 6px;
+  --tmux-radius-md: 10px;
+  --tmux-radius-lg: 16px;
+
+  --tmux-surface-2: #f8faff;
+  --tmux-surface-3: #e8eefc;
+  --tmux-text-soft: #6b7280;
+  --tmux-text-strong: #0f172a;
+  --tmux-success: #1f9d68;
+  --tmux-success-soft: #e8fbf3;
+  --tmux-warning: #b7791f;
+  --tmux-warning-soft: #fff6df;
+  --tmux-danger: #d14343;
+  --tmux-danger-soft: #fff0f0;
+  --tmux-info: #2f6ce5;
+  --tmux-info-soft: #ebf2ff;
+
+  --tmux-shadow-1: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.04);
+  --tmux-shadow-2: 0 18px 48px rgba(15, 23, 42, 0.10);
+
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "SFMono-Regular", ui-monospace, Menlo, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans);
+  background: var(--tmux-background);
+  color: var(--tmux-foreground);
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-background: var(--tmux-background);
+    --color-foreground: var(--tmux-foreground);
+    --color-card: var(--tmux-card);
+    --color-card-foreground: var(--tmux-card-foreground);
+    --color-popover: var(--tmux-popover);
+    --color-popover-foreground: var(--tmux-popover-foreground);
+    --color-primary: var(--tmux-primary);
+    --color-primary-foreground: var(--tmux-primary-foreground);
+    --color-muted: var(--tmux-muted);
+    --color-muted-foreground: var(--tmux-muted-foreground);
+    --color-border: var(--tmux-border);
+    --color-input: var(--tmux-input);
+    --color-ring: var(--tmux-ring);
+    --radius-sm: var(--tmux-radius-sm);
+    --radius-md: var(--tmux-radius-md);
+    --radius-lg: var(--tmux-radius-lg);
+  }
+  @layer base {
+    body { background: var(--tmux-background); color: var(--tmux-foreground); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style id="semantic-token-fallback">
+      .bg-background { background-color: var(--tmux-background); }
+      .text-background { color: var(--tmux-background); }
+      .border-background { border-color: var(--tmux-background); }
+      .ring-background { --tw-ring-color: var(--tmux-background); }
+      .bg-foreground { background-color: var(--tmux-foreground); }
+      .text-foreground { color: var(--tmux-foreground); }
+      .border-foreground { border-color: var(--tmux-foreground); }
+      .ring-foreground { --tw-ring-color: var(--tmux-foreground); }
+      .bg-card { background-color: var(--tmux-card); }
+      .text-card { color: var(--tmux-card); }
+      .border-card { border-color: var(--tmux-card); }
+      .ring-card { --tw-ring-color: var(--tmux-card); }
+      .bg-card-foreground { background-color: var(--tmux-card-foreground); }
+      .text-card-foreground { color: var(--tmux-card-foreground); }
+      .border-card-foreground { border-color: var(--tmux-card-foreground); }
+      .ring-card-foreground { --tw-ring-color: var(--tmux-card-foreground); }
+      .bg-popover { background-color: var(--tmux-popover); }
+      .text-popover { color: var(--tmux-popover); }
+      .border-popover { border-color: var(--tmux-popover); }
+      .ring-popover { --tw-ring-color: var(--tmux-popover); }
+      .bg-popover-foreground { background-color: var(--tmux-popover-foreground); }
+      .text-popover-foreground { color: var(--tmux-popover-foreground); }
+      .border-popover-foreground { border-color: var(--tmux-popover-foreground); }
+      .ring-popover-foreground { --tw-ring-color: var(--tmux-popover-foreground); }
+      .bg-primary { background-color: var(--tmux-primary); }
+      .text-primary { color: var(--tmux-primary); }
+      .border-primary { border-color: var(--tmux-primary); }
+      .ring-primary { --tw-ring-color: var(--tmux-primary); }
+      .bg-primary-foreground { background-color: var(--tmux-primary-foreground); }
+      .text-primary-foreground { color: var(--tmux-primary-foreground); }
+      .border-primary-foreground { border-color: var(--tmux-primary-foreground); }
+      .ring-primary-foreground { --tw-ring-color: var(--tmux-primary-foreground); }
+      .bg-muted { background-color: var(--tmux-muted); }
+      .text-muted { color: var(--tmux-muted); }
+      .border-muted { border-color: var(--tmux-muted); }
+      .ring-muted { --tw-ring-color: var(--tmux-muted); }
+      .bg-muted-foreground { background-color: var(--tmux-muted-foreground); }
+      .text-muted-foreground { color: var(--tmux-muted-foreground); }
+      .border-muted-foreground { border-color: var(--tmux-muted-foreground); }
+      .ring-muted-foreground { --tw-ring-color: var(--tmux-muted-foreground); }
+      .bg-border { background-color: var(--tmux-border); }
+      .text-border { color: var(--tmux-border); }
+      .border-border { border-color: var(--tmux-border); }
+      .ring-border { --tw-ring-color: var(--tmux-border); }
+      .bg-input { background-color: var(--tmux-input); }
+      .text-input { color: var(--tmux-input); }
+      .border-input { border-color: var(--tmux-input); }
+      .ring-input { --tw-ring-color: var(--tmux-input); }
+      .bg-ring { background-color: var(--tmux-ring); }
+      .text-ring { color: var(--tmux-ring); }
+      .border-ring { border-color: var(--tmux-ring); }
+      .ring-ring { --tw-ring-color: var(--tmux-ring); }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+  /* Typography tuning: compact, lighter, still readable. */
+  body { font-size: 14px; }
+  h1 { font-weight: 680; letter-spacing: -0.025em; }
+  .brand-title,
+  .category-title strong,
+  .sender-name,
+  .toolbar-copy strong,
+  .sender-stat,
+  .sender-count {
+    font-weight: 660;
+  }
+  .table-head,
+  .sender-list-head,
+  .email-table-head,
+  .rail-label,
+  .page-label {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: .055em;
+  }
+  .helper,
+  .note,
+  .sync-banner,
+  .toolbar-copy span,
+  .sender-meta,
+  .category-title span {
+    font-size: 13px;
+  }
+  .nav-link,
+  .rail-button {
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .button,
+  .filter-pill,
+  .action-button,
+  .plain-button,
+  .more-button {
+    font-weight: 660;
+  }
+
+  .more-button {
+    display: inline-grid;
+    place-items: center;
+    padding: 0;
+    line-height: normal;
+  }
+
+    </style>
+</head>
+<body>
+  <style>
+    .build-shell {
+      min-height: 100vh;
+      background: var(--tmux-background);
+      color: var(--tmux-foreground);
+      font-family: var(--font-sans);
+      padding: 40px;
+    }
+    .build-wrap {
+      max-width: 1180px;
+      margin: 0 auto;
+      display: grid;
+      gap: 24px;
+    }
+    .build-header,
+    .build-card {
+      background: var(--tmux-card);
+      border: 1px solid var(--tmux-border);
+      border-radius: var(--tmux-radius-lg);
+      box-shadow: var(--tmux-shadow-1);
+    }
+    .build-header {
+      padding: 32px;
+      display: grid;
+      gap: 12px;
+    }
+    .eyebrow {
+      margin: 0;
+      color: var(--tmux-primary);
+      font-size: 12px;
+      font-weight: 720;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    h1 {
+      margin: 0;
+      color: var(--tmux-text-strong);
+      font-size: 32px;
+      line-height: 1.1;
+      letter-spacing: -.03em;
+    }
+    h2 {
+      margin: 0 0 12px;
+      color: var(--tmux-text-strong);
+      font-size: 16px;
+      line-height: 1.25;
+    }
+    p {
+      margin: 0;
+      color: var(--tmux-muted-foreground);
+      line-height: 1.6;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+    .build-card {
+      padding: 22px;
+      display: grid;
+      gap: 12px;
+    }
+    .contract-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 10px;
+    }
+    .contract-list li {
+      padding: 12px;
+      border: 1px solid var(--tmux-border);
+      border-radius: var(--tmux-radius-md);
+      background: var(--tmux-surface-2);
+      color: var(--tmux-text-strong);
+      line-height: 1.45;
+    }
+    .status {
+      display: inline-flex;
+      width: fit-content;
+      padding: 5px 9px;
+      border-radius: 999px;
+      background: var(--tmux-muted);
+      color: var(--tmux-primary);
+      font-size: 12px;
+      font-weight: 720;
+    }
+    .warning {
+      background: var(--tmux-warning-soft);
+      color: var(--tmux-warning);
+    }
+    .ok {
+      background: var(--tmux-success-soft);
+      color: var(--tmux-success);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border: 1px solid var(--tmux-border);
+      border-radius: var(--tmux-radius-md);
+    }
+    th,
+    td {
+      padding: 12px;
+      border-bottom: 1px solid var(--tmux-border);
+      text-align: left;
+      vertical-align: top;
+      line-height: 1.45;
+    }
+    th {
+      background: var(--tmux-surface-2);
+      color: var(--tmux-text-strong);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+    td {
+      color: var(--tmux-muted-foreground);
+    }
+    code {
+      color: var(--tmux-text-strong);
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+    @media (max-width: 860px) {
+      .build-shell { padding: 20px; }
+      .grid { grid-template-columns: 1fr; }
+      h1 { font-size: 28px; }
+    }
+  </style>
+
+  <main class="build-shell" data-viewport-mode="document-scroll">
+    <div class="build-wrap">
+      <header class="build-header">
+        <p class="eyebrow">Implementation contract</p>
+        <h1>Build Notes</h1>
+        <p>This page defines which design claims are backed by Gmail APIs and which claims must be conditional. Future implementation should follow these notes before turning UI text into backend logic.</p>
+      </header>
+
+      <section class="grid" aria-label="Primary product rules">
+        <article class="build-card">
+          <span class="status ok">Product model</span>
+          <h2>Individual user</h2>
+          <ul class="contract-list">
+            <li>Each signed-in user manages only their own authorized email addresses.</li>
+            <li>Use “All my connected emails” for multiple addresses owned by the same user.</li>
+            <li>Do not use family/person labels such as Husband, Wife, or Both accounts.</li>
+          </ul>
+        </article>
+
+        <article class="build-card">
+          <span class="status warning">Progress display</span>
+          <h2>No fake percentages</h2>
+          <ul class="contract-list">
+            <li>Safe default: “Loaded {indexedCount} messages. Last updated {time}.”</li>
+            <li>Only show total or percent when the backend has a reliable denominator.</li>
+            <li>If a total comes from Gmail estimate fields, label it as approximate.</li>
+          </ul>
+        </article>
+      </section>
+
+      <section class="build-card" aria-label="Gmail API data contract">
+        <h2>Gmail Data Contract</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>UI claim</th>
+              <th>Source</th>
+              <th>Design rule</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Signed-in email</td>
+              <td><code>users.getProfile.emailAddress</code></td>
+              <td>Safe to show as exact.</td>
+            </tr>
+            <tr>
+              <td>Total mailbox messages</td>
+              <td><code>users.getProfile.messagesTotal</code></td>
+              <td>Safe as mailbox-wide total, not as a filtered cleanup denominator.</td>
+            </tr>
+            <tr>
+              <td>Filtered query total</td>
+              <td><code>users.messages.list.resultSizeEstimate</code></td>
+              <td>Estimate only. Use “about” or avoid percent.</td>
+            </tr>
+            <tr>
+              <td>Loaded so far</td>
+              <td>Local sync/index records</td>
+              <td>Safe as exact if counted from local persisted rows.</td>
+            </tr>
+            <tr>
+              <td>Attachment/storage estimates</td>
+              <td><code>Message.payload.parts</code> and <code>Message.sizeEstimate</code></td>
+              <td>Safe as estimates after message metadata is fetched.</td>
+            </tr>
+            <tr>
+              <td>Incremental updates</td>
+              <td><code>historyId</code> and <code>users.history.list</code></td>
+              <td>Safe after initial sync; fall back to full sync if history is too old.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="build-card" aria-label="Analytics page contract">
+        <h2>Analytics Page Contract</h2>
+        <ul class="contract-list">
+          <li>“Loaded X out of Y” should only be shown if the backend can produce a reliable loaded denominator for the active provider/account. If Gmail and Outlook do not expose equivalent reliable total counts for the chosen scope, keep the current “Loaded X messages” wording instead.</li>
+          <li>Analytics operates on one active account at a time; do not show multi-account counts in the page body.</li>
+          <li>Top filters are shown as two left-aligned buttons only: Time period and Group By. Time period opens a calendar with quick options only after click; Group By opens Day, Week, Month, and Year choices only after click. Do not show either option list inline by default.</li>
+          <li>All analytics sections on the page, including metric tabs, the main graph, Top Received, Top Sent, size cards, and the final actions graph, must respect the selected Time period and Group By filters where applicable.</li>
+          <li>Group By default should be intelligent based on selected time period while allowing user override.</li>
+          <li>Metric tabs are clickable and switch the column chart; column width changes based on time range and grouping.</li>
+          <li>Top Received and Top Sent are compact two-column tables with max 10 rows, not pill cards. The left column is the email address or domain; the right column is the count and is right aligned.</li>
+          <li>Top Received supports flat Email address and Domain tabs with counts. Top Sent supports Email address only with counts.</li>
+          <li>Size cards use total message size, inclusive of attachments, not just individual attachment size.</li>
+          <li>The final graph shows TidyMail Archived vs Deleted counts.</li>
+        </ul>
+      </section>
+
+      <section class="build-card" aria-label="Account and session contract">
+        <h2>Account &amp; Session Contract</h2>
+        <ul class="contract-list">
+          <li>MVP initially connects Gmail accounts; Outlook is a future provider.</li>
+          <li>Add new account appears as an option inside the left rail account dropdown.</li>
+          <li>If Add new account is selected, route the user to the provider connection flow.</li>
+          <li>The left rail footer includes a Logout control above Feedback and Collapse rail. The logout menu has two choices: Logout and Delete my data and logout.</li>
+          <li>Logout signs the user out while retaining local logs, indexed data, user data, connected account records, analytics/cache data, and settings for the next login.</li>
+          <li>Delete my data and logout must fully purge stored logs, indexed email metadata, connected account data, queued actions, analytics/cache data, provider tokens, and user settings. The next login starts as a fresh setup.</li>
+          <li>Delete-data logout must require confirmation and must not retain app logs or data tied to the user after completion.</li>
+        </ul>
+      </section>
+
+      <section class="grid" aria-label="Implementation notes">
+        <article class="build-card">
+          <h2>Refresh behavior</h2>
+          <p>The UI may refresh local sync status every 5 seconds. That refresh should read the app’s own sync table or job status, not call Gmail every 5 seconds.</p>
+        </article>
+
+        <article class="build-card">
+          <h2>Action safety</h2>
+          <p>Before archive, delete, mark-read, or unsubscribe execution, calculate exact mailbox effects from materialized message IDs in the local index. Do not execute actions from estimated counts.</p>
+        </article>
+      </section>
+
+      <section class="grid" aria-label="UX implementation rules">
+        <article class="build-card">
+          <span class="status warning">Conditional UI</span>
+          <h2>Loading banner</h2>
+          <ul class="contract-list">
+            <li>Show “Mail is still loading” only while an actual sync/index job is active.</li>
+            <li>Hide the banner when loading is complete, no job is running, or the account is idle.</li>
+            <li>Do not replace the hidden banner with placeholder whitespace.</li>
+            <li>If shown, the banner should include a clear link to Analytics where progress details are visible.</li>
+          </ul>
+        </article>
+
+        <article class="build-card">
+          <span class="status ok">Mock removal</span>
+          <h2>No bottom next-step pill</h2>
+          <ul class="contract-list">
+            <li>The old “Next cleanup step” footer pill was a canvas/navigation mock only.</li>
+            <li>Do not implement it in the product UI.</li>
+            <li>Navigation should happen from the left rail or explicit page actions only.</li>
+          </ul>
+        </article>
+      </section>
+
+      <section class="build-card" aria-label="Review page contract">
+        <h2>Review Page Contract</h2>
+        <ul class="contract-list">
+          <li>Review is a LIFO queued-action ledger: order internally by <code>queued_at</code> and <code>sequence</code> descending.</li>
+          <li>Do not show queued time or queued order to users; keep those fields internal only.</li>
+          <li>Top bulk buttons must show Execute / Undo when nothing is selected, or Execute N / Undo N when rows are selected.</li>
+          <li>Each row action area should use an orange high-attention Undo button plus an ellipsis menu.</li>
+          <li>The row ellipsis menu should include View Emails and Execute.</li>
+          <li>Clicking Execute or Undo must ask for confirmation and show the number of emails affected.</li>
+          <li>If selected actions include Delete, show a separate delete warning: messages will move to Trash and can only be undone/restored during the 30-day trash window.</li>
+          <li>For Archive and Bulk Unsubscribe queued actions, a single standard confirmation warning is enough.</li>
+          <li>View Emails reuses the Bulk Unsubscribe View Stats modal UI for implementation simplicity and consistency, including top action buttons, incoming email distribution chart, and compact email table with columns Sender name, Subject, snippet, and Date received.</li>
+          <li>For Bulk Archive/Delete and Unread Only queued actions, View Emails shows the affected email list.</li>
+          <li>For Bulk Unsubscribe queued actions, View Emails shows past emails from that sender.</li>
+        </ul>
+      </section>
+
+      <section class="build-card" aria-label="Bulk cleanup page contract">
+        <h2>Bulk Cleanup Page Contract</h2>
+        <ul class="contract-list">
+          <li>Do not add a search box to the Bulk Archive/Delete page unless the product later explicitly needs sender search.</li>
+          <li>The email account selector belongs only in the left rail, not inside the page content.</li>
+          <li>Show sender categories as closed dropdowns by default. Each category should show only sender count and optional total size.</li>
+          <li>Use exactly two primary page controls: Settings and Expand all / Collapse all.</li>
+          <li>Settings changes the per-sender action between bulk archive, bulk delete, and mark as read.</li>
+          <li>Expanded categories show sender, email count, optional size, domain, and one action button matching the current Settings action.</li>
+          <li>The action button label should change based on Settings, but its high-attention color should stay consistent across archive, delete, and mark-read.</li>
+          <li>Other is special: senders must be selectable before moving them into an existing category or creating a new category.</li>
+          <li>Move and create category actions should open a centered modal. Do not place the full category-management workflow inline on the page.</li>
+          <li>User-created categories should appear below the closest predefined category and carry a clear “User generated” label.</li>
+          <li>User-created category names must be validated server-side and client-side: trim whitespace, enforce a reasonable length limit, reject control characters, reject HTML/script syntax, escape output, and store/display names as plain text only.</li>
+          <li>Category size is optional. Hide it or mark it as estimated if reliable size totals are not available from indexed Gmail metadata.</li>
+        </ul>
+      </section>
+
+      <section class="build-card" aria-label="Unread page contract">
+        <h2>Unread Page Contract</h2>
+        <ul class="contract-list">
+          <li>Unread Only should use the same quiet structure as Bulk Archive/Delete: rail-only account selector, simple header, optional loading banner, Settings, Expand all / Collapse all, and category dropdowns.</li>
+          <li>Do not show a page-level account selector, search box, filter-pill strip, summary-stat strip, or bottom next-step mock on Unread unless the product explicitly adds those later.</li>
+          <li>Unread categories should group messages into human-readable buckets such as lists/automated mail, older than 30 days, direct mail, attachments, and Other.</li>
+          <li>Lists and automated mail depends on backend classification logic. The UI should not imply the category is manually chosen unless the user overrides it.</li>
+          <li>Unread categories are not mutually exclusive: a list/automated sender may also be older than 30 days or have attachments.</li>
+          <li>Direct mail means likely 1:1 senders rather than list/automated senders. If classification looks wrong, the UI must offer a way to mark the sender as a different type.</li>
+          <li>Expanded Direct mail rows should be sorted by sender volume so the biggest unread senders appear first.</li>
+          <li>Other should follow the same pattern as Bulk Archive/Delete Other: selectable senders plus centered modal actions to move selected senders or create a new category.</li>
+          <li>The per-sender action button label should follow Settings, but the high-attention orange/red color should stay consistent across mark-read, archive, and delete.</li>
+        </ul>
+      </section>
+
+      <section class="build-card" aria-label="Unsubscribe page contract">
+        <h2>Unsubscribe Page Contract</h2>
+        <ul class="contract-list">
+          <li>Typography should stay compact and polished: page titles around 30px on desktop, lighter weights than the first drafts, single-line table rows where possible, and no oversized “elderly UI” scale unless accessibility mode is explicitly added.</li>
+          <li>Bulk unsubscribe is an individual sender workflow, not a grouping workflow. Do not create categories by grouping senders on this page.</li>
+          <li>Unsubscribe should use the same quiet shell as Bulk Archive/Delete and Unread: rail-only account selector, simple header, optional loading banner, and no bottom next-step mocks.</li>
+          <li>Show two top filters: category and time duration. Category values are Unhandled, Unsubscribed, Archived/Deleted, and All. Add Auto-archive later when Gmail rules/filter creation exists.</li>
+          <li>Keep top controls compact as separate pills, not a full-width filter card. Add a right-aligned Settings pill for default action: Archive or Delete only. Do not include mark-as-read here.</li>
+          <li>The time filter should open a compact calendar popover only when clicked. The popover can show one month if it is cleaner, with quick options on the right: Last week, Last month, Last 3 months, Last year, and All. Always show the exact selected date range in the trigger.</li>
+          <li>Show a compact search pill next to the filters for sender name or domain filtering.</li>
+          <li>Unsubscribe capability depends on backend parsing of List-Unsubscribe headers, unsubscribe links, and provider behavior. The UI must not claim success until execution results are known.</li>
+          <li>Each sender row should show sender/domain, number of emails, and Read %. Read % means the share of parsed emails from that sender that were read.</li>
+          <li>The primary sender button should say Unsubscribe when unsubscribe is possible, otherwise Archive or Delete depending on Settings. Never show Archive/Delete as a combined row label. Later, Block may be added when Gmail rule/filter creation exists.</li>
+          <li>Each sender row should include an ellipsis menu with View stats, Archive all, and Delete all. Later options can include creating Gmail filters and adding labels.</li>
+          <li>View stats opens a centered modal with two top-left action buttons: the row’s primary action, then Archive or Delete depending on Settings.</li>
+          <li>The stats modal’s second top-left action should be visually distinct from the primary unsubscribe action, preferably red for Archive/Delete.</li>
+          <li>The stats modal should show a three-month incoming-email bar chart. Hovering a bar should reveal date and email count. X-axis can show week starts rather than every date.</li>
+          <li>The chart bucket size should adapt to data density: daily bars are fine for sparse senders, but high-volume senders may need weekly or otherwise aggregated buckets so the chart stays readable.</li>
+          <li>Below the chart, show a compact single-line table of emails with Sender name as shown in Gmail, Subject, metadata snippet, and Date received. Use truncation/ellipsis rather than wrapping these columns into two lines.</li>
+          <li>The per-sender primary action button should keep the same high-attention orange/red color even when its label changes.</li>
+          <li>All left-rail email account selectors must keep long email addresses inside the rail using max-width, overflow hidden, and ellipsis/truncation behavior.</li>
+        </ul>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

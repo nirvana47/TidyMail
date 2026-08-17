@@ -1,0 +1,958 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Senders</title>
+    <style id="theme-vars">
+:root {
+  --tmux-background: #f4f6fb;
+  --tmux-foreground: #111827;
+  --tmux-card: #ffffff;
+  --tmux-card-foreground: #111827;
+  --tmux-popover: #ffffff;
+  --tmux-popover-foreground: #111827;
+  --tmux-primary: #3f5cff;
+  --tmux-primary-foreground: #ffffff;
+  --tmux-muted: #eef2ff;
+  --tmux-muted-foreground: #5b6478;
+  --tmux-border: #d9e0ee;
+  --tmux-input: #d9e0ee;
+  --tmux-ring: #3f5cff;
+  --tmux-radius-sm: 6px;
+  --tmux-radius-md: 10px;
+  --tmux-radius-lg: 16px;
+
+  --tmux-surface-2: #f8faff;
+  --tmux-surface-3: #e8eefc;
+  --tmux-text-soft: #6b7280;
+  --tmux-text-strong: #0f172a;
+  --tmux-success: #1f9d68;
+  --tmux-success-soft: #e8fbf3;
+  --tmux-warning: #b7791f;
+  --tmux-warning-soft: #fff6df;
+  --tmux-danger: #d14343;
+  --tmux-danger-soft: #fff0f0;
+  --tmux-info: #2f6ce5;
+  --tmux-info-soft: #ebf2ff;
+
+  --tmux-shadow-1: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.04);
+  --tmux-shadow-2: 0 18px 48px rgba(15, 23, 42, 0.10);
+
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "SFMono-Regular", ui-monospace, Menlo, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans);
+  background: var(--tmux-background);
+  color: var(--tmux-foreground);
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-background: var(--tmux-background);
+    --color-foreground: var(--tmux-foreground);
+    --color-card: var(--tmux-card);
+    --color-card-foreground: var(--tmux-card-foreground);
+    --color-popover: var(--tmux-popover);
+    --color-popover-foreground: var(--tmux-popover-foreground);
+    --color-primary: var(--tmux-primary);
+    --color-primary-foreground: var(--tmux-primary-foreground);
+    --color-muted: var(--tmux-muted);
+    --color-muted-foreground: var(--tmux-muted-foreground);
+    --color-border: var(--tmux-border);
+    --color-input: var(--tmux-input);
+    --color-ring: var(--tmux-ring);
+    --radius-sm: var(--tmux-radius-sm);
+    --radius-md: var(--tmux-radius-md);
+    --radius-lg: var(--tmux-radius-lg);
+  }
+  @layer base {
+    body { background: var(--tmux-background); color: var(--tmux-foreground); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style id="semantic-token-fallback">
+      .bg-background { background-color: var(--tmux-background); }
+      .text-background { color: var(--tmux-background); }
+      .border-background { border-color: var(--tmux-background); }
+      .ring-background { --tw-ring-color: var(--tmux-background); }
+      .bg-foreground { background-color: var(--tmux-foreground); }
+      .text-foreground { color: var(--tmux-foreground); }
+      .border-foreground { border-color: var(--tmux-foreground); }
+      .ring-foreground { --tw-ring-color: var(--tmux-foreground); }
+      .bg-card { background-color: var(--tmux-card); }
+      .text-card { color: var(--tmux-card); }
+      .border-card { border-color: var(--tmux-card); }
+      .ring-card { --tw-ring-color: var(--tmux-card); }
+      .bg-card-foreground { background-color: var(--tmux-card-foreground); }
+      .text-card-foreground { color: var(--tmux-card-foreground); }
+      .border-card-foreground { border-color: var(--tmux-card-foreground); }
+      .ring-card-foreground { --tw-ring-color: var(--tmux-card-foreground); }
+      .bg-popover { background-color: var(--tmux-popover); }
+      .text-popover { color: var(--tmux-popover); }
+      .border-popover { border-color: var(--tmux-popover); }
+      .ring-popover { --tw-ring-color: var(--tmux-popover); }
+      .bg-popover-foreground { background-color: var(--tmux-popover-foreground); }
+      .text-popover-foreground { color: var(--tmux-popover-foreground); }
+      .border-popover-foreground { border-color: var(--tmux-popover-foreground); }
+      .ring-popover-foreground { --tw-ring-color: var(--tmux-popover-foreground); }
+      .bg-primary { background-color: var(--tmux-primary); }
+      .text-primary { color: var(--tmux-primary); }
+      .border-primary { border-color: var(--tmux-primary); }
+      .ring-primary { --tw-ring-color: var(--tmux-primary); }
+      .bg-primary-foreground { background-color: var(--tmux-primary-foreground); }
+      .text-primary-foreground { color: var(--tmux-primary-foreground); }
+      .border-primary-foreground { border-color: var(--tmux-primary-foreground); }
+      .ring-primary-foreground { --tw-ring-color: var(--tmux-primary-foreground); }
+      .bg-muted { background-color: var(--tmux-muted); }
+      .text-muted { color: var(--tmux-muted); }
+      .border-muted { border-color: var(--tmux-muted); }
+      .ring-muted { --tw-ring-color: var(--tmux-muted); }
+      .bg-muted-foreground { background-color: var(--tmux-muted-foreground); }
+      .text-muted-foreground { color: var(--tmux-muted-foreground); }
+      .border-muted-foreground { border-color: var(--tmux-muted-foreground); }
+      .ring-muted-foreground { --tw-ring-color: var(--tmux-muted-foreground); }
+      .bg-border { background-color: var(--tmux-border); }
+      .text-border { color: var(--tmux-border); }
+      .border-border { border-color: var(--tmux-border); }
+      .ring-border { --tw-ring-color: var(--tmux-border); }
+      .bg-input { background-color: var(--tmux-input); }
+      .text-input { color: var(--tmux-input); }
+      .border-input { border-color: var(--tmux-input); }
+      .ring-input { --tw-ring-color: var(--tmux-input); }
+      .bg-ring { background-color: var(--tmux-ring); }
+      .text-ring { color: var(--tmux-ring); }
+      .border-ring { border-color: var(--tmux-ring); }
+      .ring-ring { --tw-ring-color: var(--tmux-ring); }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+    </style>
+</head>
+<body class="font-sans antialiased" data-viewport-mode="app-shell">
+    <style id="critical-layout">
+      :root {
+        --shell-top: 58px;
+        --shell-rail: 226px;
+        --shell-max: 1480px;
+      }
+
+      body {
+        overflow: hidden;
+      }
+
+      .app-shell {
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at top right, rgba(63, 92, 255, 0.05), transparent 18%),
+          var(--tmux-background);
+      }
+
+      .top-rail,
+      .brand-lockup,
+      .top-tabs,
+      .nav-tab,
+      .top-meta,
+      .status-pill,
+      .select-row,
+      .segmented,
+      .segmented button,
+      .toolbar-group,
+      .flat-btn,
+      .metric-strip,
+      .footer-link,
+      .action-stack,
+      .bulk-strip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .top-rail {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        justify-content: space-between;
+        width: 100%;
+        height: var(--shell-top);
+        padding: 0 18px;
+        border-bottom: 1px solid var(--tmux-border);
+        background: rgba(244, 246, 251, 0.94);
+        backdrop-filter: blur(14px);
+      }
+
+      .brand-lockup {
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--tmux-text-strong);
+      }
+
+      .brand-badge {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--tmux-primary);
+        color: var(--tmux-primary-foreground);
+      }
+
+      .top-tabs {
+        flex: 1;
+        justify-content: center;
+        gap: 4px;
+        min-width: 0;
+      }
+
+      .nav-tab {
+        padding: 7px 10px;
+        border-radius: 8px;
+        color: var(--tmux-text-soft);
+        text-decoration: none;
+        font-size: 12px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .nav-tab.is-active {
+        color: var(--tmux-primary);
+        background: rgba(63, 92, 255, 0.08);
+        box-shadow: inset 0 0 0 1px rgba(63, 92, 255, 0.16);
+      }
+
+      .top-meta {
+        gap: 6px;
+      }
+
+      .status-pill,
+      .flat-btn,
+      .select-row,
+      .control-input,
+      .tag {
+        border: 1px solid var(--tmux-border);
+        background: var(--tmux-card);
+        color: var(--tmux-text-soft);
+      }
+
+      .status-pill,
+      .flat-btn,
+      .select-row,
+      .tag {
+        padding: 6px 8px;
+        border-radius: 8px;
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .shell-body {
+        display: grid;
+        grid-template-columns: var(--shell-rail) minmax(0, 1fr);
+        min-height: calc(100vh - var(--shell-top));
+      }
+
+      .left-rail {
+        overflow: auto;
+        padding: 12px;
+        border-right: 1px solid var(--tmux-border);
+        background: rgba(255, 255, 255, 0.72);
+      }
+
+      .left-rail-inner,
+      .rail-section,
+      .workspace-inner,
+      .page-header,
+      .section-head,
+      .sender-cell,
+      .metric-cell,
+      .note-stack {
+        display: grid;
+        gap: 8px;
+      }
+
+      .left-rail-inner,
+      .workspace-inner {
+        gap: 10px;
+      }
+
+      .rail-section,
+      .page-header,
+      .metric-strip,
+      .panel,
+      .footer-card {
+        background: var(--tmux-card);
+        border: 1px solid var(--tmux-border);
+        border-radius: 10px;
+        box-shadow: var(--tmux-shadow-1);
+      }
+
+      .rail-section,
+      .page-header,
+      .panel,
+      .footer-card {
+        padding: 10px 12px;
+      }
+
+      .rail-label,
+      .field-label,
+      .metric-label,
+      .eyebrow,
+      thead th {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        font-weight: 700;
+      }
+
+      .rail-label,
+      .field-label,
+      .metric-label,
+      thead th,
+      .subtle,
+      .footer-copy,
+      .page-header p,
+      .table-note,
+      .mono,
+      .meta-note {
+        color: var(--tmux-text-soft);
+      }
+
+      .eyebrow {
+        color: var(--tmux-primary);
+      }
+
+      .rail-title,
+      .section-title,
+      .sender-name,
+      .value-main {
+        color: var(--tmux-text-strong);
+      }
+
+      .rail-title {
+        margin: 0;
+        font-size: 14px;
+      }
+
+      .rail-copy,
+      .page-header p,
+      .footer-copy {
+        margin: 0;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .field-stack {
+        display: grid;
+        gap: 6px;
+      }
+
+      .select-row {
+        justify-content: space-between;
+        width: 100%;
+      }
+
+      .segmented {
+        gap: 0;
+        width: 100%;
+        border: 1px solid var(--tmux-border);
+        border-radius: 8px;
+        overflow: hidden;
+        background: var(--tmux-surface-2);
+      }
+
+      .segmented button {
+        flex: 1;
+        justify-content: center;
+        padding: 7px 6px;
+        border: 0;
+        border-right: 1px solid var(--tmux-border);
+        background: transparent;
+        color: var(--tmux-text-soft);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .segmented button:last-child {
+        border-right: 0;
+      }
+
+      .segmented button.is-active {
+        background: var(--tmux-card);
+        color: var(--tmux-primary);
+      }
+
+      .workspace {
+        overflow: auto;
+        padding: 12px 14px 16px;
+      }
+
+      .workspace-inner {
+        max-width: var(--shell-max);
+        margin: 0 auto;
+      }
+
+      .page-header h1 {
+        margin: 0;
+        font-size: 22px;
+        line-height: 1.1;
+        color: var(--tmux-text-strong);
+      }
+
+      .metric-strip {
+        width: 100%;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0;
+        overflow: hidden;
+      }
+
+      .metric-cell {
+        padding: 9px 10px;
+        border-right: 1px solid var(--tmux-border);
+      }
+
+      .metric-cell:last-child {
+        border-right: 0;
+      }
+
+      .metric-value {
+        font-size: 18px;
+        font-weight: 700;
+        line-height: 1;
+      }
+
+      .metric-sub {
+        font-size: 11px;
+        color: var(--tmux-text-soft);
+      }
+
+      .bulk-strip {
+        justify-content: space-between;
+        width: 100%;
+        padding: 9px 12px;
+        border-bottom: 1px solid var(--tmux-border);
+        background: #fbfcff;
+      }
+
+      .bulk-copy {
+        display: grid;
+        gap: 2px;
+      }
+
+      .bulk-copy strong {
+        font-size: 12px;
+        color: var(--tmux-text-strong);
+      }
+
+      .flat-btn.primary {
+        color: var(--tmux-primary-foreground);
+        background: var(--tmux-primary);
+        border-color: transparent;
+      }
+
+      .table-toolbar {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        flex-wrap: wrap;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--tmux-border);
+        background: #fbfcff;
+      }
+
+      .control-input {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 230px;
+        padding: 7px 9px;
+        border-radius: 8px;
+        font-size: 12px;
+        color: var(--tmux-text-strong);
+      }
+
+      .control-input input {
+        width: 100%;
+        border: 0;
+        outline: none;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+      }
+
+      .table-scroll {
+        overflow: auto;
+        max-height: calc(100vh - 314px);
+      }
+
+      table {
+        width: 100%;
+        min-width: 1080px;
+        border-collapse: collapse;
+        table-layout: fixed;
+      }
+
+      thead th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        text-align: left;
+        padding: 7px 9px;
+        background: #f8faff;
+        border-bottom: 1px solid var(--tmux-border);
+      }
+
+      tbody td {
+        padding: 7px 9px;
+        border-bottom: 1px solid rgba(217, 224, 238, 0.92);
+        vertical-align: middle;
+        font-size: 12px;
+        color: var(--tmux-text-strong);
+      }
+
+      tbody tr:hover {
+        background: rgba(63, 92, 255, 0.03);
+      }
+
+      .checkbox-col { width: 38px; }
+      .sender-col { width: 220px; }
+      .actions-col { width: 176px; }
+
+      .sender-name {
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .mono {
+        font-family: var(--font-mono);
+        font-size: 11px;
+      }
+
+      .value-main {
+        font-weight: 700;
+      }
+
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        line-height: 1.1;
+      }
+
+      .tag.low {
+        color: var(--tmux-info);
+        background: rgba(47, 108, 229, 0.06);
+      }
+
+      .tag.med {
+        color: var(--tmux-warning);
+        background: rgba(183, 121, 31, 0.06);
+      }
+
+      .tag.high {
+        color: var(--tmux-danger);
+        background: rgba(209, 67, 67, 0.06);
+      }
+
+      .action-stack {
+        flex-wrap: wrap;
+      }
+
+      .footer-card {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .footer-card h2 {
+        margin: 0 0 2px;
+        font-size: 13px;
+        color: var(--tmux-text-strong);
+      }
+
+      .footer-link {
+        color: var(--tmux-text-soft);
+        text-decoration: none;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      input[type="checkbox"] {
+        width: 13px;
+        height: 13px;
+        accent-color: var(--tmux-primary);
+      }
+
+      @media (max-width: 1180px) {
+        .metric-strip {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 980px) {
+        body {
+          overflow: auto;
+        }
+
+        .shell-body {
+          grid-template-columns: 1fr;
+        }
+
+        .left-rail {
+          border-right: 0;
+          border-bottom: 1px solid var(--tmux-border);
+        }
+
+        .top-rail {
+          flex-wrap: wrap;
+          height: auto;
+          padding: 12px 14px;
+        }
+
+        .top-tabs {
+          order: 3;
+          width: 100%;
+          justify-content: flex-start;
+          overflow: auto;
+          padding-bottom: 2px;
+        }
+      }
+
+      @media (max-width: 720px) {
+        .metric-strip {
+          grid-template-columns: 1fr;
+        }
+
+        .table-toolbar,
+        .bulk-strip,
+        .footer-card {
+          display: grid;
+        }
+
+        .table-scroll {
+          max-height: none;
+        }
+      }
+    </style>
+
+    <div class="app-shell">
+      <header class="top-rail">
+        <div class="brand-lockup">
+          <span class="brand-badge"><i data-lucide="inbox"></i></span>
+          TidyMail
+        </div>
+        <nav class="top-tabs" aria-label="Primary">
+          <a class="nav-tab is-active" href="by-sender-compact-suite.html" data-dom-id="nav-senders"><i data-lucide="users"></i>Senders</a>
+          <a class="nav-tab" href="unread-compact-suite.html" data-dom-id="nav-unread"><i data-lucide="mail-open"></i>Unread</a>
+          <a class="nav-tab" href="unsubscribe-compact-suite.html" data-dom-id="nav-unsub"><i data-lucide="mail-minus"></i>Unsubscribe</a>
+          <a class="nav-tab" href="review-timeline-compact-suite.html" data-dom-id="nav-review"><i data-lucide="history"></i>Review</a>
+          <a class="nav-tab" href="analytics-compact-suite.html" data-dom-id="nav-analytics"><i data-lucide="chart-column"></i>Analytics</a>
+        </nav>
+        <div class="top-meta">
+          <span class="status-pill"><i data-lucide="shield-check"></i>2 accounts</span>
+        </div>
+      </header>
+
+      <div class="shell-body">
+        <aside class="left-rail" aria-label="Sender filters">
+          <div class="left-rail-inner">
+            <section class="rail-section">
+              <div class="rail-label">Workspace</div>
+              <h2 class="rail-title">Sender view</h2>
+              <p class="rail-copy">Compact ranking for repeat sender decisions.</p>
+            </section>
+            <section class="rail-section">
+              <div class="field-stack">
+                <div class="field-label">Mailbox</div>
+                <button class="select-row" type="button" data-dom-id="sender-mailbox-filter">
+                  <span>All accounts</span>
+                  <i data-lucide="chevrons-up-down"></i>
+                </button>
+              </div>
+              <div class="field-stack">
+                <div class="field-label">Window</div>
+                <div class="segmented" role="group" aria-label="Sender time window">
+                  <button class="is-active" type="button">7d</button>
+                  <button type="button">30d</button>
+                  <button type="button">90d</button>
+                </div>
+              </div>
+            </section>
+            <section class="rail-section">
+              <div class="field-stack">
+                <div class="field-label">Sender type</div>
+                <button class="select-row" type="button"><span>All ranked types</span><i data-lucide="filter"></i></button>
+                <button class="select-row" type="button"><span>Low-risk only</span><i data-lucide="shield"></i></button>
+                <button class="select-row" type="button"><span>Unread pressure</span><i data-lucide="arrow-down"></i></button>
+              </div>
+            </section>
+            <section class="rail-section">
+              <div class="field-stack">
+                <div class="field-label">Scope</div>
+                <button class="select-row" type="button"><span>Open queue</span><i data-lucide="list-filter"></i></button>
+                <button class="select-row" type="button"><span>Include protected: Off</span><i data-lucide="user-lock"></i></button>
+              </div>
+            </section>
+          </div>
+        </aside>
+
+        <main class="workspace overflow-y-auto" data-scroll-region="primary">
+          <div class="workspace-inner">
+            <section class="page-header">
+              <div class="eyebrow">Sender cleanup</div>
+              <h1>Sender decisions</h1>
+              <p>Stage archive, delete, keep, or review decisions by sender. Nothing is applied until Review approval.</p>
+            </section>
+
+            <section class="metric-strip" aria-label="Sender summary">
+              <div class="metric-cell">
+                <span class="metric-label">Ranked senders</span>
+                <span class="metric-value">31</span>
+                <span class="metric-sub">Current decision set</span>
+              </div>
+              <div class="metric-cell">
+                <span class="metric-label">Unread pressure</span>
+                <span class="metric-value">246</span>
+                <span class="metric-sub">Across top rows</span>
+              </div>
+              <div class="metric-cell">
+                <span class="metric-label">Archive candidates</span>
+                <span class="metric-value">11</span>
+                <span class="metric-sub">Low-risk sender groups</span>
+              </div>
+              <div class="metric-cell">
+                <span class="metric-label">Delete candidates</span>
+                <span class="metric-value">8</span>
+                <span class="metric-sub">Obvious clutter groups</span>
+              </div>
+            </section>
+
+            <section class="panel" aria-label="Sender grid">
+              <div class="bulk-strip">
+                <div class="bulk-copy">
+                  <strong>4 selected</strong>
+                  <span class="table-note">Bulk actions stay visible while you scan the grid.</span>
+                </div>
+                <div class="action-stack">
+                  <button class="flat-btn" type="button" data-dom-id="sender-bulk-archive"><i data-lucide="archive"></i>Archive</button>
+                  <button class="flat-btn" type="button" data-dom-id="sender-bulk-delete"><i data-lucide="trash-2"></i>Delete</button>
+                  <button class="flat-btn primary" type="button" data-dom-id="sender-bulk-review"><i data-lucide="list-checks"></i>Send to review</button>
+                </div>
+              </div>
+
+              <div class="table-toolbar">
+                <div class="toolbar-group">
+                  <label class="control-input" data-dom-id="sender-grid-search">
+                    <i data-lucide="search"></i>
+                    <input type="search" placeholder="Search senders or domains">
+                  </label>
+                  <button class="select-row" type="button" data-dom-id="sender-grid-queue"><span>Queue: Open</span><i data-lucide="chevron-down"></i></button>
+                  <button class="select-row" type="button" data-dom-id="sender-grid-sort"><span>Sort: Unread</span><i data-lucide="arrow-down"></i></button>
+                </div>
+                <div class="toolbar-group">
+                  <span class="tag low">Low risk first</span>
+                  <button class="flat-btn" type="button" data-dom-id="sender-grid-export"><i data-lucide="download"></i>Export</button>
+                </div>
+              </div>
+
+              <div class="table-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th class="checkbox-col"><input type="checkbox" aria-label="Select all senders"></th>
+                      <th class="sender-col">Sender</th>
+                      <th>Type</th>
+                      <th>Volume</th>
+                      <th>Unread</th>
+                      <th>Last</th>
+                      <th>Suggestion</th>
+                      <th>Risk</th>
+                      <th class="actions-col">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><input type="checkbox" checked aria-label="Select Ramp"></td>
+                      <td><div class="sender-cell"><span class="sender-name">Ramp</span><span class="mono">ramp.com</span></div></td>
+                      <td>Finance SaaS</td>
+                      <td><span class="value-main">39</span> / 7d</td>
+                      <td><span class="value-main">27</span> untouched</td>
+                      <td>41m</td>
+                      <td>Archive</td>
+                      <td><span class="tag high">Low miss</span></td>
+                      <td><div class="action-stack"><a class="flat-btn" href="#" data-dom-id="sender-row-ramp-archive">Archive</a><a class="flat-btn" href="#">Delete</a></div></td>
+                    </tr>
+                    <tr>
+                      <td><input type="checkbox" checked aria-label="Select Notion"></td>
+                      <td><div class="sender-cell"><span class="sender-name">Notion</span><span class="mono">mail.notion.so</span></div></td>
+                      <td>Product</td>
+                      <td><span class="value-main">28</span> / 7d</td>
+                      <td><span class="value-main">11</span> open</td>
+                      <td>3h</td>
+                      <td>Archive</td>
+                      <td><span class="tag high">Very low</span></td>
+                      <td><div class="action-stack"><a class="flat-btn" href="#" data-dom-id="sender-row-notion-archive">Archive</a><a class="flat-btn" href="#">Keep</a></div></td>
+                    </tr>
+                    <tr>
+                      <td><input type="checkbox" aria-label="Select Linear"></td>
+                      <td><div class="sender-cell"><span class="sender-name">Linear</span><span class="mono">notifications.linear.app</span></div></td>
+                      <td>Workflow</td>
+                      <td><span class="value-main">54</span> / 7d</td>
+                      <td><span class="value-main">18</span> mixed</td>
+                      <td>12m</td>
+                      <td>Review</td>
+                      <td><span class="tag med">Split</span></td>
+                      <td><div class="action-stack"><a class="flat-btn" href="#">Review</a><a class="flat-btn" href="#">Keep</a></div></td>
+                    </tr>
+                    <tr>
+                      <td><input type="checkbox" checked aria-label="Select Product Hunt"></td>
+                      <td><div class="sender-cell"><span class="sender-name">Product Hunt</span><span class="mono">mail.producthunt.com</span></div></td>
+                      <td>Newsletter</td>
+                      <td><span class="value-main">14</span> / 7d</td>
+                      <td><span class="value-main">12</span> open</td>
+                      <td>1d</td>
+                      <td>Delete</td>
+                      <td><span class="tag high">Very low</span></td>
+                      <td><div class="action-stack"><a class="flat-btn" href="#">Archive</a><a class="flat-btn" href="#">Delete</a></div></td>
+                    </tr>
+                    <tr>
+                      <td><input type="checkbox" aria-label="Select Vercel"></td>
+                      <td><div class="sender-cell"><span class="sender-name">Vercel</span><span class="mono">updates.vercel.com</span></div></td>
+                      <td>Engineering</td>
+                      <td><span class="value-main">32</span> / 7d</td>
+                      <td><span class="value-main">14</span> open</td>
+                      <td>1h</td>
+                      <td>Mark read</td>
+                      <td><span class="tag low">Some value</span></td>
+                      <td><div class="action-stack"><a class="flat-btn" href="#">Mark read</a><a class="flat-btn" href="#">Keep</a></div></td>
+                    </tr>
+                    <tr>
+                      <td><input type="checkbox" aria-label="Select Figma"></td>
+                      <td><div class="sender-cell"><span class="sender-name">Figma</span><span class="mono">figma.com</span></div></td>
+                      <td>Product</td>
+                      <td><span class="value-main">19</span> / 7d</td>
+                      <td><span class="value-main">8</span> rare opens</td>
+                      <td>7:46a</td>
+                      <td>Archive</td>
+                      <td><span class="tag low">Low</span></td>
+                      <td><div class="action-stack"><a class="flat-btn" href="#">Archive</a><a class="flat-btn" href="#">Keep</a></div></td>
+                    </tr>
+                    <tr>
+                      <td><input type="checkbox" aria-label="Select Brex"></td>
+                      <td><div class="sender-cell"><span class="sender-name">Brex</span><span class="mono">hello.brex.com</span></div></td>
+                      <td>Finance Mktg</td>
+                      <td><span class="value-main">17</span> / 7d</td>
+                      <td><span class="value-main">10</span> open</td>
+                      <td>6:18a</td>
+                      <td>Delete</td>
+                      <td><span class="tag high">Very low</span></td>
+                      <td><div class="action-stack"><a class="flat-btn" href="#">Delete</a><a class="flat-btn" href="#">Review</a></div></td>
+                    </tr>
+                    <tr>
+                      <td><input type="checkbox" aria-label="Select Mercury"></td>
+                      <td><div class="sender-cell"><span class="sender-name">Mercury</span><span class="mono">mail.mercury.com</span></div></td>
+                      <td>Banking</td>
+                      <td><span class="value-main">16</span> / 7d</td>
+                      <td><span class="value-main">5</span> touched</td>
+                      <td>1d</td>
+                      <td>Keep visible</td>
+                      <td><span class="tag med">Operational</span></td>
+                      <td><div class="action-stack"><a class="flat-btn" href="#">Keep</a><a class="flat-btn" href="#">Review</a></div></td>
+                    </tr>
+                    <tr>
+                      <td><input type="checkbox" aria-label="Select Stripe"></td>
+                      <td><div class="sender-cell"><span class="sender-name">Stripe</span><span class="mono">support.stripe.com</span></div></td>
+                      <td>Support</td>
+                      <td><span class="value-main">24</span> / 7d</td>
+                      <td><span class="value-main">7</span> mixed</td>
+                      <td>8:14a</td>
+                      <td>Reply needed</td>
+                      <td><span class="tag med">Human thread</span></td>
+                      <td><div class="action-stack"><a class="flat-btn" href="#">Reply</a><a class="flat-btn" href="#">Keep</a></div></td>
+                    </tr>
+                    <tr>
+                      <td><input type="checkbox" aria-label="Select Calendly"></td>
+                      <td><div class="sender-cell"><span class="sender-name">Calendly</span><span class="mono">notifications@calendly.com</span></div></td>
+                      <td>Scheduling</td>
+                      <td><span class="value-main">15</span> / 7d</td>
+                      <td><span class="value-main">6</span> duplicate</td>
+                      <td>9:02a</td>
+                      <td>Archive</td>
+                      <td><span class="tag low">Low</span></td>
+                      <td><div class="action-stack"><a class="flat-btn" href="#">Archive</a><a class="flat-btn" href="#">Mark read</a></div></td>
+                    </tr>
+                    <tr>
+                      <td><input type="checkbox" aria-label="Select GitHub"></td>
+                      <td><div class="sender-cell"><span class="sender-name">GitHub</span><span class="mono">notifications@github.com</span></div></td>
+                      <td>Code alerts</td>
+                      <td><span class="value-main">26</span> / 7d</td>
+                      <td><span class="value-main">6</span> mixed</td>
+                      <td>18m</td>
+                      <td>Review</td>
+                      <td><span class="tag med">Signal mix</span></td>
+                      <td><div class="action-stack"><a class="flat-btn" href="#" data-dom-id="sender-row-github-review">Review</a><a class="flat-btn" href="#">Keep</a></div></td>
+                    </tr>
+                    <tr>
+                      <td><input type="checkbox" aria-label="Select Substack"></td>
+                      <td><div class="sender-cell"><span class="sender-name">Substack</span><span class="mono">substack.com</span></div></td>
+                      <td>Newsletter</td>
+                      <td><span class="value-main">12</span> / 7d</td>
+                      <td><span class="value-main">8</span> open</td>
+                      <td>3d</td>
+                      <td>Delete</td>
+                      <td><span class="tag high">Very low</span></td>
+                      <td><div class="action-stack"><a class="flat-btn" href="#">Archive</a><a class="flat-btn" href="#">Delete</a></div></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <footer>
+              <div class="footer-card">
+                <div class="note-stack">
+                  <h2>Next step</h2>
+                  <div class="footer-copy">Sender actions are staged only; review them before anything touches the mailbox.</div>
+                </div>
+                <a class="footer-link" href="unread-compact-suite.html" data-dom-id="footer-next-unread"><i data-lucide="arrow-right"></i>Open unread</a>
+              </div>
+            </footer>
+          </div>
+        </main>
+      </div>
+    </div>
+    <script>lucide.createIcons();</script>
+</body>
+</html>

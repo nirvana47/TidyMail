@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+    <body>
+        <div id="domain-rollups-slot">
+            <p th:if="${#lists.isEmpty(domains)}" class="domain-empty">
+                No sender data yet. Your inbox is syncing in the background.
+            </p>
+            <ul th:unless="${#lists.isEmpty(domains)}" class="domain-list">
+                <li th:each="domain : ${domains}" class="domain-row">
+                    <span class="domain-name" th:text="${domain.fromDomain()}">example.com</span>
+                    <span class="domain-count"
+                          th:text="|${domain.countAcrossAllSenders()} messages|">12 messages</span>
+                </li>
+            </ul>
+        </div>
+    </body>
+</html>

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<section th:fragment="source(page)" id="analytics-source-results"
+         class="analytics-source" aria-labelledby="analytics-source-heading">
+    <h2 id="analytics-source-heading" tabindex="-1">Exact analytics evidence</h2>
+    <p th:text="|Series: ${page.query.series.value()}; fact range ${page.query.bucketStart} to ${page.query.bucketEnd} UTC.|">
+        Source predicate
+    </p>
+    <p th:text="${page.availability.safeCopy}">Coverage status</p>
+    <p th:if="${page.availability.state.name() != 'UNAVAILABLE' and (page.total > 0 or page.availability.state.name() == 'AVAILABLE')}">
+        <strong th:text="${page.total}">0</strong> indexed source rows match this bucket.
+    </p>
+    <p th:if="${page.total == 0 and page.availability.state.name() == 'AVAILABLE'}">
+        No source rows match this metric and filter. The originating aggregate is zero.
+    </p>
+    <p th:if="${page.total == 0 and page.availability.state.name() == 'PARTIAL'}">
+        Source coverage is partial; no complete zero is claimed for this bucket.
+    </p>
+    <p th:if="${page.availability.state.name() == 'UNAVAILABLE'}">
+        Source rows are unavailable for this bucket; no zero is inferred.
+    </p>
+    <div class="analytics-table-scroll" role="region" aria-label="Analytics source rows" tabindex="0"
+         th:if="${page.total > 0}">
+        <table class="analytics-table">
+            <caption>Approved metadata for the selected exact analytics predicate</caption>
+            <thead>
+            <tr>
+                <th scope="col">Account</th>
+                <th scope="col">Received UTC</th>
+                <th scope="col">Sender</th>
+                <th scope="col">Address</th>
+                <th scope="col">Domain</th>
+                <th scope="col" th:unless="${page.query.receivedSeries}">Fact UTC</th>
+                <th scope="col" th:unless="${page.query.receivedSeries}">Action</th>
+                <th scope="col" th:unless="${page.query.receivedSeries}">Outcome</th>
+                <th scope="col">Provider</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:each="row : ${page.rows}">
+                <td data-label="Account" th:text="${row.accountLabel}">Account</td>
+                <td data-label="Received UTC"><time th:datetime="${row.receivedAt}" th:text="${row.receivedAt}">time</time></td>
+                <td data-label="Sender" th:text="${row.senderDisplay}">Sender</td>
+                <td data-label="Address" th:text="${row.senderAddress ?: 'Not recorded'}">Address</td>
+                <td data-label="Domain" th:text="${row.senderDomain ?: 'Not recorded'}">Domain</td>
+                <td data-label="Fact UTC" th:unless="${page.query.receivedSeries}">
+                    <time th:datetime="${row.factAt}" th:text="${row.factAt}">time</time>
+                </td>
+                <td data-label="Action" th:unless="${page.query.receivedSeries}"
+                    th:text="${row.action}">Action</td>
+                <td data-label="Outcome" th:unless="${page.query.receivedSeries}"
+                    th:text="${row.outcome}">Outcome</td>
+                <td data-label="Provider">
+                    <a th:if="${row.providerLink != null}" th:href="${row.providerLink}"
+                       rel="noreferrer">Open authorized message</a>
+                    <span th:if="${row.providerLink == null}">No safe link available</span>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <nav class="pagination" aria-label="Analytics source pages"
+         th:if="${page.availability.state.name() != 'UNAVAILABLE'}">
+        <a th:if="${page.previousUrl != null}" th:href="${page.previousUrl}">Previous page</a>
+        <span>Page <span th:text="${page.query.page + 1}">1</span></span>
+        <a th:if="${page.nextUrl != null}" th:href="${page.nextUrl}">Next page</a>
+    </nav>
+    <a class="clear-link" th:href="${page.backUrl}">Back to analytics</a>
+</section>
+</body>
+</html>

@@ -1,0 +1,63 @@
+{
+  "phase": "20",
+  "phase_name": "Classification Quality - embedded ML on a measured benchmark",
+  "timestamp": "2026-08-14T23:49:13Z",
+  "areas_completed": [
+    "Hybrid decision boundary"
+  ],
+  "areas_remaining": [
+    "Ground-truth benchmark",
+    "Learning from corrections",
+    "Promotion threshold"
+  ],
+  "decisions": {
+    "Hybrid decision boundary": [
+      {
+        "question": "Which embedded JVM classification library should TidyMail use?",
+        "answer": "Use Tribuo as the primary candidate, subject to benchmark proof that it beats the deterministic baseline.",
+        "options_presented": [
+          "Tribuo",
+          "Smile 4.x",
+          "Weka"
+        ]
+      },
+      {
+        "question": "What should happen when model confidence is low?",
+        "answer": "Classify the sender as Other so the user can re-categorize it.",
+        "options_presented": [
+          "Review",
+          "Other"
+        ]
+      },
+      {
+        "question": "Which decisions may the ML model make?",
+        "answer": "ML predicts sender category only. Deterministic safety rules continue to decide risk and cleanup recommendations.",
+        "options_presented": [
+          "Category only",
+          "Category plus cleanup recommendation"
+        ]
+      },
+      {
+        "question": "What precedence and fallback rules apply?",
+        "answer": "Account-local manual corrections override model output. Deterministic rules remain the fallback when no qualifying model is available.",
+        "options_presented": [
+          "Manual correction then model then rules fallback",
+          "Model overrides corrections",
+          "Rules only"
+        ]
+      }
+    ]
+  },
+  "deferred_ideas": [],
+  "canonical_refs": [
+    ".planning/PROJECT.md",
+    ".planning/REQUIREMENTS.md",
+    ".planning/ROADMAP.md",
+    "docs/DECISIONS.md",
+    ".planning/phases/15-implement-pending-cleanup-and-navigation/15-CONTEXT.md",
+    "src/main/java/com/tidymail/service/DecisionClassifier.java",
+    "src/main/java/com/tidymail/service/DecisionRuleSet.java",
+    "src/main/java/com/tidymail/service/SenderCategoryService.java",
+    "src/test/java/com/tidymail/support/SyntheticMailboxGenerator.java"
+  ]
+}

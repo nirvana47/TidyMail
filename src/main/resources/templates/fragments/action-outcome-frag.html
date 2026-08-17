@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<section th:fragment="outcome(outcome)" class="action-outcome"
+         th:if="${outcome != null}" aria-label="Action outcome">
+    <th:block th:replace="~{fragments/action-outcome-frag :: outcomeDetails(${outcome})}"></th:block>
+</section>
+
+<section th:fragment="outcomeCompact(outcome)" class="action-outcome action-outcome-compact"
+         th:if="${outcome != null}" aria-label="Action outcome summary">
+    <p class="badge" th:text="${outcome.visibleStatus}">Applied</p>
+    <p class="outcome-compact-counts"
+       th:text="|${outcome.requested} requested / ${outcome.succeeded} applied / ${outcome.failed} failed / ${outcome.verificationPending} pending|">
+        Compact outcome counts
+    </p>
+</section>
+
+<section th:fragment="outcomeDetails(outcome)" class="action-outcome-details"
+         th:if="${outcome != null}" aria-label="Detailed action outcome">
+    <p class="badge" th:text="${outcome.visibleStatus}">Applied</p>
+    <dl class="outcome-counts">
+        <div><dt>Requested</dt><dd th:text="${outcome.requested}">0</dd></div>
+        <div><dt>Accepted</dt><dd th:text="${outcome.accepted}">0</dd></div>
+        <div><dt>Succeeded</dt><dd th:text="${outcome.succeeded}">0</dd></div>
+        <div><dt>Failed</dt><dd th:text="${outcome.failed}">0</dd></div>
+        <div><dt>Verification pending</dt><dd th:text="${outcome.verificationPending}">0</dd></div>
+        <div th:if="${outcome.notDispatched > 0}">
+            <dt>Not dispatched</dt><dd th:text="${outcome.notDispatched}">0</dd>
+        </div>
+    </dl>
+    <p th:text="|${outcome.requested} requested: ${outcome.succeeded} succeeded, ${outcome.failed} failed, ${outcome.verificationPending} verification pending${outcome.notDispatched > 0 ? ', ' + outcome.notDispatched + ' not dispatched' : ''}.|">
+        Outcome arithmetic
+    </p>
+    <p th:if="${outcome.source == 'UNSUBSCRIBE' && outcome.accepted > 0}">
+        The endpoint accepted the request. Future mail is not independently confirmed.
+    </p>
+    <ul th:if="${!outcome.reasonCounts.isEmpty()}" aria-label="Outcome reasons">
+        <li th:each="reason : ${outcome.reasonCounts}"
+            th:text="|${reason.value} targets: ${reason.key}|">Safe reason</li>
+    </ul>
+    <ol class="event-timeline" th:if="${!outcome.events.isEmpty()}"
+        aria-label="Append-only action timeline">
+        <li th:each="event : ${outcome.events}"
+            th:text="|${event.type}: ${event.status}|">Event</li>
+    </ol>
+</section>
+</body>
+</html>

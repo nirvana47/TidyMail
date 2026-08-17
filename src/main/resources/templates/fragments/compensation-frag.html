@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<section th:fragment="confirmation" id="compensation-confirmation"
+         aria-labelledby="compensation-confirmation-heading">
+    <h2 id="compensation-confirmation-heading" tabindex="-1">
+        Review removing protection
+    </h2>
+    <p th:text="|Removing protection for ${compensationConfirmation.targetLabel} creates a new action. The original protection history remains unchanged.|">
+        Compensation explanation
+    </p>
+    <form method="post"
+          th:action="@{|/api/actions/${compensationConfirmation.originalActionPublicId}/remove-protection|}">
+        <input type="hidden" name="compensationIntent"
+               th:value="${compensationConfirmation.intent}">
+        <input type="hidden" name="account"
+               th:value="${compensationConfirmation.accountId}">
+        <fieldset>
+            <legend>When should TidyMail run this action?</legend>
+            <label><input type="radio" name="executionMode" value="STAGED" checked>
+                Stage for Review</label>
+            <label><input type="radio" name="executionMode" value="IMMEDIATE">
+                Run after this confirmation</label>
+        </fieldset>
+        <label><input type="checkbox" name="immediateAcknowledged" value="true">
+            I understand this action will start after the same preflight completes.
+        </label>
+        <button type="submit">Create remove-protection action</button>
+    </form>
+</section>
+<section th:fragment="result" id="compensation-result" aria-live="polite"
+         aria-labelledby="compensation-result-heading">
+    <h2 id="compensation-result-heading" tabindex="-1">Remove-protection outcome</h2>
+    <p th:text="|A new ${compensationResult.mode} remove-protection action was created with status ${compensationResult.status}.|">
+        Compensation result
+    </p>
+</section>
+</body>
+</html>

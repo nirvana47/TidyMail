@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+    <body>
+        <th:block th:if="${#lists.isEmpty(items)}">
+            <div class="empty-state empty-reply-zero">All caught up! Nothing waiting for reply.</div>
+        </th:block>
+        <th:block th:unless="${#lists.isEmpty(items)}">
+            <div th:each="item : ${items}" class="rz-card">
+                <div class="rz-card-header">
+                    <div>
+                        <div class="rz-from">
+                            <th:block th:if="${item.fromDisplayName() != null and !item.fromDisplayName().isEmpty()}">
+                                <span th:text="${item.fromDisplayName()}">Display Name</span>
+                            </th:block>
+                            <th:block th:unless="${item.fromDisplayName() != null and !item.fromDisplayName().isEmpty()}">
+                                <span th:text="${item.fromAddress()}">from@example.com</span>
+                            </th:block>
+                        </div>
+                    </div>
+                    <span class="rz-age" th:text="${item.ageDays() + 'd'}">3d</span>
+                </div>
+                <div class="rz-subject" th:text="${item.subject()}">Re: Project update</div>
+                <div class="rz-meta">
+                    <span th:text="${item.participantCount() + ' participants'}">2 participants</span>
+                    <span class="bulkSender" th:if="${item.bulkSender()}">Bulk</span>
+                </div>
+            </div>
+        </th:block>
+    </body>
+</html>

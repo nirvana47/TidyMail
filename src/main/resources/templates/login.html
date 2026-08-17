@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>TidyMail — Sign in</title>
+        <style>
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: #0f172a; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; color: #1a202c; }
+            .shell { width: min(100%, 980px); display: grid; grid-template-columns: 1.15fr 0.85fr; overflow: hidden; border-radius: 24px; background: white; box-shadow: 0 30px 90px rgba(15, 23, 42, 0.35); }
+            .intro { padding: 56px 52px; color: #e2e8f0; background: radial-gradient(circle at 15% 10%, #4f46e5 0, transparent 43%), linear-gradient(145deg, #172554, #0f172a 72%); }
+            .eyebrow { display: inline-flex; padding: 6px 10px; border-radius: 999px; background: rgba(255,255,255,0.12); color: #c7d2fe; font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+            .intro h1 { color: white; font-size: clamp(32px, 4vw, 46px); letter-spacing: -0.04em; margin: 20px 0 16px; }
+            .intro-copy { max-width: 460px; color: #cbd5e1; font-size: 17px; line-height: 1.6; }
+            .promise-list { display: grid; gap: 16px; margin-top: 36px; list-style: none; }
+            .promise-list li { display: grid; grid-template-columns: 30px 1fr; gap: 12px; font-size: 14px; line-height: 1.45; color: #cbd5e1; }
+            .promise-icon { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; background: rgba(129, 140, 248, 0.22); color: #c7d2fe; font-weight: 700; }
+            .card { padding: 48px 40px; width: 100%; }
+            .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 42px; }
+            .brand-logo { width: 40px; height: 40px; border-radius: 10px; background: linear-gradient(135deg, #4f46e5, #7c3aed); display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 20px; letter-spacing: -0.5px; }
+            .brand-name { font-size: 22px; font-weight: 700; color: #111827; }
+            h1 { font-size: 26px; font-weight: 700; color: #111827; margin-bottom: 8px; line-height: 1.2; }
+            .subtitle { font-size: 14px; color: #6b7280; margin-bottom: 32px; line-height: 1.5; }
+            .providers { display: flex; flex-direction: column; gap: 12px; }
+            .oauth-btn { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; padding: 14px 20px; border-radius: 10px; border: 1px solid #e5e7eb; background: white; font-size: 15px; font-weight: 600; color: #111827; cursor: pointer; text-decoration: none; transition: all 0.15s ease; }
+            .oauth-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); border-color: #d1d5db; }
+            .oauth-btn.google { border-color: #dadce0; }
+            .oauth-btn.google:hover { border-color: #c1c6cc; background: #fafafa; }
+            .oauth-btn.microsoft { background: #0078d4; color: white; border-color: #0078d4; }
+            .oauth-btn.microsoft:hover { background: #106ebe; border-color: #106ebe; }
+            .oauth-icon { width: 22px; height: 22px; flex-shrink: 0; }
+            .warning { background: #fff7ed; border-left: 4px solid #f59e0b; padding: 16px; border-radius: 8px; margin-bottom: 24px; }
+            .warning-title { font-weight: 700; color: #92400e; margin-bottom: 6px; font-size: 14px; }
+            .warning-text { font-size: 13px; color: #78350f; line-height: 1.5; }
+            .warning-text code { background: #fef3c7; padding: 2px 6px; border-radius: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+            .divider { height: 1px; background: #e5e7eb; margin: 28px 0; }
+            .privacy-note { font-size: 12px; color: #64748b; text-align: left; line-height: 1.6; }
+            .privacy-note strong { color: #334155; }
+            @media (max-width: 720px) { body { padding: 0; } .shell { min-height: 100vh; border-radius: 0; grid-template-columns: 1fr; } .intro { padding: 40px 28px; } .card { padding: 36px 28px; } .promise-list { margin-top: 24px; } }
+            @media (max-width: 480px) { .intro h1 { font-size: 31px; } .card { padding: 28px 20px; } h1 { font-size: 22px; } }
+        </style>
+    </head>
+    <body>
+        <main class="shell">
+            <section class="intro">
+                <span class="eyebrow">Inbox cleanup, on your terms</span>
+                <h1>Clear the mail you no longer need.</h1>
+                <p class="intro-copy">TidyMail groups your inbox by sender so you can make deliberate, high-impact cleanup decisions without an AI deciding what matters to you.</p>
+                <ul class="promise-list">
+                    <li><span class="promise-icon">1</span><span><strong>See the pattern.</strong><br>Review senders, message counts, and clear signals before choosing anything.</span></li>
+                    <li><span class="promise-icon">2</span><span><strong>Build a review list.</strong><br>Actions stay queued until you review and apply them together.</span></li>
+                    <li><span class="promise-icon">3</span><span><strong>Keep control.</strong><br>TidyMail reads only the headers it needs to organize your inbox, never message bodies.</span></li>
+                </ul>
+            </section>
+            <section class="card">
+                <div class="brand">
+                    <div class="brand-logo">TM</div>
+                    <div class="brand-name">TidyMail</div>
+                </div>
+            <h1>Welcome to TidyMail</h1>
+            <p class="subtitle">Connect your inbox to see sender groups and prepare a cleanup review.</p>
+
+            <div class="warning" th:if="${!googleAvailable and !microsoftAvailable}">
+                <div class="warning-title">⚠ No sign-in options are available right now</div>
+                <div class="warning-text">OAuth provider credentials have not been filled in. Open <code>.env.example</code> for instructions, copy it to <code>.env</code>, and fill in <code>GOOGLE_CLIENT_ID</code> / <code>GOOGLE_CLIENT_SECRET</code> for Gmail or <code>MICROSOFT_CLIENT_ID</code> / <code>MICROSOFT_CLIENT_SECRET</code> for Outlook. Then restart the app.</div>
+            </div>
+
+            <div class="providers">
+                <a class="oauth-btn google" th:href="@{/oauth2/authorization/google}" th:if="${googleAvailable}">
+                    <svg class="oauth-icon" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+                        <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.8 32.4 29.4 35.5 24 35.5c-6.4 0-11.5-5.1-11.5-11.5S17.6 12.5 24 12.5c2.9 0 5.6 1.1 7.6 2.9l5.7-5.7C33.7 6.4 29.1 4.5 24 4.5 13.2 4.5 4.5 13.2 4.5 24S13.2 43.5 24 43.5c11.2 0 20-7.7 21.7-17.6L46.5 24l-2.9-3.5z"/>
+                        <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 16 19 12.5 24 12.5c2.9 0 5.6 1.1 7.6 2.9l5.7-5.7C33.7 6.4 29.1 4.5 24 4.5 16.3 4.5 9.6 8.9 6.3 14.7z"/>
+                        <path fill="#4CAF50" d="M24 43.5c5.1 0 9.6-1.9 13-5l-6-4.9c-2 1.4-4.4 2.2-7 2.2-5.4 0-9.8-3.1-11.3-7.5L6.1 33C9.4 39.1 16.2 43.5 24 43.5z"/>
+                        <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4-4 5.3l6 4.9c-.4.4 6.5-4.7 6.5-14.2 0-1.3-.1-2.5-.2-3.5z"/>
+                    </svg>
+                    <span>Continue with Google</span>
+                </a>
+
+                <a class="oauth-btn microsoft" th:href="@{/oauth2/authorization/microsoft}" th:if="${microsoftAvailable}">
+                    <svg class="oauth-icon" viewBox="0 0 23 23" xmlns="http://www.w3.org/2000/svg">
+                        <path fill="#F25022" d="M1 1h10v10H1z"/>
+                        <path fill="#7FBA00" d="M12 1h10v10H12z"/>
+                        <path fill="#00A4EF" d="M1 12h10v10H1z"/>
+                        <path fill="#FFB900" d="M12 12h10v10H12z"/>
+                    </svg>
+                    <span>Continue with Microsoft Outlook</span>
+                </a>
+            </div>
+
+            <div class="divider" th:if="${googleAvailable or microsoftAvailable}"></div>
+            <p class="privacy-note" th:if="${googleAvailable or microsoftAvailable}">
+                <strong>Your mail stays yours.</strong> TidyMail never downloads email bodies. It uses sender and delivery headers to organize the inbox, and encrypts connection tokens before storing them locally.
+            </p>
+            </section>
+        </main>
+    </body>
+</html>

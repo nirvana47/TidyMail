@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TidyMail - Review actions</title>
+    <link rel="stylesheet" th:href="@{/static/css/workspace.css}">
+    <style>
+        .review-table { min-width: 760px; }
+        .review-row-controls details { position: relative; }
+        .review-row-controls summary {
+            min-width: 34px; min-height: 34px; cursor: pointer;
+            font-size: 18px; text-align: center;
+        }
+        .review-more[open], .review-confirmation-warning,
+        .email-distribution li {
+            padding: var(--space-2); border: 1px solid var(--tm-border);
+            border-radius: var(--radius-sm); background: var(--tm-surface);
+        }
+        .review-more a, .review-more form { display: block; margin-top: var(--space-1); }
+        .review-undo-button {
+            border-color: #d97706; background: #fff7ed; color: #9a3412;
+        }
+        .review-confirmation-warning {
+            border-color: var(--tm-warning); background: var(--tm-warning-soft);
+        }
+        .review-confirmation-warning.destructive {
+            border-color: var(--tm-danger); background: var(--tm-danger-soft);
+        }
+        .review-confirmation-warning h3, .review-confirmation-warning p { margin: 0; }
+    </style>
+</head>
+<body>
+<a class="skip-link" href="#workspace-main">Skip to workspace content</a>
+<div th:replace="~{fragments/workspace-nav :: nav(${workspace})}"></div>
+<div class="workspace-shell">
+      <div th:replace="~{fragments/workspace-rail :: rail(${workspace})}"></div>
+    <main id="workspace-main">
+        <header class="page-header">
+            <div class="page-title-stack">
+                <p class="eyebrow">Approval and action history</p>
+                <h1>Review</h1>
+            </div>
+            <span class="page-help" tabindex="0"
+                  aria-label="How Review approval works"
+                  aria-describedby="review-page-help">
+                <sup class="page-help-icon" aria-hidden="true">?</sup>
+                <span id="review-page-help" class="page-help-tooltip" role="tooltip">
+                    Review preserves exact counts, conflict checks, and delete warnings before approved actions run.
+                </span>
+            </span>
+        </header>
+
+        <nav class="review-views" aria-label="Review views">
+            <a th:href="@{/review(view='queued',account=${workspace.selectedAccountQuery})}"
+               th:attr="aria-current=${history == null ? 'page' : null}">Queue</a>
+            <a th:href="@{/review(view='history',account=${workspace.selectedAccountQuery})}"
+               th:attr="aria-current=${history != null ? 'page' : null}">History</a>
+        </nav>
+
+        <th:block th:if="${history == null && confirmation != null}">
+            <div th:replace="~{fragments/review-confirmation-frag :: confirmation(${confirmation})}"></div>
+        </th:block>
+        <th:block th:if="${history == null && unsubscribeConfirmation != null}">
+            <div th:replace="~{fragments/review-confirmation-frag :: unsubscribeConfirmation(${unsubscribeConfirmation})}"></div>
+        </th:block>
+        <th:block th:if="${history == null && conflict != null}">
+            <div th:replace="~{fragments/review-conflict-frag :: conflict(${conflict}, ${page})}"></div>
+        </th:block>
+        <th:block th:if="${history == null && receipt != null}">
+            <div th:replace="~{fragments/review-outcome-frag :: outcome(${receipt})}"></div>
+        </th:block>
+
+        <th:block th:if="${history == null}">
+            <div th:replace="~{fragments/review-queue-frag :: queue(${page})}"></div>
+            <div id="review-email-modal-slot" aria-live="polite">
+                <th:block th:if="${emailStats != null}">
+                    <div th:replace="~{fragments/email-stats-modal-frag :: modal(${emailStats})}"></div>
+                </th:block>
+            </div>
+        </th:block>
+        <th:block th:if="${history != null}">
+            <div th:replace="~{fragments/review-history-frag :: history(${history})}"></div>
+        </th:block>
+
+        <p class="privacy-note">Only approved message metadata is indexed. Bodies and attachments are never stored. Provider identifiers, destinations, and credentials are never rendered.</p>
+    </main>
+</div>
+</body>
+</html>

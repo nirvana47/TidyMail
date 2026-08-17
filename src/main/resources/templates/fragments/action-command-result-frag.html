@@ -1,0 +1,15 @@
+<section id="action-command-result"
+         xmlns:th="http://www.thymeleaf.org"
+         role="status"
+         aria-live="polite"
+         tabindex="-1">
+    <h2 th:if="${commandResult.mode.name() == 'STAGED'}">Exact scope staged for Review</h2>
+    <h2 th:if="${commandResult.mode.name() == 'IMMEDIATE'}">Execution outcome recorded</h2>
+    <p th:if="${commandResult.mode.name() == 'STAGED'}">
+        Nothing changed in the mailbox. Review the staged action before approval.
+    </p>
+    <p th:if="${commandResult.mode.name() == 'IMMEDIATE'}">
+        The same exact scope, preflight, reservation, and outcome ledger were used.
+    </p>
+    <a th:href="@{/review}">Open Review</a>
+</section>

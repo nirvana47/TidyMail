@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bulk Cleanup · TidyMail</title>
+    <style id="theme-vars">
+:root {
+  --tmux-background: #f4f6fb;
+  --tmux-foreground: #111827;
+  --tmux-card: #ffffff;
+  --tmux-card-foreground: #111827;
+  --tmux-popover: #ffffff;
+  --tmux-popover-foreground: #111827;
+  --tmux-primary: #3f5cff;
+  --tmux-primary-foreground: #ffffff;
+  --tmux-muted: #eef2ff;
+  --tmux-muted-foreground: #5b6478;
+  --tmux-border: #d9e0ee;
+  --tmux-input: #d9e0ee;
+  --tmux-ring: #3f5cff;
+  --tmux-radius-sm: 6px;
+  --tmux-radius-md: 10px;
+  --tmux-radius-lg: 16px;
+
+  --tmux-surface-2: #f8faff;
+  --tmux-surface-3: #e8eefc;
+  --tmux-text-soft: #6b7280;
+  --tmux-text-strong: #0f172a;
+  --tmux-success: #1f9d68;
+  --tmux-success-soft: #e8fbf3;
+  --tmux-warning: #b7791f;
+  --tmux-warning-soft: #fff6df;
+  --tmux-danger: #d14343;
+  --tmux-danger-soft: #fff0f0;
+  --tmux-info: #2f6ce5;
+  --tmux-info-soft: #ebf2ff;
+
+  --tmux-shadow-1: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.04);
+  --tmux-shadow-2: 0 18px 48px rgba(15, 23, 42, 0.10);
+
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "SFMono-Regular", ui-monospace, Menlo, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans);
+  background: var(--tmux-background);
+  color: var(--tmux-foreground);
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-background: var(--tmux-background);
+    --color-foreground: var(--tmux-foreground);
+    --color-card: var(--tmux-card);
+    --color-card-foreground: var(--tmux-card-foreground);
+    --color-popover: var(--tmux-popover);
+    --color-popover-foreground: var(--tmux-popover-foreground);
+    --color-primary: var(--tmux-primary);
+    --color-primary-foreground: var(--tmux-primary-foreground);
+    --color-muted: var(--tmux-muted);
+    --color-muted-foreground: var(--tmux-muted-foreground);
+    --color-border: var(--tmux-border);
+    --color-input: var(--tmux-input);
+    --color-ring: var(--tmux-ring);
+    --radius-sm: var(--tmux-radius-sm);
+    --radius-md: var(--tmux-radius-md);
+    --radius-lg: var(--tmux-radius-lg);
+  }
+  @layer base {
+    body { background: var(--tmux-background); color: var(--tmux-foreground); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style id="semantic-token-fallback">
+      .bg-background { background-color: var(--tmux-background); }
+      .text-background { color: var(--tmux-background); }
+      .border-background { border-color: var(--tmux-background); }
+      .ring-background { --tw-ring-color: var(--tmux-background); }
+      .bg-foreground { background-color: var(--tmux-foreground); }
+      .text-foreground { color: var(--tmux-foreground); }
+      .border-foreground { border-color: var(--tmux-foreground); }
+      .ring-foreground { --tw-ring-color: var(--tmux-foreground); }
+      .bg-card { background-color: var(--tmux-card); }
+      .text-card { color: var(--tmux-card); }
+      .border-card { border-color: var(--tmux-card); }
+      .ring-card { --tw-ring-color: var(--tmux-card); }
+      .bg-card-foreground { background-color: var(--tmux-card-foreground); }
+      .text-card-foreground { color: var(--tmux-card-foreground); }
+      .border-card-foreground { border-color: var(--tmux-card-foreground); }
+      .ring-card-foreground { --tw-ring-color: var(--tmux-card-foreground); }
+      .bg-popover { background-color: var(--tmux-popover); }
+      .text-popover { color: var(--tmux-popover); }
+      .border-popover { border-color: var(--tmux-popover); }
+      .ring-popover { --tw-ring-color: var(--tmux-popover); }
+      .bg-popover-foreground { background-color: var(--tmux-popover-foreground); }
+      .text-popover-foreground { color: var(--tmux-popover-foreground); }
+      .border-popover-foreground { border-color: var(--tmux-popover-foreground); }
+      .ring-popover-foreground { --tw-ring-color: var(--tmux-popover-foreground); }
+      .bg-primary { background-color: var(--tmux-primary); }
+      .text-primary { color: var(--tmux-primary); }
+      .border-primary { border-color: var(--tmux-primary); }
+      .ring-primary { --tw-ring-color: var(--tmux-primary); }
+      .bg-primary-foreground { background-color: var(--tmux-primary-foreground); }
+      .text-primary-foreground { color: var(--tmux-primary-foreground); }
+      .border-primary-foreground { border-color: var(--tmux-primary-foreground); }
+      .ring-primary-foreground { --tw-ring-color: var(--tmux-primary-foreground); }
+      .bg-muted { background-color: var(--tmux-muted); }
+      .text-muted { color: var(--tmux-muted); }
+      .border-muted { border-color: var(--tmux-muted); }
+      .ring-muted { --tw-ring-color: var(--tmux-muted); }
+      .bg-muted-foreground { background-color: var(--tmux-muted-foreground); }
+      .text-muted-foreground { color: var(--tmux-muted-foreground); }
+      .border-muted-foreground { border-color: var(--tmux-muted-foreground); }
+      .ring-muted-foreground { --tw-ring-color: var(--tmux-muted-foreground); }
+      .bg-border { background-color: var(--tmux-border); }
+      .text-border { color: var(--tmux-border); }
+      .border-border { border-color: var(--tmux-border); }
+      .ring-border { --tw-ring-color: var(--tmux-border); }
+      .bg-input { background-color: var(--tmux-input); }
+      .text-input { color: var(--tmux-input); }
+      .border-input { border-color: var(--tmux-input); }
+      .ring-input { --tw-ring-color: var(--tmux-input); }
+      .bg-ring { background-color: var(--tmux-ring); }
+      .text-ring { color: var(--tmux-ring); }
+      .border-ring { border-color: var(--tmux-ring); }
+      .ring-ring { --tw-ring-color: var(--tmux-ring); }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+  /* Typography tuning: compact, lighter, still readable. */
+  body { font-size: 14px; }
+  h1 { font-weight: 680; letter-spacing: -0.025em; }
+  .brand-title,
+  .category-title strong,
+  .sender-name,
+  .toolbar-copy strong,
+  .sender-stat,
+  .sender-count {
+    font-weight: 660;
+  }
+  .table-head,
+  .sender-list-head,
+  .email-table-head,
+  .rail-label,
+  .page-label {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: .055em;
+  }
+  .helper,
+  .note,
+  .sync-banner,
+  .toolbar-copy span,
+  .sender-meta,
+  .category-title span {
+    font-size: 13px;
+  }
+  .nav-link,
+  .rail-button {
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .button,
+  .filter-pill,
+  .action-button,
+  .plain-button,
+  .more-button {
+    font-weight: 660;
+  }
+
+  .more-button {
+    display: inline-grid;
+    place-items: center;
+    padding: 0;
+    line-height: normal;
+  }
+
+    </style>
+</head>
+<body>
+  <div class="app-shell" data-viewport-mode="app-shell">
+    <aside class="left-rail" aria-label="TidyMail navigation">
+      <div class="brand-row">
+        <div class="brand-mark">T</div>
+        <div>
+          <h2 class="brand-title">TidyMail</h2>
+          <p class="brand-subtitle">Inbox cleanup</p>
+        </div>
+      </div>
+
+      <div class="rail-account" aria-label="Email account selector">
+        <label for="rail-account-select">Email account</label>
+        <select id="rail-account-select">
+          <option>All my connected emails</option>
+          <option>personal@gmail.com</option>
+          <option>work@company.com</option>
+          <option>old-account@gmail.com</option>
+          <option data-dom-id="rail-add-new-account">Add new account</option>
+        </select>
+      </div>
+
+      <nav aria-label="Primary">
+        <p class="rail-label">Cleanup</p>
+        <div class="nav-stack">
+          <a class="nav-link active" data-dom-id="nav-senders" href="./by-sender-compact-suite.html" aria-current="page">Bulk Archive/Delete</a>
+          <a class="nav-link" data-dom-id="nav-unread" href="./unread-compact-suite.html">Unread Only</a>
+          <a class="nav-link" data-dom-id="nav-unsub" href="./unsubscribe-compact-suite.html">Bulk Unsubscribe</a>
+        </div>
+      </nav>
+
+      <nav aria-label="Manage">
+        <p class="rail-label">Manage</p>
+        <div class="nav-stack">
+          <a class="nav-link" data-dom-id="nav-review" href="./review-timeline-compact-suite.html">Review</a>
+          <a class="nav-link" data-dom-id="nav-analytics" href="./analytics-compact-suite.html">Analytics</a>
+        </div>
+      </nav>
+
+      <div class="rail-footer">
+        <div class="rail-session">
+          <button class="rail-button" type="button" data-dom-id="rail-logout-menu-button" aria-haspopup="menu" aria-expanded="false">Logout</button>
+        </div>
+        <a class="rail-button" href="mailto:feedback@example.com">Feedback</a>
+        <button class="rail-button" type="button">Collapse rail</button>
+      </div>
+    </aside>
+
+    <main class="workspace overflow-y-auto" data-scroll-region="primary">
+      <div class="content">
+        <section class="topbar" aria-label="Page header">
+          <div>
+            <p class="page-label">Inbox Zero Cleanup</p>
+            <h1>Bulk Archive/Delete</h1>
+            <p class="helper">Open a category, scan the senders, and clean up the ones you no longer want in your inbox.</p>
+          </div>
+        </section>
+
+        <!-- BUILD CONTRACT:
+          Render this banner only while a sync/index job is actually active.
+          Hide it completely when loading is complete or no sync job is running.
+          Exact loaded count must come from local sync records.
+          If category/email sizes cannot be calculated from Gmail message.sizeEstimate, hide size values or label them as estimated.
+          Do not show total/percent unless the backend has a reliable denominator.
+          UI may refresh local sync status every 5s; do not poll Gmail every 5s.
+        -->
+        <a class="sync-banner" data-dom-id="sync-analytics" href="./analytics-compact-suite.html" aria-label="View loading progress in Analytics" data-build-contract="conditional-active-sync-only">
+          <strong>Mail is still loading.</strong>
+          <span>Loaded 14,604 messages. Last updated 10:42 AM.</span>
+          <span class="sync-link">View progress</span>
+        </a>
+
+        <section class="toolbar" aria-label="Category controls">
+          <div class="toolbar-copy">
+            <strong>Current action: Bulk archive</strong>
+            <span>The sender button label changes with Settings, but the attention color stays the same.</span>
+          </div>
+          <div class="page-actions">
+            <button class="button primary" type="button">Settings</button>
+            <button class="button" type="button">Expand all</button>
+          </div>
+        </section>
+
+        <section class="categories" aria-label="Sender categories">
+          <article class="category accent-marketing">
+            <button class="category-toggle" type="button" aria-expanded="false">
+              <span class="category-title">
+                <strong>Marketing</strong>
+                <span>Promotions, lifecycle emails, shopping updates</span>
+              </span>
+              <span class="category-meta">
+                <span class="sender-count">84 senders</span>
+                <span class="category-size">About 2.4 GB</span>
+                <span class="chevron">›</span>
+              </span>
+            </button>
+          </article>
+
+          <article class="category open accent-newsletters">
+            <button class="category-toggle" type="button" aria-expanded="true">
+              <span class="category-title">
+                <strong>Newsletters</strong>
+                <span>Recurring digests, publication lists, content subscriptions</span>
+              </span>
+              <span class="category-meta">
+                <span class="sender-count">51 senders</span>
+                <span class="category-size">About 860 MB</span>
+                <span class="chevron">›</span>
+              </span>
+            </button>
+            <div class="category-body">
+              <div class="table-head">
+                <span>Sender</span>
+                <span>Emails</span>
+                <span>Size</span>
+                <span>Domains</span>
+                <span>Action</span>
+              </div>
+              <div class="sender-row">
+                <div class="sender-name">Morning Product Brief <span>newsletter@productbrief.example</span></div>
+                <div class="sender-meta">184</div>
+                <div class="sender-meta">142 MB</div>
+                <div class="sender-meta">productbrief.example</div>
+                <button class="action-button" type="button">Archive</button>
+              </div>
+              <div class="sender-row">
+                <div class="sender-name">Design Weekly <span>hello@designweekly.example</span></div>
+                <div class="sender-meta">96</div>
+                <div class="sender-meta">58 MB</div>
+                <div class="sender-meta">designweekly.example</div>
+                <button class="action-button" type="button">Archive</button>
+              </div>
+              <div class="sender-row">
+                <div class="sender-name">Finance Digest <span>digest@finance.example</span></div>
+                <div class="sender-meta">63</div>
+                <div class="sender-meta">41 MB</div>
+                <div class="sender-meta">finance.example</div>
+                <button class="action-button" type="button">Archive</button>
+              </div>
+            </div>
+          </article>
+
+          <article class="category accent-notifications">
+            <button class="category-toggle" type="button" aria-expanded="false">
+              <span class="category-title">
+                <strong>Notifications</strong>
+                <span>System alerts, product notifications, workflow updates</span>
+              </span>
+              <span class="category-meta">
+                <span class="sender-count">112 senders</span>
+                <span class="category-size">About 1.1 GB</span>
+                <span class="chevron">›</span>
+              </span>
+            </button>
+          </article>
+
+          <article class="category accent-receipts">
+            <button class="category-toggle" type="button" aria-expanded="false">
+              <span class="category-title">
+                <strong>Receipts</strong>
+                <span>Orders, invoices, billing confirmations</span>
+              </span>
+              <span class="category-meta">
+                <span class="sender-count">39 senders</span>
+                <span class="category-size">About 420 MB</span>
+                <span class="chevron">›</span>
+              </span>
+            </button>
+          </article>
+
+          <article class="category accent-user">
+            <button class="category-toggle" type="button" aria-expanded="false">
+              <span class="category-title">
+                <strong>Travel</strong>
+                <span>Grouped from Other after review <em class="badge">User generated</em></span>
+              </span>
+              <span class="category-meta">
+                <span class="sender-count">8 senders</span>
+                <span class="category-size">About 210 MB</span>
+                <span class="chevron">›</span>
+              </span>
+            </button>
+          </article>
+
+          <article class="category open accent-other">
+            <button class="category-toggle" type="button" aria-expanded="true">
+              <span class="category-title">
+                <strong>Other</strong>
+                <span>Pick senders here, then move them or create a new category</span>
+              </span>
+              <span class="category-meta">
+                <span class="sender-count">27 senders</span>
+                <span class="category-size">Size pending</span>
+                <span class="chevron">›</span>
+              </span>
+            </button>
+            <div class="category-body">
+              <div class="table-head">
+                <span>Select</span>
+                <span>Sender</span>
+                <span>Emails</span>
+                <span>Size</span>
+                <span>Domains</span>
+                <span>Action</span>
+              </div>
+              <div class="sender-row selectable-row">
+                <label class="select-box"><input type="checkbox" checked aria-label="Select Travel Alerts"></label>
+                <div class="sender-name">Travel Alerts <span>alerts@travelco.example</span></div>
+                <div class="sender-meta">38</div>
+                <div class="sender-meta">Size pending</div>
+                <div class="sender-meta">travelco.example</div>
+                <button class="action-button" type="button">Archive</button>
+              </div>
+              <div class="sender-row selectable-row">
+                <label class="select-box"><input type="checkbox" checked aria-label="Select Local Services"></label>
+                <div class="sender-name">Local Services <span>updates@local.example</span></div>
+                <div class="sender-meta">21</div>
+                <div class="sender-meta">Size pending</div>
+                <div class="sender-meta">local.example</div>
+                <button class="action-button" type="button">Archive</button>
+              </div>
+              <div class="other-tools" aria-label="Other category grouping tools">
+                <p>Select senders first, then choose where they belong.</p>
+                <div class="other-actions">
+                  <button class="button" type="button">Move selected</button>
+                  <button class="button" type="button">Create category</button>
+                </div>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section class="note" aria-label="Implementation note">
+          Size values are optional implementation data. Show them only when the backend can calculate reliable or clearly estimated message size totals from indexed Gmail metadata.
+        </section>
+      </div>
+    </main>
+
+    <section class="modal-overlay" aria-label="Move selected senders modal example">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="move-modal-title">
+        <p class="modal-kicker">Other</p>
+        <h2 id="move-modal-title">Move 2 selected senders</h2>
+        <p class="modal-copy">Choose an existing category or create a new one. New categories appear below the closest predefined category with a “User generated” label.</p>
+        <label class="modal-field">
+          Move to
+          <select>
+            <option>Receipts</option>
+            <option>Marketing</option>
+            <option>Newsletters</option>
+            <option>Notifications</option>
+          </select>
+        </label>
+        <div class="new-category-row">
+          <input type="text" value="Travel" aria-label="New category name">
+          <span class="badge">User generated</span>
+        </div>
+        <p class="modal-safe-note">Category names must be validated, escaped, and stored as plain text before display.</p>
+        <div class="modal-actions">
+          <button class="button" type="button">Cancel</button>
+          <button class="button primary" type="button">Move senders</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    if (window.lucide) window.lucide.createIcons();
+  </script>
+
+    <style id="critical-layout">
+    :root { --rail-width: 248px; --content-max: 1060px; }
+    .app-shell {
+      display: grid;
+      grid-template-columns: var(--rail-width) minmax(0, 1fr);
+      height: 100vh;
+      background: linear-gradient(180deg, #f9fbff 0%, var(--tmux-background) 48%);
+    }
+    .left-rail {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      padding: 20px 14px;
+      border-right: 1px solid var(--tmux-border);
+      background: rgba(255, 255, 255, 0.9);
+    }
+    .brand-row,
+    .nav-link,
+    .rail-button,
+    .topbar,
+    .category-toggle,
+    .category-meta,
+    .sender-row,
+    .page-actions,
+    .sync-banner {
+      display: flex;
+      align-items: center;
+    }
+    .brand-row { gap: 10px; padding: 2px 6px 8px; }
+    .brand-mark {
+      width: 32px;
+      height: 32px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+      background: var(--tmux-primary);
+      color: var(--tmux-primary-foreground);
+      font-weight: 720;
+    }
+    .brand-title { margin: 0; font-size: 13.5px; line-height: 1.1; color: var(--tmux-text-strong); }
+    .brand-subtitle,
+    .rail-label,
+    .page-label,
+    .helper,
+    .sync-banner,
+    .note,
+    .category-size,
+    .sender-meta,
+    .table-head {
+      color: var(--tmux-text-soft);
+    }
+    .brand-subtitle { margin: 2px 0 0; font-size: 12px; }
+    .rail-label {
+      margin: 0 0 7px;
+      padding: 0 8px;
+      font-size: 11px;
+      font-weight: 720;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .nav-stack { display: grid; gap: 3px; }
+    .nav-link {
+      justify-content: space-between;
+      min-height: 38px;
+      padding: 0 10px;
+      border-radius: 9px;
+      color: var(--tmux-text-soft);
+      text-decoration: none;
+      font-size: 13.5px;
+      font-weight: 600;
+    }
+    .nav-link.active {
+      color: var(--tmux-primary);
+      background: #eff6ff;
+    }
+    .rail-footer { margin-top: auto; display: grid; gap: 6px; }
+    .rail-session { position: relative; display: grid; }
+    .rail-account {
+      display: grid;
+      gap: 6px;
+      padding: 10px;
+      border: 1px solid var(--tmux-border);
+      border-radius: 12px;
+      background: #fff;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .rail-account label {
+      color: var(--tmux-text-soft);
+      font-size: 11px;
+      font-weight: 720;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+    .rail-button {
+      gap: 8px;
+      padding: 9px 10px;
+      border: 0;
+      border-radius: 9px;
+      background: transparent;
+      color: var(--tmux-text-soft);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .workspace {
+      height: 100vh;
+      overflow-y: auto;
+      padding: 28px 36px 40px;
+    }
+    .content { max-width: var(--content-max); margin: 0 auto; display: grid; gap: 18px; }
+    .topbar { justify-content: space-between; gap: 20px; }
+    .page-label {
+      margin: 0 0 8px;
+      font-size: 12px;
+      font-weight: 720;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    h1 { margin: 0; color: var(--tmux-text-strong); font-size: 28px; line-height: 1.08; letter-spacing: -0.035em; }
+    .helper { margin: 8px 0 0; max-width: 650px; font-size: 13.5px; line-height: 1.55; }
+    .account-select {
+      display: grid;
+      gap: 6px;
+      min-width: 240px;
+    }
+    .account-select label { color: var(--tmux-text-soft); font-size: 12px; font-weight: 680; }
+    select {
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      height: 38px;
+      padding: 0 34px 0 12px;
+      border: 1px solid var(--tmux-border);
+      border-radius: 9px;
+      background: white;
+      color: var(--tmux-text-strong);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .sync-banner {
+      gap: 10px;
+      justify-content: space-between;
+      padding: 11px 14px;
+      border: 1px solid var(--tmux-border);
+      border-radius: 12px;
+      background: #fff;
+      font-size: 13px;
+      line-height: 1.45;
+      text-decoration: none;
+    }
+    .sync-banner strong { color: var(--tmux-text-strong); }
+    .sync-link {
+      margin-left: auto;
+      color: var(--tmux-primary);
+      font-weight: 720;
+      white-space: nowrap;
+    }
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 16px;
+      border: 1px solid var(--tmux-border);
+      border-radius: var(--tmux-radius-lg);
+      background: var(--tmux-card);
+      box-shadow: var(--tmux-shadow-1);
+    }
+    .toolbar-copy { display: grid; gap: 4px; }
+    .toolbar-copy strong { color: var(--tmux-text-strong); font-size: 13.5px; }
+    .toolbar-copy span { color: var(--tmux-text-soft); font-size: 13px; }
+    .page-actions { gap: 10px; align-self: start; }
+    .button {
+      min-height: 38px;
+      padding: 0 13px;
+      border: 1px solid var(--tmux-border);
+      border-radius: 9px;
+      background: #fff;
+      color: var(--tmux-text-strong);
+      font-weight: 680;
+      cursor: pointer;
+    }
+    .button.primary {
+      border-color: var(--tmux-primary);
+      background: var(--tmux-primary);
+      color: var(--tmux-primary-foreground);
+    }
+    .categories { display: grid; gap: 12px; }
+    .category {
+      position: relative;
+      border: 1px solid var(--tmux-border);
+      border-radius: var(--tmux-radius-lg);
+      background: var(--category-bg, var(--tmux-card));
+      box-shadow: var(--tmux-shadow-1);
+      overflow: hidden;
+    }
+    .category::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 4px;
+      background: var(--category-accent, var(--tmux-primary));
+    }
+    .accent-marketing { --category-accent: #ea580c; --category-bg: linear-gradient(90deg, rgba(251, 146, 60, 0.18), #fff 28%); }
+    .accent-newsletters { --category-accent: #2563eb; --category-bg: linear-gradient(90deg, rgba(96, 165, 250, 0.18), #fff 28%); }
+    .accent-notifications { --category-accent: #0f766e; --category-bg: linear-gradient(90deg, rgba(45, 212, 191, 0.18), #fff 28%); }
+    .accent-receipts { --category-accent: #e11d48; --category-bg: linear-gradient(90deg, rgba(251, 113, 133, 0.16), #fff 28%); }
+    .accent-user { --category-accent: #0284c7; --category-bg: linear-gradient(90deg, rgba(56, 189, 248, 0.16), #fff 28%); }
+    .accent-other { --category-accent: #475569; --category-bg: linear-gradient(90deg, rgba(148, 163, 184, 0.18), #fff 28%); }
+    .category-toggle {
+      width: 100%;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 18px 18px;
+      border: 0;
+      background: transparent;
+      cursor: pointer;
+      text-align: left;
+    }
+    .category.open .category-toggle {
+      background: linear-gradient(90deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.88));
+    }
+    .category-title { display: grid; gap: 4px; }
+    .category-title strong { color: var(--tmux-text-strong); font-size: 16px; }
+    .category-title span { color: var(--tmux-text-soft); font-size: 13px; }
+    .category-meta { gap: 18px; white-space: nowrap; }
+    .sender-count { color: var(--tmux-text-strong); font-weight: 720; }
+    .category-size { font-size: 13px; }
+    .chevron { color: var(--tmux-text-subtle); font-size: 16px; }
+    .category.open .chevron { transform: rotate(90deg); }
+    .category-body { display: none; border-top: 1px solid var(--tmux-border); background: #fcfdff; }
+    .category.open .category-body { display: block; }
+    .table-head,
+    .sender-row {
+      display: grid;
+      grid-template-columns: minmax(220px, 1.4fr) 110px 110px minmax(180px, 1fr) 132px;
+      gap: 14px;
+      align-items: center;
+      padding: 12px 18px;
+    }
+    .table-head {
+      background: #f8fafc;
+      font-size: 11px;
+      font-weight: 720;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+    .sender-row { border-top: 1px solid var(--tmux-border); }
+    .selectable-row,
+    .accent-other .table-head {
+      grid-template-columns: 54px minmax(220px, 1.4fr) 90px 110px minmax(160px, 1fr) 132px;
+    }
+    .select-box {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .select-box input {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--tmux-primary);
+    }
+    .sender-name { display: grid; gap: 3px; color: var(--tmux-text-strong); font-weight: 680; }
+    .sender-name span { color: var(--tmux-text-soft); font-size: 13px; font-weight: 500; }
+    .sender-meta { font-size: 13px; }
+    .action-button {
+      min-height: 34px;
+      border: 1px solid #c2410c;
+      border-radius: 8px;
+      background: linear-gradient(180deg, #f97316, #ea580c);
+      color: #fff;
+      font-weight: 680;
+      box-shadow: 0 8px 16px rgba(234, 88, 12, 0.20);
+    }
+    .other-tools {
+      display: grid;
+      gap: 10px;
+      padding: 14px 18px 18px;
+      border-top: 1px solid var(--tmux-border);
+      background: #fff;
+    }
+    .other-tools p { margin: 0; color: var(--tmux-text-soft); font-size: 13px; line-height: 1.5; }
+    .other-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      margin-left: 6px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: #e0f2fe;
+      color: #0369a1;
+      font-size: 11px;
+      font-style: normal;
+      font-weight: 720;
+      letter-spacing: .02em;
+    }
+    .note {
+      padding: 13px 14px;
+      border: 1px dashed var(--tmux-border);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.72);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: rgba(15, 23, 42, 0.18);
+      pointer-events: none;
+    }
+    .modal-card {
+      width: min(460px, 100%);
+      display: grid;
+      gap: 14px;
+      padding: 22px;
+      border: 1px solid var(--tmux-border);
+      border-radius: 18px;
+      background: #fff;
+      box-shadow: 0 24px 70px rgba(15, 23, 42, 0.22);
+    }
+    .modal-kicker {
+      margin: 0;
+      color: var(--tmux-primary);
+      font-size: 12px;
+      font-weight: 680;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .modal-card h2 { margin: 0; color: var(--tmux-text-strong); font-size: 20px; letter-spacing: -.02em; }
+    .modal-copy { margin: 0; color: var(--tmux-text-soft); font-size: 13.5px; line-height: 1.55; }
+    .modal-field { display: grid; gap: 7px; color: var(--tmux-text-soft); font-size: 12px; font-weight: 720; }
+    .modal-safe-note { margin: 0; color: var(--tmux-text-soft); font-size: 12px; line-height: 1.5; }
+    .new-category-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+    }
+    .new-category-row input {
+      height: 38px;
+      padding: 0 12px;
+      border: 1px solid var(--tmux-border);
+      border-radius: 9px;
+      color: var(--tmux-text-strong);
+    }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
+    @media (max-width: 980px) {
+      body { overflow: auto; }
+      .app-shell { grid-template-columns: 1fr; height: auto; }
+      .left-rail { min-height: auto; border-right: 0; border-bottom: 1px solid var(--tmux-border); }
+      .workspace { height: auto; padding: 22px; }
+      .topbar, .toolbar { align-items: flex-start; flex-direction: column; }
+      .account-select { width: 100%; }
+      .table-head { display: none; }
+      .sender-row { grid-template-columns: 1fr; gap: 8px; }
+      .selectable-row { grid-template-columns: 1fr; }
+      .modal-overlay { position: static; background: transparent; pointer-events: auto; }
+    }
+  </style>
+</body>
+</html>

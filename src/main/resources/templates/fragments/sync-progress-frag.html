@@ -1,0 +1,28 @@
+<div xmlns:th="http://www.thymeleaf.org">
+    <div th:if="${progress == null or (progress.status != 'QUEUED' and progress.status != 'RUNNING' and progress.status != 'COMPLETE' and progress.status != 'PARTIAL' and progress.status != 'FAILED')}"
+         class="sync-never sync-badge" id="sync-never">Never run</div>
+
+    <div th:if="${progress != null and (progress.status == 'QUEUED' or progress.status == 'RUNNING')}"
+         class="sync-badge sync-running"
+         hx-trigger="every 15s"
+         hx-get="/sync-progress-frag"
+         hx-swap="outerHTML">Syncing&hellip;</div>
+
+    <div th:if="${progress != null and progress.status == 'COMPLETE'}"
+         class="sync-badge sync-success"
+         hx-trigger="every 15s"
+         hx-get="/sync-progress-frag"
+         hx-swap="outerHTML">Synced&nbsp;<span th:text="${progress.messagesScanned}">0</span>&nbsp;messages</div>
+
+    <div th:if="${progress != null and progress.status == 'PARTIAL'}"
+         class="sync-badge sync-running"
+         hx-trigger="every 15s"
+         hx-get="/sync-progress-frag"
+         hx-swap="outerHTML">Indexed&nbsp;<span th:text="${progress.messagesUpserted}">0</span>&nbsp;messages; more remain</div>
+
+    <div th:if="${progress != null and progress.status == 'FAILED'}"
+         class="sync-badge sync-failed"
+         hx-trigger="every 60s"
+         hx-get="/sync-progress-frag"
+         hx-swap="outerHTML">Last sync failed: <span th:text="${progress.errorMessage}">error</span></div>
+</div>

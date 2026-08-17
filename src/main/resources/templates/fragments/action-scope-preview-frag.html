@@ -1,0 +1,43 @@
+<div id="action-feedback-slot"
+     class="action-feedback"
+     role="status"
+     xmlns:th="http://www.thymeleaf.org">
+    <strong th:text="${preview.messageCount}">0</strong>
+    <span>messages selected for</span>
+    <span th:text="${#strings.toLowerCase(preview.actionType)}">archive</span>
+    <span>from</span>
+    <strong th:text="${preview.targetSummary.displayLabel}">sender@example.com</strong>.
+    <span th:if="${preview.riskSummary.protectedCount > 0}">
+        Protected messages:
+        <strong th:text="${preview.riskSummary.protectedCount}">0</strong>.
+    </span>
+    <span th:if="${preview.riskSummary.highRiskCount > 0}">
+        High risk:
+        <strong th:text="${preview.riskSummary.highRiskCount}">0</strong>.
+    </span>
+    <code th:text="|${preview.comparisonHash}...|">comparison hash</code>
+    <p>Both modes use this exact scope and the same safety checks.</p>
+    <form method="post"
+          th:action="@{/api/action-commands}"
+          th:attr="hx-post=@{/api/action-commands}"
+          hx-target="#action-feedback-slot"
+          hx-swap="outerHTML">
+        <input type="hidden" name="confirmation" th:value="${confirmationIntent}">
+        <fieldset>
+            <legend>When should TidyMail run this action?</legend>
+            <label>
+                <input type="radio" name="executionMode" value="STAGED" checked>
+                Stage for Review
+            </label>
+            <label>
+                <input type="radio" name="executionMode" value="IMMEDIATE">
+                Run after this confirmation
+            </label>
+        </fieldset>
+        <label>
+            <input type="checkbox" name="immediateAcknowledged" value="true">
+            I understand this action will start after the same preflight completes.
+        </label>
+        <button type="submit">Send exact scope to Review or confirm and run</button>
+    </form>
+</div>

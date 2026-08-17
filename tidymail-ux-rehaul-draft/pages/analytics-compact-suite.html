@@ -1,0 +1,1390 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TidyMail — Cleanup Analytics</title>
+    <style id="theme-vars">
+:root {
+  --tmux-background: #f4f6fb;
+  --tmux-foreground: #111827;
+  --tmux-card: #ffffff;
+  --tmux-card-foreground: #111827;
+  --tmux-popover: #ffffff;
+  --tmux-popover-foreground: #111827;
+  --tmux-primary: #3f5cff;
+  --tmux-primary-foreground: #ffffff;
+  --tmux-muted: #eef2ff;
+  --tmux-muted-foreground: #5b6478;
+  --tmux-border: #d9e0ee;
+  --tmux-input: #d9e0ee;
+  --tmux-ring: #3f5cff;
+  --tmux-radius-sm: 6px;
+  --tmux-radius-md: 10px;
+  --tmux-radius-lg: 16px;
+
+  --tmux-surface-2: #f8faff;
+  --tmux-surface-3: #e8eefc;
+  --tmux-text-soft: #6b7280;
+  --tmux-text-strong: #0f172a;
+  --tmux-success: #1f9d68;
+  --tmux-success-soft: #e8fbf3;
+  --tmux-warning: #b7791f;
+  --tmux-warning-soft: #fff6df;
+  --tmux-danger: #d14343;
+  --tmux-danger-soft: #fff0f0;
+  --tmux-info: #2f6ce5;
+  --tmux-info-soft: #ebf2ff;
+
+  --tmux-shadow-1: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.04);
+  --tmux-shadow-2: 0 18px 48px rgba(15, 23, 42, 0.10);
+
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "SFMono-Regular", ui-monospace, Menlo, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans);
+  background: var(--tmux-background);
+  color: var(--tmux-foreground);
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-background: var(--tmux-background);
+    --color-foreground: var(--tmux-foreground);
+    --color-card: var(--tmux-card);
+    --color-card-foreground: var(--tmux-card-foreground);
+    --color-popover: var(--tmux-popover);
+    --color-popover-foreground: var(--tmux-popover-foreground);
+    --color-primary: var(--tmux-primary);
+    --color-primary-foreground: var(--tmux-primary-foreground);
+    --color-muted: var(--tmux-muted);
+    --color-muted-foreground: var(--tmux-muted-foreground);
+    --color-border: var(--tmux-border);
+    --color-input: var(--tmux-input);
+    --color-ring: var(--tmux-ring);
+    --radius-sm: var(--tmux-radius-sm);
+    --radius-md: var(--tmux-radius-md);
+    --radius-lg: var(--tmux-radius-lg);
+  }
+  @layer base {
+    body { background: var(--tmux-background); color: var(--tmux-foreground); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style id="semantic-token-fallback">
+      .bg-background { background-color: var(--tmux-background); }
+      .text-background { color: var(--tmux-background); }
+      .border-background { border-color: var(--tmux-background); }
+      .ring-background { --tw-ring-color: var(--tmux-background); }
+      .bg-foreground { background-color: var(--tmux-foreground); }
+      .text-foreground { color: var(--tmux-foreground); }
+      .border-foreground { border-color: var(--tmux-foreground); }
+      .ring-foreground { --tw-ring-color: var(--tmux-foreground); }
+      .bg-card { background-color: var(--tmux-card); }
+      .text-card { color: var(--tmux-card); }
+      .border-card { border-color: var(--tmux-card); }
+      .ring-card { --tw-ring-color: var(--tmux-card); }
+      .bg-card-foreground { background-color: var(--tmux-card-foreground); }
+      .text-card-foreground { color: var(--tmux-card-foreground); }
+      .border-card-foreground { border-color: var(--tmux-card-foreground); }
+      .ring-card-foreground { --tw-ring-color: var(--tmux-card-foreground); }
+      .bg-popover { background-color: var(--tmux-popover); }
+      .text-popover { color: var(--tmux-popover); }
+      .border-popover { border-color: var(--tmux-popover); }
+      .ring-popover { --tw-ring-color: var(--tmux-popover); }
+      .bg-popover-foreground { background-color: var(--tmux-popover-foreground); }
+      .text-popover-foreground { color: var(--tmux-popover-foreground); }
+      .border-popover-foreground { border-color: var(--tmux-popover-foreground); }
+      .ring-popover-foreground { --tw-ring-color: var(--tmux-popover-foreground); }
+      .bg-primary { background-color: var(--tmux-primary); }
+      .text-primary { color: var(--tmux-primary); }
+      .border-primary { border-color: var(--tmux-primary); }
+      .ring-primary { --tw-ring-color: var(--tmux-primary); }
+      .bg-primary-foreground { background-color: var(--tmux-primary-foreground); }
+      .text-primary-foreground { color: var(--tmux-primary-foreground); }
+      .border-primary-foreground { border-color: var(--tmux-primary-foreground); }
+      .ring-primary-foreground { --tw-ring-color: var(--tmux-primary-foreground); }
+      .bg-muted { background-color: var(--tmux-muted); }
+      .text-muted { color: var(--tmux-muted); }
+      .border-muted { border-color: var(--tmux-muted); }
+      .ring-muted { --tw-ring-color: var(--tmux-muted); }
+      .bg-muted-foreground { background-color: var(--tmux-muted-foreground); }
+      .text-muted-foreground { color: var(--tmux-muted-foreground); }
+      .border-muted-foreground { border-color: var(--tmux-muted-foreground); }
+      .ring-muted-foreground { --tw-ring-color: var(--tmux-muted-foreground); }
+      .bg-border { background-color: var(--tmux-border); }
+      .text-border { color: var(--tmux-border); }
+      .border-border { border-color: var(--tmux-border); }
+      .ring-border { --tw-ring-color: var(--tmux-border); }
+      .bg-input { background-color: var(--tmux-input); }
+      .text-input { color: var(--tmux-input); }
+      .border-input { border-color: var(--tmux-input); }
+      .ring-input { --tw-ring-color: var(--tmux-input); }
+      .bg-ring { background-color: var(--tmux-ring); }
+      .text-ring { color: var(--tmux-ring); }
+      .border-ring { border-color: var(--tmux-ring); }
+      .ring-ring { --tw-ring-color: var(--tmux-ring); }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+  /* Typography tuning: compact, lighter, still readable. */
+  body { font-size: 14px; }
+  h1 { font-weight: 680; letter-spacing: -0.025em; }
+  .brand-title,
+  .category-title strong,
+  .sender-name,
+  .toolbar-copy strong,
+  .sender-stat,
+  .sender-count {
+    font-weight: 660;
+  }
+  .table-head,
+  .sender-list-head,
+  .email-table-head,
+  .rail-label,
+  .page-label {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: .055em;
+  }
+  .helper,
+  .note,
+  .sync-banner,
+  .toolbar-copy span,
+  .sender-meta,
+  .category-title span {
+    font-size: 13px;
+  }
+  .nav-link,
+  .rail-button {
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .button,
+  .action-button,
+  .plain-button,
+  .more-button {
+    font-weight: 660;
+  }
+
+  .more-button {
+    display: inline-grid;
+    place-items: center;
+    padding: 0;
+    line-height: normal;
+  }
+
+    </style>
+</head>
+<body data-viewport-mode="app-shell">
+  <div class="app-shell" data-viewport-mode="app-shell">
+    <aside class="left-rail" aria-label="TidyMail navigation">
+      <div class="brand-row">
+        <div class="brand-mark">T</div>
+        <div>
+          <h2 class="brand-title">TidyMail</h2>
+          <p class="brand-subtitle">Inbox cleanup</p>
+        </div>
+      </div>
+
+      <div class="rail-account" aria-label="Email account selector">
+        <label for="rail-account-select">Email account</label>
+        <select id="rail-account-select">
+          <option>All my connected emails</option>
+          <option>personal@gmail.com</option>
+          <option>work@company.com</option>
+          <option>old-account@gmail.com</option>
+          <option data-dom-id="rail-add-new-account">Add new account</option>
+        </select>
+      </div>
+
+      <nav aria-label="Primary">
+        <p class="rail-label">Cleanup</p>
+        <div class="nav-stack">
+          <a class="nav-link" data-dom-id="nav-senders" href="./by-sender-compact-suite.html">Bulk Archive/Delete</a>
+          <a class="nav-link" data-dom-id="nav-unread" href="./unread-compact-suite.html">Unread Only</a>
+          <a class="nav-link" data-dom-id="nav-unsub" href="./unsubscribe-compact-suite.html">Bulk Unsubscribe</a>
+        </div>
+      </nav>
+
+      <nav aria-label="Manage">
+        <p class="rail-label">Manage</p>
+        <div class="nav-stack">
+          <a class="nav-link" data-dom-id="nav-review" href="./review-timeline-compact-suite.html">Review</a>
+          <a class="nav-link active" data-dom-id="nav-analytics" href="./analytics-compact-suite.html" aria-current="page">Analytics</a>
+        </div>
+      </nav>
+
+      <div class="rail-footer">
+        <div class="rail-session">
+          <button class="rail-button" type="button" data-dom-id="rail-logout-menu-button" aria-haspopup="menu" aria-expanded="true">Logout</button>
+          <div class="logout-menu" role="menu" aria-label="Logout options">
+            <button type="button" role="menuitem" data-dom-id="rail-logout-action">Logout</button>
+            <button class="danger" type="button" role="menuitem" data-dom-id="rail-delete-data-logout-action">Delete my data and logout</button>
+          </div>
+        </div>
+        <a class="rail-button" href="mailto:feedback@example.com">Feedback</a>
+        <button class="rail-button" type="button">Collapse rail</button>
+      </div>
+    </aside>
+
+    <main class="workspace overflow-y-auto" data-scroll-region="primary">
+      <div class="content">
+        <section class="topbar" aria-label="Page header">
+          <div>
+            <p class="page-label">Analytics</p>
+            <h1>Cleanup progress</h1>
+            <p class="helper">Track message volume, reading patterns, cleanup actions, and storage pressure.</p>
+          </div>
+        </section>
+
+        <!-- BUILD NOTE: Show this only while a local sync/index job is active. -->
+        <section class="sync-card" aria-label="Mail loading status">
+          <div>
+            <strong>Mail is still loading.</strong>
+            <span>Loaded 28,015 messages. Last updated 24 seconds ago.</span>
+          </div>
+        </section>
+
+        <!-- BUILD NOTE: Group By defaults should be intelligent based on the selected period: Last week defaults to Day, Last 3 months defaults to Week, Last year and All default to Month or Year as appropriate. Users can override. Clicking Time period opens a calendar with quick options; clicking Group by opens Day/Week/Month/Year choices. Do not show either option list inline by default. -->
+        <section class="analytics-filters" aria-label="Analytics filters">
+          <button class="filter-button date-filter-button" type="button" aria-label="Time period filter: Last 3 months, May 12 to Aug 10, 2026">
+            <span class="filter-kicker">Time period</span>
+            <strong>Last 3 months</strong>
+            <span>May 12 – Aug 10, 2026</span>
+          </button>
+          <button class="filter-button" type="button" aria-label="Group by filter: Week">
+            <span class="filter-kicker">Group by</span>
+            <strong>Week</strong>
+          </button>
+        </section>
+
+        <section class="metric-grid" aria-label="Analytics metric tabs">
+          <button class="metric-card active" type="button" data-dom-id="analytics-tab-received" aria-pressed="true">
+            <span class="metric-label">Received</span>
+            <strong class="metric-value">7,842</strong>
+            <span class="metric-note">Last 3 months</span>
+          </button>
+          <button class="metric-card" type="button" data-dom-id="analytics-tab-sent">
+            <span class="metric-label">Sent</span>
+            <strong class="metric-value">1,126</strong>
+            <span class="metric-note">Outbound messages</span>
+          </button>
+          <button class="metric-card" type="button" data-dom-id="analytics-tab-read">
+            <span class="metric-label">Read</span>
+            <strong class="metric-value">5,904</strong>
+            <span class="metric-note">Opened or marked read</span>
+          </button>
+          <button class="metric-card" type="button" data-dom-id="analytics-tab-archived-deleted">
+            <span class="metric-label">Archived/Deleted</span>
+            <strong class="metric-value">4,628</strong>
+            <span class="metric-note">Completed cleanup actions</span>
+          </button>
+        </section>
+
+        <section class="panel" aria-labelledby="received-over-time-title">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Weekly trend</p>
+              <h2 id="received-over-time-title">Received over time</h2>
+              <p class="panel-copy">Last 3 months, grouped by week.</p>
+            </div>
+            <div class="legend" aria-label="Chart legend">
+              <span class="legend-item"><span class="dot" style="--dot: var(--tmux-primary);"></span>Received</span>
+            </div>
+          </div>
+          <!-- ARIA/BUILD NOTE: Column widths adapt based on selected time range and Group By granularity. -->
+          <div class="chart-wrap">
+            <div class="chart-y" aria-hidden="true">
+              <span class="axis">900</span>
+              <span class="axis">675</span>
+              <span class="axis">450</span>
+              <span class="axis">225</span>
+              <span class="axis">0</span>
+            </div>
+            <div>
+              <div class="chart" role="img" aria-label="Column chart showing received email counts over time for the selected period and grouping">
+                <div class="chart-bars">
+                  <div class="week"><div class="single-bar" style="height: 68%; --bar: var(--tmux-primary);"></div><span class="week-label">May 18</span></div>
+                  <div class="week"><div class="single-bar" style="height: 74%; --bar: var(--tmux-primary);"></div><span class="week-label">May 25</span></div>
+                  <div class="week"><div class="single-bar" style="height: 71%; --bar: var(--tmux-primary);"></div><span class="week-label">Jun 1</span></div>
+                  <div class="week"><div class="single-bar" style="height: 83%; --bar: var(--tmux-primary);"></div><span class="week-label">Jun 8</span></div>
+                  <div class="week"><div class="single-bar" style="height: 79%; --bar: var(--tmux-primary);"></div><span class="week-label">Jun 15</span></div>
+                  <div class="week"><div class="single-bar" style="height: 76%; --bar: var(--tmux-primary);"></div><span class="week-label">Jun 22</span></div>
+                  <div class="week"><div class="single-bar" style="height: 70%; --bar: var(--tmux-primary);"></div><span class="week-label">Jun 29</span></div>
+                  <div class="week"><div class="single-bar" style="height: 65%; --bar: var(--tmux-primary);"></div><span class="week-label">Jul 6</span></div>
+                  <div class="week"><div class="single-bar" style="height: 61%; --bar: var(--tmux-primary);"></div><span class="week-label">Jul 13</span></div>
+                  <div class="week"><div class="single-bar" style="height: 58%; --bar: var(--tmux-primary);"></div><span class="week-label">Jul 20</span></div>
+                  <div class="week"><div class="single-bar" style="height: 55%; --bar: var(--tmux-primary);"></div><span class="week-label">Jul 27</span></div>
+                  <div class="week"><div class="single-bar" style="height: 59%; --bar: var(--tmux-primary);"></div><span class="week-label">Aug 3</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div class="two-up">
+          <section class="panel ranked-panel" aria-labelledby="top-received-title">
+            <div class="rank-panel-head">
+              <h2 id="top-received-title">Top Received</h2>
+              <span class="panel-title-label" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path d="M4 6h16v12H4z"></path><path d="m4 7 8 6 8-6"></path></svg>
+                <span>Received</span>
+              </span>
+            </div>
+            <div class="panel-tabs" role="tablist" aria-label="Top received grouping">
+              <button class="active" type="button" role="tab" aria-selected="true">Email address</button>
+              <button type="button" role="tab" aria-selected="false">Domain</button>
+            </div>
+            <table class="rank-table" aria-label="Top received senders">
+              <thead class="sr-only">
+                <tr>
+                  <th scope="col">Email address</th>
+                  <th scope="col">Count</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td class="rank-identifier">product@example.com</td><td class="rank-count">842</td></tr>
+                <tr><td class="rank-identifier">updates@figma.com</td><td class="rank-count">614</td></tr>
+                <tr><td class="rank-identifier">notifications@github.com</td><td class="rank-count">508</td></tr>
+                <tr><td class="rank-identifier">news@producthunt.com</td><td class="rank-count">391</td></tr>
+                <tr><td class="rank-identifier">billing@stripe.com</td><td class="rank-count">286</td></tr>
+                <tr><td class="rank-identifier">team@notion.so</td><td class="rank-count">244</td></tr>
+                <tr><td class="rank-identifier">digest@linear.app</td><td class="rank-count">219</td></tr>
+                <tr><td class="rank-identifier">alerts@vercel.com</td><td class="rank-count">184</td></tr>
+                <tr><td class="rank-identifier">community@slack.com</td><td class="rank-count">163</td></tr>
+                <tr><td class="rank-identifier">receipts@amazon.com</td><td class="rank-count">137</td></tr>
+              </tbody>
+            </table>
+          </section>
+
+          <section class="panel ranked-panel" aria-labelledby="top-sent-title">
+            <div class="rank-panel-head">
+              <h2 id="top-sent-title">Top Sent</h2>
+              <span class="panel-title-label" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"></path><path d="M22 2 11 13"></path></svg>
+                <span>Sent</span>
+              </span>
+            </div>
+            <div class="panel-tabs" role="tablist" aria-label="Top sent grouping">
+              <button class="active" type="button" role="tab" aria-selected="true">Email address</button>
+            </div>
+            <table class="rank-table" aria-label="Top sent recipients">
+              <thead class="sr-only">
+                <tr>
+                  <th scope="col">Email address</th>
+                  <th scope="col">Count</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td class="rank-identifier">teammate@company.com</td><td class="rank-count">312</td></tr>
+                <tr><td class="rank-identifier">vendors@example.com</td><td class="rank-count">148</td></tr>
+                <tr><td class="rank-identifier">finance@company.com</td><td class="rank-count">92</td></tr>
+                <tr><td class="rank-identifier">support@example.com</td><td class="rank-count">67</td></tr>
+                <tr><td class="rank-identifier">design@agency.co</td><td class="rank-count">54</td></tr>
+                <tr><td class="rank-identifier">legal@company.com</td><td class="rank-count">43</td></tr>
+                <tr><td class="rank-identifier">ops@company.com</td><td class="rank-count">38</td></tr>
+                <tr><td class="rank-identifier">partner@startup.io</td><td class="rank-count">31</td></tr>
+                <tr><td class="rank-identifier">recruiting@company.com</td><td class="rank-count">24</td></tr>
+                <tr><td class="rank-identifier">events@example.org</td><td class="rank-count">19</td></tr>
+              </tbody>
+            </table>
+          </section>
+        </div>
+
+        <section class="size-grid" aria-label="Storage size metrics">
+          <article class="size-card">
+            <span class="metric-label">Unread Size</span>
+            <strong class="metric-value">4.8 GB</strong>
+            <span class="metric-note">Unread inbox storage, attachments included.</span>
+          </article>
+          <article class="size-card">
+            <span class="metric-label">Inbox &gt; 10MB</span>
+            <strong class="metric-value">186</strong>
+            <span class="metric-note">Messages over 10MB total size.</span>
+          </article>
+          <article class="size-card">
+            <span class="metric-label">Sent &gt; 10MB</span>
+            <strong class="metric-value">42</strong>
+            <span class="metric-note">Sent messages over 10MB total size.</span>
+          </article>
+        </section>
+
+        <section class="panel" aria-labelledby="tidymail-actions-title">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Cleanup actions</p>
+              <h2 id="tidymail-actions-title">TidyMail actions</h2>
+            </div>
+            <div class="legend" aria-label="Chart legend">
+              <span class="legend-item"><span class="dot" style="--dot: var(--tmux-info);"></span>Archived</span>
+              <span class="legend-item"><span class="dot" style="--dot: var(--tmux-danger);"></span>Deleted</span>
+            </div>
+          </div>
+          <div class="action-chart" role="img" aria-label="Column chart showing TidyMail archived and deleted email counts">
+            <div class="action-bars">
+              <div class="action-column"><div class="action-bar" style="height: 82%; --bar: var(--tmux-info);"></div><strong>4,288</strong><span>Archived</span></div>
+              <div class="action-column"><div class="action-bar" style="height: 22%; --bar: var(--tmux-danger);"></div><strong>340</strong><span>Deleted</span></div>
+            </div>
+          </div>
+        </section>
+        <a hidden data-dom-id="footer-back-review" href="./review-timeline-compact-suite.html" aria-hidden="true" tabindex="-1">Back to review</a>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    (() => {
+      const chartStates = {
+        'analytics-tab-received': {
+          label: 'Received',
+          title: 'Received over time',
+          aria: 'Column chart showing received email counts over time for the selected period and grouping',
+          color: 'var(--tmux-primary)',
+          heights: ['68%', '74%', '71%', '83%', '79%', '76%', '70%', '65%', '61%', '58%', '55%', '59%']
+        },
+        'analytics-tab-sent': {
+          label: 'Sent',
+          title: 'Sent over time',
+          aria: 'Column chart showing sent email counts over time for the selected period and grouping',
+          color: 'var(--tmux-info)',
+          heights: ['22%', '28%', '25%', '31%', '29%', '35%', '32%', '27%', '25%', '24%', '21%', '26%']
+        },
+        'analytics-tab-read': {
+          label: 'Read',
+          title: 'Read over time',
+          aria: 'Column chart showing read email counts over time for the selected period and grouping',
+          color: 'var(--tmux-success)',
+          heights: ['54%', '59%', '61%', '66%', '63%', '64%', '62%', '58%', '55%', '53%', '50%', '57%']
+        },
+        'analytics-tab-archived-deleted': {
+          label: 'Archived/Deleted',
+          title: 'Archived/Deleted over time',
+          aria: 'Column chart showing archived and deleted email counts over time for the selected period and grouping',
+          color: 'var(--tmux-warning)',
+          heights: ['35%', '39%', '42%', '48%', '46%', '44%', '43%', '38%', '36%', '34%', '31%', '37%']
+        }
+      };
+
+      const tabs = Array.from(document.querySelectorAll('[data-dom-id^="analytics-tab-"]'));
+      const title = document.getElementById('received-over-time-title');
+      const chart = document.querySelector('.chart');
+      const legendLabel = document.querySelector('.legend-item');
+      const legendDot = legendLabel?.querySelector('.dot');
+      const bars = Array.from(document.querySelectorAll('.single-bar'));
+
+      function setActive(tab) {
+        const state = chartStates[tab.dataset.domId];
+        if (!state) return;
+        tabs.forEach((item) => {
+          const active = item === tab;
+          item.classList.toggle('active', active);
+          item.setAttribute('aria-pressed', String(active));
+        });
+        if (title) title.textContent = state.title;
+        if (chart) chart.setAttribute('aria-label', state.aria);
+        if (legendLabel) {
+          legendLabel.lastChild.textContent = state.label;
+        }
+        if (legendDot) {
+          legendDot.style.setProperty('--dot', state.color);
+        }
+        bars.forEach((bar, index) => {
+          bar.style.height = state.heights[index] || state.heights[state.heights.length - 1];
+          bar.style.setProperty('--bar', state.color);
+        });
+      }
+
+      tabs.forEach((tab) => tab.addEventListener('click', () => setActive(tab)));
+    })();
+  </script>
+
+    <style id="critical-layout">
+    :root { --rail-width: 248px; --content-max: 1180px; }
+
+    body { overflow: hidden; }
+
+    .app-shell {
+      display: grid;
+      grid-template-columns: var(--rail-width) minmax(0, 1fr);
+      height: 100vh;
+      background: linear-gradient(180deg, #f9fbff 0%, var(--tmux-background) 48%);
+    }
+
+    .left-rail {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      padding: 20px 14px;
+      border-right: 1px solid var(--tmux-border);
+      background: rgba(255, 255, 255, 0.9);
+    }
+
+    .brand-row,
+    .nav-link,
+    .rail-button,
+    .topbar,
+    .sync-card,
+    .panel-head,
+    .analytics-filters,
+    .legend,
+    .legend-item,
+    .quick-options,
+    .rank-panel-head,
+    .panel-title-label,
+    .panel-tabs,
+    .action-button {
+      display: flex;
+      align-items: center;
+    }
+
+    .brand-row { gap: 10px; padding: 2px 6px 8px; }
+
+    .brand-mark {
+      width: 32px;
+      height: 32px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+      background: var(--tmux-primary);
+      color: var(--tmux-primary-foreground);
+      font-weight: 720;
+    }
+
+    .brand-title {
+      margin: 0;
+      color: var(--tmux-text-strong);
+      font-size: 13.5px;
+      line-height: 1.1;
+    }
+
+    .brand-subtitle,
+    .rail-label,
+    .page-label,
+    .helper,
+    .sync-card,
+    .metric-note,
+    .panel-copy,
+    .legend,
+    .axis,
+    .week-label,
+    .status-box span,
+    .insight-row p,
+    .table-sub {
+      color: var(--tmux-text-soft);
+    }
+
+    .brand-subtitle { margin: 2px 0 0; font-size: 12px; }
+
+    .rail-label {
+      margin: 0 0 7px;
+      padding: 0 8px;
+      font-size: 11px;
+      font-weight: 720;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .nav-stack { display: grid; gap: 3px; }
+
+    .nav-link {
+      justify-content: space-between;
+      min-height: 38px;
+      padding: 0 10px;
+      border-radius: 9px;
+      color: var(--tmux-text-soft);
+      text-decoration: none;
+      font-size: 13.5px;
+      font-weight: 600;
+    }
+
+    .nav-link.active {
+      color: var(--tmux-primary);
+      background: var(--tmux-info-soft);
+    }
+
+    .rail-footer {
+      margin-top: auto;
+      display: grid;
+      gap: 6px;
+    }
+
+    .rail-session {
+      position: relative;
+      display: grid;
+      gap: 6px;
+    }
+
+    .rail-account {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+      padding: 10px;
+      overflow: hidden;
+      border: 1px solid var(--tmux-border);
+      border-radius: 12px;
+      background: var(--tmux-card);
+    }
+
+    .rail-account label {
+      color: var(--tmux-text-soft);
+      font-size: 11px;
+      font-weight: 720;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+
+    select {
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      height: 38px;
+      padding: 0 34px 0 12px;
+      border: 1px solid var(--tmux-border);
+      border-radius: 9px;
+      background: var(--tmux-card);
+      color: var(--tmux-text-strong);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .rail-button {
+      gap: 8px;
+      padding: 9px 10px;
+      border: 0;
+      border-radius: 9px;
+      background: transparent;
+      color: var(--tmux-text-soft);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .logout-menu {
+      display: grid;
+      gap: 4px;
+      padding: 7px;
+      border: 1px solid var(--tmux-border);
+      border-radius: 11px;
+      background: var(--tmux-popover);
+      box-shadow: var(--tmux-shadow-1);
+    }
+
+    .logout-menu button {
+      min-height: 31px;
+      padding: 0 8px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--tmux-text-strong);
+      font-size: 12.5px;
+      font-weight: 650;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .logout-menu button:hover {
+      background: var(--tmux-surface-2);
+    }
+
+    .logout-menu .danger {
+      color: var(--tmux-danger);
+      background: var(--tmux-danger-soft);
+    }
+
+    .workspace {
+      height: 100vh;
+      overflow-y: auto;
+      padding: 28px 36px 40px;
+    }
+
+    .content {
+      max-width: var(--content-max);
+      margin: 0 auto;
+      display: grid;
+      gap: 18px;
+    }
+
+    .topbar {
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .page-label,
+    .eyebrow,
+    .metric-label,
+    .axis {
+      font-size: 11px;
+      font-weight: 720;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .page-label { margin: 0 0 8px; }
+    .eyebrow { margin: 0; color: var(--tmux-primary); }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      color: var(--tmux-text-strong);
+      font-size: 28px;
+      line-height: 1.08;
+      letter-spacing: -0.035em;
+    }
+
+    .helper {
+      margin: 8px 0 0;
+      max-width: 650px;
+      font-size: 13.5px;
+      line-height: 1.55;
+    }
+
+    .sync-card,
+    .metric-card,
+    .size-card,
+    .panel {
+      border: 1px solid var(--tmux-border);
+      border-radius: var(--tmux-radius-lg);
+      background: var(--tmux-card);
+      box-shadow: var(--tmux-shadow-1);
+    }
+
+    .sync-card {
+      justify-content: space-between;
+      gap: 12px;
+      padding: 11px 14px;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .sync-card strong {
+      color: var(--tmux-text-strong);
+      font-weight: 680;
+    }
+
+    .sync-card span { display: inline-block; }
+
+    .analytics-filters {
+      gap: 10px;
+      align-items: center;
+      justify-content: flex-start;
+      flex-wrap: wrap;
+    }
+
+    .filter-button {
+      display: grid;
+      gap: 2px;
+      min-width: 0;
+      min-height: 46px;
+      padding: 7px 12px;
+      border: 1px solid var(--tmux-border);
+      border-radius: 11px;
+      background: var(--tmux-card);
+      color: var(--tmux-text-soft);
+      box-shadow: var(--tmux-shadow-1);
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .date-filter-button { min-width: 190px; }
+
+    .filter-button strong {
+      color: var(--tmux-text-strong);
+      font-size: 13px;
+      font-weight: 720;
+      line-height: 1.2;
+    }
+
+    .filter-button span {
+      color: var(--tmux-text-soft);
+      font-size: 11.5px;
+      line-height: 1.25;
+    }
+
+    .filter-kicker {
+      font-size: 10.5px !important;
+      font-weight: 720;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+    }
+
+    .quick-options {
+      gap: 5px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .quick-options button {
+      min-height: 28px;
+      padding: 0 9px;
+      border: 1px solid var(--tmux-border);
+      border-radius: 999px;
+      background: var(--tmux-surface-2);
+      color: var(--tmux-text-soft);
+      font-size: 11.5px;
+      font-weight: 680;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .quick-options button.active {
+      border-color: rgba(63, 92, 255, 0.32);
+      background: var(--tmux-info-soft);
+      color: var(--tmux-primary);
+    }
+
+    .group-filter {
+      display: grid;
+      justify-content: start;
+      min-width: 310px;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .metric-card {
+      display: grid;
+      gap: 6px;
+      padding: 13px 14px;
+      appearance: none;
+      cursor: pointer;
+      text-align: left;
+      transition: border-color .16s ease, background .16s ease, box-shadow .16s ease;
+    }
+
+    .metric-card.active {
+      border-color: rgba(63, 92, 255, 0.42);
+      background: linear-gradient(180deg, var(--tmux-info-soft), var(--tmux-card));
+      box-shadow: 0 0 0 1px rgba(63, 92, 255, 0.08), var(--tmux-shadow-1);
+    }
+
+    .metric-label {
+      color: var(--tmux-text-soft);
+      font-size: 10.5px;
+    }
+
+    .metric-value {
+      color: var(--tmux-text-strong);
+      font-size: 24px;
+      font-weight: 780;
+      letter-spacing: -0.035em;
+      line-height: 1;
+    }
+
+    .metric-note {
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.42fr) minmax(320px, 0.58fr);
+      gap: 12px;
+      align-items: start;
+    }
+
+    .panel {
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+      padding: 14px;
+    }
+
+    .panel-head {
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .panel h2 {
+      margin-top: 3px;
+      color: var(--tmux-text-strong);
+      font-size: 14px;
+      line-height: 1.2;
+      letter-spacing: -0.01em;
+    }
+
+    .panel-copy {
+      margin-top: 4px;
+      font-size: 12px;
+      line-height: 1.42;
+    }
+
+    .legend {
+      justify-content: flex-end;
+      gap: 10px;
+      flex-wrap: wrap;
+      font-size: 11px;
+      font-weight: 650;
+    }
+
+    .legend-item {
+      gap: 6px;
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--dot);
+    }
+
+    .chart-wrap {
+      display: grid;
+      grid-template-columns: 40px minmax(0, 1fr);
+      gap: 10px;
+    }
+
+    .chart-y {
+      display: grid;
+      grid-template-rows: repeat(5, 1fr);
+      justify-items: end;
+      padding: 3px 0 30px;
+    }
+
+    .axis {
+      letter-spacing: 0;
+      text-transform: none;
+      font-size: 10px;
+    }
+
+    .chart {
+      position: relative;
+      min-height: 302px;
+      overflow: hidden;
+      border: 1px solid var(--tmux-border);
+      border-radius: 12px;
+      background:
+        linear-gradient(180deg, rgba(63, 92, 255, 0.025), transparent 42%),
+        repeating-linear-gradient(to top, rgba(217, 224, 238, 0.75) 0, rgba(217, 224, 238, 0.75) 1px, transparent 1px, transparent 58px),
+        var(--tmux-surface-2);
+    }
+
+    .chart-bars {
+      position: absolute;
+      inset: 18px 18px 34px;
+      display: grid;
+      grid-template-columns: repeat(12, minmax(36px, 1fr));
+      gap: 11px;
+      align-items: stretch;
+    }
+
+    .week {
+      display: grid;
+      grid-template-rows: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: end;
+      height: 100%;
+    }
+
+    .bar-set {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(4px, 1fr));
+      gap: 3px;
+      align-items: end;
+      min-height: 218px;
+    }
+
+    .bar {
+      min-height: 8px;
+      border-radius: 7px 7px 3px 3px;
+      background: var(--bar);
+      box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.22);
+    }
+
+    .single-bar {
+      width: min(34px, 70%);
+      min-height: 10px;
+      justify-self: center;
+      align-self: end;
+      border-radius: 8px 8px 3px 3px;
+      background: var(--bar);
+      box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.22);
+    }
+
+    .week-label {
+      font-size: 10px;
+      font-weight: 720;
+      text-align: center;
+    }
+
+    .side-stack,
+    .compact-table,
+    .insight-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .side-stack { gap: 12px; }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    .ranked-panel {
+      gap: 10px;
+    }
+
+    .rank-panel-head {
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .rank-panel-head h2 {
+      margin: 0;
+    }
+
+    .panel-title-label {
+      gap: 6px;
+      color: var(--tmux-text-soft);
+      font-size: 11.5px;
+      font-weight: 720;
+      line-height: 1;
+    }
+
+    .panel-title-label svg {
+      width: 14px;
+      height: 14px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .panel-tabs {
+      gap: 16px;
+      flex-wrap: wrap;
+      min-height: 28px;
+      border-bottom: 1px solid var(--tmux-border);
+    }
+
+    .panel-tabs button {
+      min-height: 30px;
+      padding: 0 0 7px;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      background: transparent;
+      color: var(--tmux-text-soft);
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .panel-tabs button.active {
+      border-bottom-color: var(--tmux-primary);
+      color: var(--tmux-primary);
+    }
+
+    .rank-table {
+      width: 100%;
+      table-layout: fixed;
+      border-collapse: collapse;
+    }
+
+    .rank-table td {
+      padding: 7px 0;
+      border-bottom: 1px solid var(--tmux-border);
+      vertical-align: middle;
+    }
+
+    .rank-table tbody tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .rank-identifier {
+      min-width: 0;
+      overflow: hidden;
+      color: var(--tmux-text-strong);
+      font-size: 12.5px;
+      font-weight: 650;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .rank-count {
+      width: 72px;
+      color: var(--tmux-text-strong);
+      font-size: 12.5px;
+      font-weight: 760;
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .size-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .size-card {
+      display: grid;
+      gap: 6px;
+      padding: 13px 14px;
+    }
+
+    .action-chart {
+      min-height: 246px;
+      overflow: hidden;
+      border: 1px solid var(--tmux-border);
+      border-radius: 12px;
+      background:
+        repeating-linear-gradient(to top, rgba(217, 224, 238, 0.75) 0, rgba(217, 224, 238, 0.75) 1px, transparent 1px, transparent 54px),
+        var(--tmux-surface-2);
+    }
+
+    .action-bars {
+      height: 246px;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(120px, 180px));
+      gap: 28px;
+      justify-content: center;
+      align-items: end;
+      padding: 24px 24px 18px;
+    }
+
+    .action-column {
+      height: 100%;
+      display: grid;
+      grid-template-rows: minmax(0, 1fr) auto auto;
+      gap: 6px;
+      align-items: end;
+      justify-items: center;
+    }
+
+    .action-bar {
+      width: min(86px, 72%);
+      min-height: 14px;
+      border-radius: 10px 10px 4px 4px;
+      background: var(--bar);
+      box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.22);
+    }
+
+    .action-column strong {
+      color: var(--tmux-text-strong);
+      font-size: 13px;
+      font-weight: 760;
+      line-height: 1.1;
+    }
+
+    .action-column span {
+      color: var(--tmux-text-soft);
+      font-size: 11.5px;
+      font-weight: 680;
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .status-box,
+    .insight-row,
+    .table-row {
+      border: 1px solid var(--tmux-border);
+      border-radius: 11px;
+      background: var(--tmux-surface-2);
+    }
+
+    .status-box {
+      padding: 10px;
+    }
+
+    .status-box strong {
+      display: block;
+      margin-top: 4px;
+      color: var(--tmux-text-strong);
+      font-size: 15px;
+      line-height: 1.1;
+      overflow-wrap: anywhere;
+    }
+
+    .status-box span {
+      font-size: 11px;
+    }
+
+    .insight-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      padding: 10px;
+    }
+
+    .insight-row h3,
+    .table-title {
+      color: var(--tmux-text-strong);
+      font-size: 12.5px;
+      font-weight: 680;
+      line-height: 1.25;
+    }
+
+    .insight-row p,
+    .table-sub {
+      margin-top: 3px;
+      font-size: 11.5px;
+      line-height: 1.35;
+    }
+
+    .insight-row strong {
+      color: var(--tmux-text-strong);
+      font-size: 13px;
+      font-weight: 760;
+      white-space: nowrap;
+    }
+
+    .two-up {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .table-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 70px 80px;
+      gap: 10px;
+      align-items: center;
+      padding: 9px 10px;
+    }
+
+    .table-value {
+      color: var(--tmux-text-strong);
+      font-size: 12px;
+      font-weight: 680;
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .mini-track {
+      height: 8px;
+      margin-top: 8px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: var(--tmux-surface-3);
+    }
+
+    .mini-fill {
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, rgba(63, 92, 255, 0.90), rgba(63, 92, 255, 0.55));
+    }
+
+    .action-button {
+      justify-content: center;
+      min-height: 32px;
+      padding: 0 11px;
+      border: 1px solid var(--tmux-warning);
+      border-radius: 8px;
+      background: var(--tmux-warning);
+      color: var(--tmux-primary-foreground);
+      font-size: 12.5px;
+      font-weight: 680;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 1120px) {
+      body { overflow: auto; }
+      .app-shell { grid-template-columns: 1fr; height: auto; min-height: 100vh; }
+      .left-rail { position: static; }
+      .workspace { height: auto; min-height: 100vh; }
+      .main-grid,
+      .two-up,
+      .analytics-filters,
+      .size-grid {
+        grid-template-columns: 1fr;
+      }
+      .group-filter { min-width: 0; }
+      .metric-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .chart { overflow-x: auto; }
+      .chart-bars { min-width: 760px; }
+    }
+
+    @media (max-width: 760px) {
+      .workspace { padding: 18px; }
+      .sync-card,
+      .metric-grid,
+      .status-grid,
+      .filter-button,
+      .table-row {
+        grid-template-columns: 1fr;
+      }
+      .quick-options {
+        justify-content: flex-start;
+      }
+      .sync-card {
+        align-items: flex-start;
+      }
+      .chart-wrap {
+        grid-template-columns: 1fr;
+      }
+      .chart-y {
+        display: none;
+      }
+      .table-value {
+        justify-self: start;
+        text-align: left;
+      }
+      .action-button {
+        justify-self: start;
+      }
+    }
+  </style>
+</body>
+</html>

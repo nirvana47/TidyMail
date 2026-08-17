@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TidyMail - Exact impact preview</title>
+    <link rel="stylesheet" th:href="@{/static/css/workspace.css}">
+</head>
+<body>
+<a class="skip-link" href="#workspace-main">Skip to workspace content</a>
+<div th:replace="~{fragments/workspace-nav :: nav(${workspace})}"></div>
+<div class="workspace-shell">
+    <div th:replace="~{fragments/workspace-rail :: rail(${workspace})}"></div>
+    <main id="workspace-main">
+        <header class="route-heading">
+            <p class="eyebrow">Preview exact impact</p>
+            <h1>Selection preview</h1>
+            <p>Review the immutable exact scope before returning to the decision surface.</p>
+        </header>
+        <div th:replace="~{fragments/selection-preview-frag :: preview}"></div>
+        <p class="privacy-note">
+            Only approved message metadata is indexed. Bodies and attachments are never stored.
+        </p>
+    </main>
+</div>
+</body>
+</html>

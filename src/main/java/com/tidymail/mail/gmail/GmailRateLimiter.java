@@ -1,0 +1,131 @@
+package com.tidymail.mail.gmail;
+
+import jakarta.annotation.PostConstruct;
+import java.util.concurrent.Semaphore;
+import java.util.function.Supplier;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+
+@Component
+public class GmailRateLimiter {
+
+    private static final Logger logger = LoggerFactory.getLogger(GmailRateLimiter.class);
+
+    private final GmailSyncConfigProperties config;
+
+    private Semaphore totalCapacity;
+    private Semaphore backfillCapacity;
+    private int delayMs;
+
+    public GmailRateLimiter(GmailSyncConfigProperties config) {
+        this.config = config;
+    }
+
+    @PostConstruct
+    public void init() {
+        int concurrency = config.getApiConcurrency();
+        this.totalCapacity = new Semaphore(concurrency, true);
+        this.backfillCapacity = new Semaphore(
+            concurrency - config.getFreshnessReservedCapacity(), true);
+        this.delayMs = config.getBatchDelayMs();
+
+        if (concurrency > 10) {
+            logger.warn(
+                "Gmail API concurrency set to {} (>10) — risk 429 from Google's 250 reqs/sec quota;"
+                    + " prefer 5 or lower unless you know your project quota",
+                concurrency);
+        }
+    }
+
+    public void acquire() {
+        acquireFreshnessPermit();
+    }
+
+    public void release() {
+        totalCapacity.release();
+    }
+
+    public Permit acquireFreshnessPermit() {
+        acquire(totalCapacity, "freshness");
+        delayOrRelease(totalCapacity, null);
+        return new Permit(totalCapacity, null);
+    }
+
+    public Permit acquireBackfillRescanPermit() {
+        acquire(backfillCapacity, "backfill/rescan");
+        try {
+            acquire(totalCapacity, "total Gmail");
+        } catch (RuntimeException ex) {
+            backfillCapacity.release();
+            throw ex;
+        }
+        delayOrRelease(totalCapacity, backfillCapacity);
+        return new Permit(totalCapacity, backfillCapacity);
+    }
+
+    public <T> T supplyWithPermit(Supplier<T> supplier) {
+        try (Permit ignored = acquireFreshnessPermit()) {
+            return supplier.get();
+        }
+    }
+
+    public <T> T supplyWithFreshnessPermit(Supplier<T> supplier) {
+        return supplyWithPermit(supplier);
+    }
+
+    public <T> T supplyWithBackfillRescanPermit(Supplier<T> supplier) {
+        try (Permit ignored = acquireBackfillRescanPermit()) {
+            return supplier.get();
+        }
+    }
+
+    private static void acquire(Semaphore semaphore, String capacity) {
+        try {
+            semaphore.acquire();
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(
+                "Interrupted acquiring " + capacity + " request capacity", ex);
+        }
+    }
+
+    private void delayOrRelease(Semaphore total, Semaphore backfill) {
+        if (delayMs <= 0) {
+            return;
+        }
+        try {
+            Thread.sleep(delayMs);
+        } catch (InterruptedException ex) {
+            total.release();
+            if (backfill != null) {
+                backfill.release();
+            }
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted during Gmail request delay", ex);
+        }
+    }
+
+    public static final class Permit implements AutoCloseable {
+        private final Semaphore total;
+        private final Semaphore backfill;
+        private boolean closed;
+
+        private Permit(Semaphore total, Semaphore backfill) {
+            this.total = total;
+            this.backfill = backfill;
+        }
+
+        @Override
+        public void close() {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            total.release();
+            if (backfill != null) {
+                backfill.release();
+            }
+        }
+    }
+}

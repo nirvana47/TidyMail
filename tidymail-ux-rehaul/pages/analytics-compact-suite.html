@@ -1,0 +1,1274 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analytics</title>
+    <style id="theme-vars">
+:root {
+  --tmux-background: #f4f6fb;
+  --tmux-foreground: #111827;
+  --tmux-card: #ffffff;
+  --tmux-card-foreground: #111827;
+  --tmux-popover: #ffffff;
+  --tmux-popover-foreground: #111827;
+  --tmux-primary: #3f5cff;
+  --tmux-primary-foreground: #ffffff;
+  --tmux-muted: #eef2ff;
+  --tmux-muted-foreground: #5b6478;
+  --tmux-border: #d9e0ee;
+  --tmux-input: #d9e0ee;
+  --tmux-ring: #3f5cff;
+  --tmux-radius-sm: 6px;
+  --tmux-radius-md: 10px;
+  --tmux-radius-lg: 16px;
+
+  --tmux-surface-2: #f8faff;
+  --tmux-surface-3: #e8eefc;
+  --tmux-text-soft: #6b7280;
+  --tmux-text-strong: #0f172a;
+  --tmux-success: #1f9d68;
+  --tmux-success-soft: #e8fbf3;
+  --tmux-warning: #b7791f;
+  --tmux-warning-soft: #fff6df;
+  --tmux-danger: #d14343;
+  --tmux-danger-soft: #fff0f0;
+  --tmux-info: #2f6ce5;
+  --tmux-info-soft: #ebf2ff;
+
+  --tmux-shadow-1: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.04);
+  --tmux-shadow-2: 0 18px 48px rgba(15, 23, 42, 0.10);
+
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "SFMono-Regular", ui-monospace, Menlo, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans);
+  background: var(--tmux-background);
+  color: var(--tmux-foreground);
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-background: var(--tmux-background);
+    --color-foreground: var(--tmux-foreground);
+    --color-card: var(--tmux-card);
+    --color-card-foreground: var(--tmux-card-foreground);
+    --color-popover: var(--tmux-popover);
+    --color-popover-foreground: var(--tmux-popover-foreground);
+    --color-primary: var(--tmux-primary);
+    --color-primary-foreground: var(--tmux-primary-foreground);
+    --color-muted: var(--tmux-muted);
+    --color-muted-foreground: var(--tmux-muted-foreground);
+    --color-border: var(--tmux-border);
+    --color-input: var(--tmux-input);
+    --color-ring: var(--tmux-ring);
+    --radius-sm: var(--tmux-radius-sm);
+    --radius-md: var(--tmux-radius-md);
+    --radius-lg: var(--tmux-radius-lg);
+  }
+  @layer base {
+    body { background: var(--tmux-background); color: var(--tmux-foreground); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style id="semantic-token-fallback">
+      .bg-background { background-color: var(--tmux-background); }
+      .text-background { color: var(--tmux-background); }
+      .border-background { border-color: var(--tmux-background); }
+      .ring-background { --tw-ring-color: var(--tmux-background); }
+      .bg-foreground { background-color: var(--tmux-foreground); }
+      .text-foreground { color: var(--tmux-foreground); }
+      .border-foreground { border-color: var(--tmux-foreground); }
+      .ring-foreground { --tw-ring-color: var(--tmux-foreground); }
+      .bg-card { background-color: var(--tmux-card); }
+      .text-card { color: var(--tmux-card); }
+      .border-card { border-color: var(--tmux-card); }
+      .ring-card { --tw-ring-color: var(--tmux-card); }
+      .bg-card-foreground { background-color: var(--tmux-card-foreground); }
+      .text-card-foreground { color: var(--tmux-card-foreground); }
+      .border-card-foreground { border-color: var(--tmux-card-foreground); }
+      .ring-card-foreground { --tw-ring-color: var(--tmux-card-foreground); }
+      .bg-popover { background-color: var(--tmux-popover); }
+      .text-popover { color: var(--tmux-popover); }
+      .border-popover { border-color: var(--tmux-popover); }
+      .ring-popover { --tw-ring-color: var(--tmux-popover); }
+      .bg-popover-foreground { background-color: var(--tmux-popover-foreground); }
+      .text-popover-foreground { color: var(--tmux-popover-foreground); }
+      .border-popover-foreground { border-color: var(--tmux-popover-foreground); }
+      .ring-popover-foreground { --tw-ring-color: var(--tmux-popover-foreground); }
+      .bg-primary { background-color: var(--tmux-primary); }
+      .text-primary { color: var(--tmux-primary); }
+      .border-primary { border-color: var(--tmux-primary); }
+      .ring-primary { --tw-ring-color: var(--tmux-primary); }
+      .bg-primary-foreground { background-color: var(--tmux-primary-foreground); }
+      .text-primary-foreground { color: var(--tmux-primary-foreground); }
+      .border-primary-foreground { border-color: var(--tmux-primary-foreground); }
+      .ring-primary-foreground { --tw-ring-color: var(--tmux-primary-foreground); }
+      .bg-muted { background-color: var(--tmux-muted); }
+      .text-muted { color: var(--tmux-muted); }
+      .border-muted { border-color: var(--tmux-muted); }
+      .ring-muted { --tw-ring-color: var(--tmux-muted); }
+      .bg-muted-foreground { background-color: var(--tmux-muted-foreground); }
+      .text-muted-foreground { color: var(--tmux-muted-foreground); }
+      .border-muted-foreground { border-color: var(--tmux-muted-foreground); }
+      .ring-muted-foreground { --tw-ring-color: var(--tmux-muted-foreground); }
+      .bg-border { background-color: var(--tmux-border); }
+      .text-border { color: var(--tmux-border); }
+      .border-border { border-color: var(--tmux-border); }
+      .ring-border { --tw-ring-color: var(--tmux-border); }
+      .bg-input { background-color: var(--tmux-input); }
+      .text-input { color: var(--tmux-input); }
+      .border-input { border-color: var(--tmux-input); }
+      .ring-input { --tw-ring-color: var(--tmux-input); }
+      .bg-ring { background-color: var(--tmux-ring); }
+      .text-ring { color: var(--tmux-ring); }
+      .border-ring { border-color: var(--tmux-ring); }
+      .ring-ring { --tw-ring-color: var(--tmux-ring); }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+    </style>
+</head>
+<body class="font-sans antialiased" data-viewport-mode="app-shell">
+    <style id="critical-layout">
+      :root {
+        --shell-top: 58px;
+        --shell-rail: 226px;
+        --shell-max: 1480px;
+      }
+
+      body {
+        overflow: hidden;
+      }
+
+      .app-shell {
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at top right, rgba(63, 92, 255, 0.05), transparent 18%),
+          var(--tmux-background);
+      }
+
+      .top-rail,
+      .brand-lockup,
+      .top-tabs,
+      .nav-tab,
+      .top-meta,
+      .status-pill,
+      .select-row,
+      .flat-btn,
+      .footer-link,
+      .panel-action,
+      .chart-legend,
+      .summary-strip,
+      .summary-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .top-rail {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        justify-content: space-between;
+        width: 100%;
+        height: var(--shell-top);
+        padding: 0 18px;
+        border-bottom: 1px solid var(--tmux-border);
+        background: rgba(244, 246, 251, 0.94);
+        backdrop-filter: blur(14px);
+      }
+
+      .brand-lockup {
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--tmux-text-strong);
+      }
+
+      .brand-badge {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--tmux-primary);
+        color: var(--tmux-primary-foreground);
+      }
+
+      .top-tabs {
+        flex: 1;
+        justify-content: center;
+        gap: 4px;
+        min-width: 0;
+      }
+
+      .nav-tab {
+        padding: 7px 10px;
+        border-radius: 8px;
+        color: var(--tmux-text-soft);
+        text-decoration: none;
+        font-size: 12px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .nav-tab.is-active {
+        color: var(--tmux-primary);
+        background: rgba(63, 92, 255, 0.08);
+        box-shadow: inset 0 0 0 1px rgba(63, 92, 255, 0.16);
+      }
+
+      .top-meta {
+        gap: 6px;
+      }
+
+      .status-pill,
+      .flat-btn,
+      .select-row,
+      .tag,
+      .summary-chip {
+        border: 1px solid var(--tmux-border);
+        background: var(--tmux-card);
+        color: var(--tmux-text-soft);
+      }
+
+      .status-pill,
+      .flat-btn,
+      .select-row,
+      .tag,
+      .summary-chip {
+        padding: 6px 8px;
+        border-radius: 8px;
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .flat-btn.primary {
+        color: var(--tmux-primary-foreground);
+        background: var(--tmux-primary);
+        border-color: transparent;
+      }
+
+      .shell-body {
+        display: grid;
+        grid-template-columns: var(--shell-rail) minmax(0, 1fr);
+        min-height: calc(100vh - var(--shell-top));
+      }
+
+      .left-rail {
+        overflow: auto;
+        padding: 12px;
+        border-right: 1px solid var(--tmux-border);
+        background: rgba(255, 255, 255, 0.72);
+      }
+
+      .workspace {
+        overflow: auto;
+        padding: 12px 14px 16px;
+      }
+
+      .left-rail-inner,
+      .workspace-inner,
+      .rail-section,
+      .page-header,
+      .metric-cell,
+      .panel,
+      .panel-head,
+      .panel-copy,
+      .footer-card,
+      .list-stack,
+      .list-row,
+      .summary-block,
+      .distribution-stack,
+      .distribution-row,
+      .legend-stack,
+      .coverage-matrix,
+      .coverage-row {
+        display: grid;
+        gap: 8px;
+      }
+
+      .left-rail-inner,
+      .workspace-inner {
+        gap: 10px;
+      }
+
+      .rail-section,
+      .page-header,
+      .metric-strip,
+      .panel,
+      .summary-strip,
+      .footer-card {
+        background: var(--tmux-card);
+        border: 1px solid var(--tmux-border);
+        border-radius: 10px;
+        box-shadow: var(--tmux-shadow-1);
+      }
+
+      .rail-section,
+      .page-header,
+      .panel,
+      .footer-card {
+        padding: 10px 12px;
+      }
+
+      .summary-strip {
+        width: 100%;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        padding: 8px 10px;
+      }
+
+      .rail-label,
+      .field-label,
+      .metric-label,
+      .eyebrow,
+      .subtle-label,
+      .chart-axis,
+      .panel-note {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        font-weight: 700;
+      }
+
+      .rail-label,
+      .field-label,
+      .metric-label,
+      .subtle,
+      .page-header p,
+      .footer-copy,
+      .panel-copy,
+      .row-meta,
+      .chart-axis,
+      .panel-note {
+        color: var(--tmux-text-soft);
+      }
+
+      .eyebrow {
+        color: var(--tmux-primary);
+      }
+
+      .rail-title,
+      .section-title,
+      .metric-value,
+      .value-main,
+      .list-title,
+      .dist-title {
+        color: var(--tmux-text-strong);
+      }
+
+      .rail-title {
+        margin: 0;
+        font-size: 14px;
+      }
+
+      .rail-copy,
+      .page-header p,
+      .footer-copy,
+      .panel-copy {
+        margin: 0;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .field-stack {
+        display: grid;
+        gap: 6px;
+      }
+
+      .select-row {
+        justify-content: space-between;
+        width: 100%;
+      }
+
+      .switch-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 7px 8px;
+        border: 1px solid var(--tmux-border);
+        border-radius: 8px;
+        background: var(--tmux-card);
+      }
+
+      .toggle {
+        position: relative;
+        width: 34px;
+        height: 18px;
+        border-radius: 999px;
+        background: rgba(63, 92, 255, 0.18);
+      }
+
+      .toggle::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        left: 18px;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: var(--tmux-primary);
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.18);
+      }
+
+      .workspace-inner {
+        max-width: var(--shell-max);
+        margin: 0 auto;
+      }
+
+      .page-header {
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: start;
+      }
+
+      .page-header h1 {
+        margin: 0;
+        font-size: 22px;
+        line-height: 1.1;
+      }
+
+      .header-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .metric-strip {
+        width: 100%;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0;
+        overflow: hidden;
+      }
+
+      .metric-cell {
+        padding: 9px 10px;
+        border-right: 1px solid var(--tmux-border);
+      }
+
+      .metric-cell:last-child {
+        border-right: 0;
+      }
+
+      .metric-value {
+        font-size: 18px;
+        font-weight: 700;
+        line-height: 1;
+      }
+
+      .metric-sub {
+        font-size: 11px;
+        color: var(--tmux-text-soft);
+      }
+
+      .analytics-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 10px;
+      }
+
+      .panel-head {
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: start;
+      }
+
+      .section-title {
+        margin: 0;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .panel-action {
+        color: var(--tmux-text-soft);
+        text-decoration: none;
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .trend-shell {
+        display: grid;
+        grid-template-columns: 44px minmax(0, 1fr);
+        gap: 10px;
+        align-items: stretch;
+      }
+
+      .chart-y {
+        display: grid;
+        grid-template-rows: repeat(5, 1fr);
+        gap: 10px;
+        justify-items: end;
+      }
+
+      .chart-grid {
+        position: relative;
+        min-height: 252px;
+        border: 1px solid rgba(217, 224, 238, 0.92);
+        border-radius: 8px;
+        overflow: hidden;
+        background:
+          linear-gradient(to top, rgba(63, 92, 255, 0.04), rgba(63, 92, 255, 0.01)),
+          repeating-linear-gradient(
+            to top,
+            rgba(217, 224, 238, 0.8) 0,
+            rgba(217, 224, 238, 0.8) 1px,
+            transparent 1px,
+            transparent 50px
+          );
+      }
+
+      .chart-columns {
+        position: absolute;
+        inset: 12px 12px 28px 12px;
+        display: grid;
+        grid-template-columns: repeat(8, minmax(0, 1fr));
+        gap: 10px;
+        align-items: end;
+      }
+
+      .chart-col {
+        display: grid;
+        gap: 6px;
+        justify-items: stretch;
+      }
+
+      .col-stack {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 4px;
+        align-items: end;
+        min-height: 194px;
+      }
+
+      .bar {
+        border-radius: 7px 7px 4px 4px;
+        align-self: end;
+      }
+
+      .bar.received {
+        background: linear-gradient(180deg, rgba(63, 92, 255, 0.95), rgba(63, 92, 255, 0.72));
+        box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.18);
+      }
+
+      .bar.cleaned {
+        background: linear-gradient(180deg, rgba(31, 157, 104, 0.95), rgba(31, 157, 104, 0.72));
+        box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.18);
+      }
+
+      .col-label {
+        text-align: center;
+        font-size: 10px;
+        font-weight: 700;
+        color: var(--tmux-text-soft);
+      }
+
+      .chart-footer {
+        padding-top: 8px;
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .chart-legend {
+        flex-wrap: wrap;
+      }
+
+      .legend-dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        display: inline-block;
+      }
+
+      .legend-dot.received {
+        background: var(--tmux-primary);
+      }
+
+      .legend-dot.cleaned {
+        background: var(--tmux-success);
+      }
+
+      .split-panels,
+      .bottom-panels {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .list-row {
+        grid-template-columns: minmax(0, 1fr) 70px 66px;
+        align-items: center;
+        padding: 9px 10px;
+        border: 1px solid rgba(217, 224, 238, 0.92);
+        border-radius: 8px;
+        background: #fbfcff;
+      }
+
+      .list-title {
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .list-sub,
+      .dist-sub {
+        font-size: 11px;
+        color: var(--tmux-text-soft);
+      }
+
+      .value-main {
+        font-size: 12px;
+        font-weight: 700;
+        text-align: right;
+      }
+
+      .tag {
+        display: inline-flex;
+        justify-content: center;
+        line-height: 1.1;
+      }
+
+      .tag.good {
+        color: var(--tmux-success);
+        background: rgba(31, 157, 104, 0.08);
+      }
+
+      .tag.info {
+        color: var(--tmux-primary);
+        background: rgba(63, 92, 255, 0.08);
+      }
+
+      .tag.warn {
+        color: var(--tmux-warning);
+        background: rgba(183, 121, 31, 0.08);
+      }
+
+      .summary-block {
+        gap: 4px;
+      }
+
+      .summary-value {
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--tmux-text-strong);
+      }
+
+      .distribution-row {
+        grid-template-columns: 108px minmax(0, 1fr) 56px;
+        align-items: center;
+      }
+
+      .dist-title {
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .dist-bar-track,
+      .coverage-track {
+        height: 10px;
+        border-radius: 999px;
+        overflow: hidden;
+        background: var(--tmux-surface-2);
+        border: 1px solid rgba(217, 224, 238, 0.92);
+      }
+
+      .dist-bar-fill {
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, rgba(63, 92, 255, 0.84), rgba(63, 92, 255, 0.56));
+      }
+
+      .coverage-row {
+        gap: 5px;
+      }
+
+      .coverage-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        align-items: baseline;
+      }
+
+      .coverage-track {
+        height: 8px;
+      }
+
+      .coverage-fill.review {
+        height: 100%;
+        width: 68%;
+        background: linear-gradient(90deg, rgba(63, 92, 255, 0.92), rgba(63, 92, 255, 0.58));
+      }
+
+      .coverage-fill.unsub {
+        height: 100%;
+        width: 74%;
+        background: linear-gradient(90deg, rgba(31, 157, 104, 0.92), rgba(31, 157, 104, 0.58));
+      }
+
+      .coverage-fill.archive {
+        height: 100%;
+        width: 82%;
+        background: linear-gradient(90deg, rgba(183, 121, 31, 0.92), rgba(183, 121, 31, 0.58));
+      }
+
+      .footer-card {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .footer-card h2 {
+        margin: 0 0 2px;
+        font-size: 13px;
+        color: var(--tmux-text-strong);
+      }
+
+      .footer-link {
+        color: var(--tmux-text-soft);
+        text-decoration: none;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      @media (max-width: 1180px) {
+        .metric-strip,
+        .split-panels,
+        .bottom-panels {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .page-header {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 980px) {
+        body {
+          overflow: auto;
+        }
+
+        .shell-body {
+          grid-template-columns: 1fr;
+        }
+
+        .left-rail {
+          border-right: 0;
+          border-bottom: 1px solid var(--tmux-border);
+        }
+
+        .top-rail {
+          flex-wrap: wrap;
+          height: auto;
+          padding: 12px 14px;
+        }
+
+        .top-tabs {
+          order: 3;
+          width: 100%;
+          justify-content: flex-start;
+          overflow: auto;
+          padding-bottom: 2px;
+        }
+
+        .trend-shell {
+          grid-template-columns: 1fr;
+        }
+
+        .chart-y {
+          display: none;
+        }
+      }
+
+      @media (max-width: 720px) {
+        .metric-strip,
+        .split-panels,
+        .bottom-panels,
+        .list-row,
+        .footer-card,
+        .distribution-row {
+          grid-template-columns: 1fr;
+          display: grid;
+        }
+
+        .chart-columns {
+          gap: 6px;
+        }
+
+        .col-stack {
+          gap: 3px;
+        }
+
+        .summary-strip {
+          display: grid;
+        }
+
+        .value-main {
+          text-align: left;
+        }
+      }
+    </style>
+
+    <div class="app-shell">
+      <header class="top-rail">
+        <div class="brand-lockup">
+          <span class="brand-badge"><i data-lucide="inbox"></i></span>
+          TidyMail
+        </div>
+        <nav class="top-tabs" aria-label="Primary">
+          <a class="nav-tab" href="by-sender-compact-suite.html" data-dom-id="nav-senders"><i data-lucide="users"></i>Senders</a>
+          <a class="nav-tab" href="unread-compact-suite.html" data-dom-id="nav-unread"><i data-lucide="mail-open"></i>Unread</a>
+          <a class="nav-tab" href="unsubscribe-compact-suite.html" data-dom-id="nav-unsub"><i data-lucide="mail-minus"></i>Unsubscribe</a>
+          <a class="nav-tab" href="review-timeline-compact-suite.html" data-dom-id="nav-review"><i data-lucide="history"></i>Review</a>
+          <a class="nav-tab is-active" href="analytics-compact-suite.html" data-dom-id="nav-analytics"><i data-lucide="chart-column"></i>Analytics</a>
+        </nav>
+        <div class="top-meta">
+          <span class="status-pill"><i data-lucide="activity"></i>2 accounts</span>
+        </div>
+      </header>
+
+      <div class="shell-body">
+        <aside class="left-rail" aria-label="Analytics controls">
+          <div class="left-rail-inner">
+            <section class="rail-section">
+              <div class="rail-label">Workspace</div>
+              <h2 class="rail-title">Analytics view</h2>
+              <p class="rail-copy">Cleanup throughput, clutter pressure, and review outcomes in one compact shell.</p>
+            </section>
+
+            <section class="rail-section">
+              <div class="field-stack">
+                <div class="field-label">Date window</div>
+                <button class="select-row" type="button" data-dom-id="analytics-range-selector">
+                  <span>Last 30 days</span>
+                  <i data-lucide="calendar-range"></i>
+                </button>
+              </div>
+              <div class="field-stack">
+                <div class="field-label">Grouping</div>
+                <button class="select-row" type="button" data-dom-id="analytics-grouping-selector">
+                  <span>Weekly buckets</span>
+                  <i data-lucide="group"></i>
+                </button>
+              </div>
+            </section>
+
+            <section class="rail-section">
+              <div class="field-stack">
+                <div class="field-label">Account scope</div>
+                <button class="select-row" type="button">
+                  <span>All linked inboxes</span>
+                  <i data-lucide="mailbox"></i>
+                </button>
+              </div>
+              <div class="field-stack">
+                <div class="field-label">Metric family</div>
+                <button class="select-row" type="button">
+                  <span>Cleanup outcomes</span>
+                  <i data-lucide="filter"></i>
+                </button>
+              </div>
+            </section>
+
+            <section class="rail-section">
+              <div class="field-stack">
+                <div class="field-label">Compare</div>
+                <div class="switch-row" data-dom-id="analytics-compare-toggle">
+                  <span class="subtle">Previous 30 days</span>
+                  <span class="toggle" aria-hidden="true"></span>
+                </div>
+              </div>
+              <div class="field-stack">
+                <div class="field-label">Focus</div>
+                <button class="select-row" type="button">
+                  <span>Inbox reduction</span>
+                  <i data-lucide="sparkline"></i>
+                </button>
+              </div>
+            </section>
+          </div>
+        </aside>
+
+        <main class="workspace overflow-y-auto" data-scroll-region="primary">
+          <div class="workspace-inner">
+            <section class="page-header">
+              <div>
+                <div class="eyebrow">Mailbox cleanup</div>
+                <h1>Cleanup analytics</h1>
+                <p>Track received mail, staged cleanup, approved actions, and mailbox reduction.</p>
+              </div>
+              <div class="header-actions">
+                <button class="flat-btn" type="button" data-dom-id="analytics-export-action"><i data-lucide="download"></i>Export</button>
+                <button class="flat-btn primary" type="button"><i data-lucide="share-2"></i>Share snapshot</button>
+              </div>
+            </section>
+
+            <section class="metric-strip" aria-label="Analytics headline metrics">
+              <div class="metric-cell">
+                <span class="metric-label">Received</span>
+                <span class="metric-value">2,486</span>
+                <span class="metric-sub">Down 12% vs prior window</span>
+              </div>
+              <div class="metric-cell">
+                <span class="metric-label">Triaged</span>
+                <span class="metric-value">2,031</span>
+                <span class="metric-sub">82% of total volume</span>
+              </div>
+              <div class="metric-cell">
+                <span class="metric-label">Archived</span>
+                <span class="metric-value">1,364</span>
+                <span class="metric-sub">Primary cleanup outcome</span>
+              </div>
+              <div class="metric-cell">
+                <span class="metric-label">Unsubscribed</span>
+                <span class="metric-value">46</span>
+                <span class="metric-sub">14 senders fully removed</span>
+              </div>
+            </section>
+
+            <div class="analytics-grid">
+              <section class="panel">
+                <div class="panel-head">
+                  <div class="panel-copy">
+                    <div class="eyebrow">Trend</div>
+                    <h2 class="section-title">Received vs cleaned volume</h2>
+                    <p class="panel-copy">Inbox pressure stayed elevated mid-window, but cleanup throughput closed the gap in the last two weeks.</p>
+                  </div>
+                  <a class="panel-action" href="#" data-dom-id="analytics-trend-drilldown"><i data-lucide="arrow-up-right"></i>Drill down</a>
+                </div>
+                <div class="trend-shell">
+                  <div class="chart-y" aria-hidden="true">
+                    <span class="chart-axis">500</span>
+                    <span class="chart-axis">375</span>
+                    <span class="chart-axis">250</span>
+                    <span class="chart-axis">125</span>
+                    <span class="chart-axis">0</span>
+                  </div>
+                  <div>
+                    <div class="chart-grid">
+                      <div class="chart-columns">
+                        <div class="chart-col">
+                          <div class="col-stack">
+                            <div class="bar received" style="height: 71%;"></div>
+                            <div class="bar cleaned" style="height: 56%;"></div>
+                          </div>
+                          <div class="col-label">W1</div>
+                        </div>
+                        <div class="chart-col">
+                          <div class="col-stack">
+                            <div class="bar received" style="height: 82%;"></div>
+                            <div class="bar cleaned" style="height: 60%;"></div>
+                          </div>
+                          <div class="col-label">W2</div>
+                        </div>
+                        <div class="chart-col">
+                          <div class="col-stack">
+                            <div class="bar received" style="height: 76%;"></div>
+                            <div class="bar cleaned" style="height: 63%;"></div>
+                          </div>
+                          <div class="col-label">W3</div>
+                        </div>
+                        <div class="chart-col">
+                          <div class="col-stack">
+                            <div class="bar received" style="height: 88%;"></div>
+                            <div class="bar cleaned" style="height: 69%;"></div>
+                          </div>
+                          <div class="col-label">W4</div>
+                        </div>
+                        <div class="chart-col">
+                          <div class="col-stack">
+                            <div class="bar received" style="height: 80%;"></div>
+                            <div class="bar cleaned" style="height: 73%;"></div>
+                          </div>
+                          <div class="col-label">W5</div>
+                        </div>
+                        <div class="chart-col">
+                          <div class="col-stack">
+                            <div class="bar received" style="height: 67%;"></div>
+                            <div class="bar cleaned" style="height: 71%;"></div>
+                          </div>
+                          <div class="col-label">W6</div>
+                        </div>
+                        <div class="chart-col">
+                          <div class="col-stack">
+                            <div class="bar received" style="height: 59%;"></div>
+                            <div class="bar cleaned" style="height: 75%;"></div>
+                          </div>
+                          <div class="col-label">W7</div>
+                        </div>
+                        <div class="chart-col">
+                          <div class="col-stack">
+                            <div class="bar received" style="height: 63%;"></div>
+                            <div class="bar cleaned" style="height: 79%;"></div>
+                          </div>
+                          <div class="col-label">W8</div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="chart-footer">
+                      <div class="chart-legend">
+                        <span><span class="legend-dot received"></span>Received</span>
+                        <span><span class="legend-dot cleaned"></span>Cleaned</span>
+                      </div>
+                      <span class="panel-note">Last 30 days · weekly grouping · includes archive, delete, mark read, and unsubscribe</span>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <div class="split-panels">
+                <section class="panel">
+                  <div class="panel-head">
+                    <div class="panel-copy">
+                      <div class="eyebrow">Top clutter</div>
+                      <h2 class="section-title">Senders by received volume</h2>
+                    </div>
+                    <a class="panel-action" href="#"><i data-lucide="list"></i>Queue</a>
+                  </div>
+                  <div class="list-stack">
+                    <article class="list-row">
+                      <div>
+                        <div class="list-title">Product Hunt</div>
+                        <div class="list-sub">Digest newsletters · 112 received</div>
+                      </div>
+                      <div class="value-main">84%</div>
+                      <span class="tag good">Unsub ready</span>
+                    </article>
+                    <article class="list-row">
+                      <div>
+                        <div class="list-title">Notion</div>
+                        <div class="list-sub">Tips and release mail · 96 received</div>
+                      </div>
+                      <div class="value-main">71%</div>
+                      <span class="tag warn">Mixed signal</span>
+                    </article>
+                    <article class="list-row">
+                      <div>
+                        <div class="list-title">Ramp</div>
+                        <div class="list-sub">Marketing and receipt blend · 82 received</div>
+                      </div>
+                      <div class="value-main">63%</div>
+                      <span class="tag info">Review</span>
+                    </article>
+                    <article class="list-row">
+                      <div>
+                        <div class="list-title">Substack</div>
+                        <div class="list-sub">Newsletter stack · 74 received</div>
+                      </div>
+                      <div class="value-main">91%</div>
+                      <span class="tag good">Low value</span>
+                    </article>
+                  </div>
+                </section>
+
+                <section class="panel">
+                  <div class="panel-head">
+                    <div class="panel-copy">
+                      <div class="eyebrow">Outcomes</div>
+                      <h2 class="section-title">Cleanup actions by result</h2>
+                    </div>
+                    <a class="panel-action" href="#"><i data-lucide="arrow-up-right"></i>Open report</a>
+                  </div>
+                  <div class="list-stack">
+                    <article class="list-row">
+                      <div>
+                        <div class="list-title">Archive sweeps</div>
+                        <div class="list-sub">Bulk clears from sender and unread views</div>
+                      </div>
+                      <div class="value-main">1,364</div>
+                      <span class="tag info">55%</span>
+                    </article>
+                    <article class="list-row">
+                      <div>
+                        <div class="list-title">Delete actions</div>
+                        <div class="list-sub">Approved deletes from sender and unread views</div>
+                      </div>
+                      <div class="value-main">318</div>
+                      <span class="tag good">13%</span>
+                    </article>
+                    <article class="list-row">
+                      <div>
+                        <div class="list-title">Unsubscribe complete</div>
+                        <div class="list-sub">Confirmed removals from noisy senders</div>
+                      </div>
+                      <div class="value-main">46</div>
+                      <span class="tag good">74% success</span>
+                    </article>
+                    <article class="list-row">
+                      <div>
+                        <div class="list-title">Marked read</div>
+                        <div class="list-sub">Low-priority unread mail approved as read</div>
+                      </div>
+                      <div class="value-main">129</div>
+                      <span class="tag warn">5%</span>
+                    </article>
+                  </div>
+                </section>
+              </div>
+
+              <section class="summary-strip" aria-label="Efficiency summary">
+                <div class="summary-block">
+                  <span class="metric-label">Inbox reduction</span>
+                  <span class="summary-value">38%</span>
+                </div>
+                <div class="summary-block">
+                  <span class="metric-label">Cleanup rate</span>
+                  <span class="summary-value">81.7%</span>
+                </div>
+                <div class="summary-block">
+                  <span class="metric-label">Median triage speed</span>
+                  <span class="summary-value">17 min</span>
+                </div>
+                <div class="summary-chip"><i data-lucide="list-checks"></i>612 emails reviewed before apply</div>
+              </section>
+
+              <div class="bottom-panels">
+                <section class="panel">
+                  <div class="panel-head">
+                    <div class="panel-copy">
+                      <div class="eyebrow">Speed</div>
+                      <h2 class="section-title">Triage time distribution</h2>
+                      <p class="panel-copy">Most cleanup happens quickly after delivery, with a small tail of operational mail left for later review.</p>
+                    </div>
+                    <a class="panel-action" href="#"><i data-lucide="clock-3"></i>View details</a>
+                  </div>
+                  <div class="distribution-stack">
+                    <div class="distribution-row">
+                      <div>
+                        <div class="dist-title">Under 15 min</div>
+                        <div class="dist-sub">Fast archive, delete, and mark-read approvals</div>
+                      </div>
+                      <div class="dist-bar-track"><div class="dist-bar-fill" style="width: 72%;"></div></div>
+                      <div class="value-main">72%</div>
+                    </div>
+                    <div class="distribution-row">
+                      <div>
+                        <div class="dist-title">15 to 60 min</div>
+                        <div class="dist-sub">Morning and afternoon passes</div>
+                      </div>
+                      <div class="dist-bar-track"><div class="dist-bar-fill" style="width: 19%;"></div></div>
+                      <div class="value-main">19%</div>
+                    </div>
+                    <div class="distribution-row">
+                      <div>
+                        <div class="dist-title">1 to 4 hours</div>
+                        <div class="dist-sub">Deferred clutter review</div>
+                      </div>
+                      <div class="dist-bar-track"><div class="dist-bar-fill" style="width: 7%;"></div></div>
+                      <div class="value-main">7%</div>
+                    </div>
+                    <div class="distribution-row">
+                      <div>
+                        <div class="dist-title">Over 4 hours</div>
+                        <div class="dist-sub">Protected or ambiguous threads</div>
+                      </div>
+                      <div class="dist-bar-track"><div class="dist-bar-fill" style="width: 2%;"></div></div>
+                      <div class="value-main">2%</div>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="panel">
+                  <div class="panel-head">
+                    <div class="panel-copy">
+                      <div class="eyebrow">Review</div>
+                      <h2 class="section-title">Review and cleanup coverage</h2>
+                      <p class="panel-copy">Review approval keeps mailbox changes controlled while cleanup removes repeat clutter.</p>
+                    </div>
+                    <a class="panel-action" href="review-timeline-compact-suite.html"><i data-lucide="list-checks"></i>Open review</a>
+                  </div>
+                  <div class="coverage-matrix">
+                    <div class="coverage-row">
+                      <div class="coverage-head">
+                        <span class="dist-title">Review coverage</span>
+                        <span class="dist-sub">68% of selected cleanup reviewed</span>
+                      </div>
+                      <div class="coverage-track"><div class="coverage-fill review"></div></div>
+                    </div>
+                    <div class="coverage-row">
+                      <div class="coverage-head">
+                        <span class="dist-title">Unsubscribe completion</span>
+                        <span class="dist-sub">74% of staged sender exits</span>
+                      </div>
+                      <div class="coverage-track"><div class="coverage-fill unsub"></div></div>
+                    </div>
+                    <div class="coverage-row">
+                      <div class="coverage-head">
+                        <span class="dist-title">Archive confidence</span>
+                        <span class="dist-sub">82% of archive actions stayed untouched</span>
+                      </div>
+                      <div class="coverage-track"><div class="coverage-fill archive"></div></div>
+                    </div>
+                    <div class="list-stack" style="margin-top: 4px;">
+                      <article class="list-row">
+                        <div>
+                          <div class="list-title">Highest cleanup impact</div>
+                          <div class="list-sub">Approved archive and delete actions reduced inbox load by 214 emails</div>
+                        </div>
+                        <div class="value-main">214</div>
+                        <span class="tag good">Saved</span>
+                      </article>
+                      <article class="list-row">
+                        <div>
+                          <div class="list-title">Next review opportunity</div>
+                          <div class="list-sub">Developer newsletters still generate 61 unread messages weekly</div>
+                        </div>
+                        <div class="value-main">61</div>
+                        <span class="tag warn">Open</span>
+                      </article>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            </div>
+
+            <footer>
+              <div class="footer-card">
+                <div>
+                  <h2>Review outcomes</h2>
+                  <div class="footer-copy">Analytics connects sender cleanup, unread cleanup, unsubscribe selections, and approved mailbox changes.</div>
+                </div>
+                <a class="footer-link" href="review-timeline-compact-suite.html" data-dom-id="footer-back-review"><i data-lucide="arrow-right"></i>Back to review</a>
+              </div>
+            </footer>
+          </div>
+        </main>
+      </div>
+    </div>
+    <script>lucide.createIcons();</script>
+</body>
+</html>

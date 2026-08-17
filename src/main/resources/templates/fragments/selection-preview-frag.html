@@ -1,0 +1,168 @@
+<section id="selection-preview"
+         th:fragment="preview"
+         xmlns:th="http://www.thymeleaf.org"
+         aria-live="polite"
+         aria-labelledby="selection-preview-heading"
+         th:attr="role=${preview.state.name() == 'READY' || preview.state.name() == 'EMPTY' ? 'status' : 'alert'}"
+         tabindex="-1">
+    <div th:if="${preview.state.name() == 'READY'}">
+        <h2 id="selection-preview-heading" tabindex="-1">Exact impact preview</h2>
+        <p>
+            Action:
+            <strong th:text="${#strings.replace(action.name(), '_', ' ')}">ARCHIVE</strong>
+        </p>
+        <p>
+            <strong th:text="${preview.messageCount}">0</strong>
+            exact messages across
+            <strong th:text="${preview.targetCount}">0</strong>
+            selected targets.
+        </p>
+        <p>
+            <strong th:text="${preview.scopes.size()}">0</strong>
+            immutable scopes across
+            <strong th:text="${preview.scopes.size()}">0</strong>
+            accounts.
+        </p>
+        <dl>
+            <dt>Protected senders</dt>
+            <dd th:text="${preview.protectedSenderCount}">0</dd>
+            <dt>Protected messages</dt>
+            <dd th:text="${preview.protectedMessageCount}">0</dd>
+            <dt>High-risk messages</dt>
+            <dd th:text="${preview.highRiskCount}">0</dd>
+            <dt>Excluded protected senders</dt>
+            <dd th:text="${preview.excludedProtectedSenderCount}">0</dd>
+            <dt>Excluded protected messages</dt>
+            <dd th:text="${preview.excludedProtectedMessageCount}">0</dd>
+        </dl>
+        <ul aria-label="Exact account scope hashes">
+            <li th:each="scope : ${preview.scopes}">
+                <span th:text="${scope.accountLabel}">Account</span>:
+                <strong th:text="|${scope.messageCount} messages|">0 messages</strong>
+                <code class="scope-hash"
+                      th:text="|${#strings.substring(scope.scopeHash, 0, 12)}...|">
+                    comparison hash
+                </code>
+            </li>
+        </ul>
+        <p>Both modes use this exact scope and the same safety checks.</p>
+        <fieldset class="execution-mode-choice">
+            <legend>When should TidyMail run this action?</legend>
+            <form method="post"
+                  th:action="@{/api/action-commands}"
+                  th:attr="hx-post=@{/api/action-commands}"
+                  hx-target="#selection-preview"
+                  hx-swap="outerHTML">
+                <input type="hidden" name="confirmation"
+                       th:value="${preview.confirmationIntent}">
+                <input type="hidden" name="executionMode" value="STAGED">
+                <strong>Stage for Review</strong>
+                <p>Nothing changes until you approve it on Review.</p>
+                <button type="submit">Send exact scope to Review</button>
+            </form>
+            <form method="post"
+                  th:action="@{/api/action-commands}"
+                  th:attr="hx-post=@{/api/action-commands}"
+                  hx-target="#selection-preview"
+                  hx-swap="outerHTML">
+                <input type="hidden" name="confirmation"
+                       th:value="${preview.confirmationIntent}">
+                <input type="hidden" name="executionMode" value="IMMEDIATE">
+                <strong>Run after this confirmation</strong>
+                <p>
+                    Uses the same exact scope, conflict checks, and outcome tracking,
+                    then starts now.
+                </p>
+                <label>
+                    <input type="checkbox" name="immediateAcknowledged"
+                           value="true" required>
+                    I understand this action will start after the same preflight completes.
+                </label>
+                <button type="submit">Confirm and run exact scope</button>
+            </form>
+        </fieldset>
+    </div>
+
+    <div th:if="${preview.state.name() == 'EMPTY'}">
+        <h2 id="selection-preview-heading" tabindex="-1">Selection no longer matches</h2>
+        <p>The selected rows no longer match the current indexed data. No scope was created.</p>
+    </div>
+
+    <div th:if="${preview.state.name() == 'PROTECTED_BLOCKED'}">
+        <h2 id="selection-preview-heading" tabindex="-1">Protected senders blocked this preview</h2>
+        <p>
+            Protected senders are excluded from bulk selection.
+            <strong th:text="${preview.excludedProtectedSenderCount}">0</strong>
+            protected senders and
+            <strong th:text="${preview.excludedProtectedMessageCount}">0</strong>
+            protected messages were excluded.
+        </p>
+    </div>
+
+    <div th:if="${preview.state.name() == 'CAP_EXCEEDED'}">
+        <h2 id="selection-preview-heading" tabindex="-1">Selection is too large for one exact preview</h2>
+        <p>
+            <strong th:text="${preview.capMessageCount}">0</strong>
+            messages match for
+            <strong th:text="${preview.capAccountLabel}">Account</strong>.
+            The exact per-account scope limit is 1,000. Narrow the filters and try again.
+        </p>
+    </div>
+
+    <div th:if="${preview.state.name() == 'INVALID'}">
+        <h2 id="selection-preview-heading" tabindex="-1">Selection could not be previewed</h2>
+        <p th:text="${preview.errorMessage}">
+            The selection is invalid or no longer matches the indexed data.
+        </p>
+    </div>
+
+    <aside th:if="${preview.excludedProtectedMessageCount > 0
+                   && (preview.state.name() == 'READY'
+                       || preview.state.name() == 'PROTECTED_BLOCKED')}"
+           role="alert"
+           aria-labelledby="protected-override-heading">
+        <h3 id="protected-override-heading">Include protected senders explicitly</h3>
+        <p>
+            <strong th:text="${preview.excludedProtectedSenderCount}">0</strong>
+            protected senders and
+            <strong th:text="${preview.excludedProtectedMessageCount}">0</strong>
+            protected messages are currently excluded.
+        </p>
+        <form method="post" action="/api/selection-preview"
+              th:attr="hx-post=@{/api/selection-preview}"
+              hx-target="#selection-preview"
+              hx-swap="outerHTML">
+            <input type="hidden" name="surface" th:value="${surface}">
+            <input type="hidden" name="mode" th:value="${mode}">
+            <input type="hidden" name="action" th:value="${action}">
+            <input th:each="entry : ${canonicalQuery.entrySet()}"
+                   type="hidden" th:name="${entry.key}" th:value="${entry.value}">
+            <input th:each="rowKey : ${rowKeys}"
+                   type="hidden" name="rowKey" th:value="${rowKey}">
+            <input type="hidden"
+                   th:if="${_csrf != null}"
+                   th:name="${_csrf.parameterName}"
+                   th:value="${_csrf.token}">
+            <label>
+                <input type="checkbox" name="includeProtected" value="true" required>
+                Include protected senders in this preview
+            </label>
+            <label for="override-reason">Reason for this exception</label>
+            <select id="override-reason" name="reasonCode" required>
+                <option value="">Select a reason</option>
+                <option th:each="reason : ${overrideReasons}"
+                        th:value="${reason}"
+                        th:text="${#strings.replace(reason.name(), '_', ' ')}">
+                    Reason
+                </option>
+            </select>
+            <p>This exception is recorded in the audit log. It still creates a preview only.</p>
+            <button type="submit">Recalculate exact preview</button>
+        </form>
+    </aside>
+
+    <p th:if="${preview.state.name() != 'READY'}">
+        <strong>Preview only. Nothing has been queued, approved, or applied.</strong>
+    </p>
+    <a th:href="${changeSelectionUrl}">Change selection</a>
+</section>

@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<div th:fragment="results(page)" id="analytics-results" class="analytics-results"
+     th:if="${page.mailbox != null}">
+    <section class="analytics-metrics" aria-label="Analytics metric tabs">
+        <div class="analytics-metric-grid" role="tablist">
+            <button class="analytics-metric-card is-active" type="button" role="tab"
+                    data-metric="RECEIVED" aria-selected="true">
+                <span>Received</span>
+                <strong th:text="${page.mailbox.total('RECEIVED')}">0</strong>
+            </button>
+            <button class="analytics-metric-card" type="button" role="tab"
+                    data-metric="SENT" aria-selected="false">
+                <span>Sent</span>
+                <strong th:text="${page.mailbox.total('SENT')}">0</strong>
+            </button>
+            <button class="analytics-metric-card" type="button" role="tab"
+                    data-metric="READ" aria-selected="false">
+                <span>Read</span>
+                <strong th:text="${page.mailbox.total('READ')}">0</strong>
+            </button>
+            <button class="analytics-metric-card" type="button" role="tab"
+                    data-metric="ARCHIVED_DELETED" aria-selected="false">
+                <span>Archived/Deleted</span>
+                <strong th:text="${page.mailbox.total('ARCHIVED_DELETED')}">0</strong>
+            </button>
+        </div>
+    </section>
+
+    <section class="analytics-trend" aria-labelledby="analytics-chart-title">
+        <h2 id="analytics-chart-title">Received over time</h2>
+        <p id="analytics-chart-summary"
+           th:text="|${page.query.periodLabel}, grouped by ${page.query.groupingValue}. Use the metric cards to switch series; focus a bar to hear its exact range and count.|">
+            Selected period and grouping
+        </p>
+        <div class="analytics-chart" role="group"
+             aria-labelledby="analytics-chart-title"
+             aria-describedby="analytics-chart-summary analytics-chart-axis">
+            <div class="analytics-chart-layout">
+                <div class="analytics-chart-y-axis" aria-hidden="true">
+                    <span data-chart-y-tick="1">4</span>
+                    <span data-chart-y-tick="0.75">3</span>
+                    <span data-chart-y-tick="0.5">2</span>
+                    <span data-chart-y-tick="0.25">1</span>
+                    <span data-chart-y-tick="0">0</span>
+                </div>
+                <div class="analytics-chart-viewport">
+                    <div class="analytics-chart-series" data-chart-series="RECEIVED">
+                        <div class="analytics-chart-column"
+                             th:each="bucket : ${page.mailbox.buckets('RECEIVED')}">
+                            <span class="analytics-chart-track">
+                                <button class="analytics-chart-bar" type="button"
+                                        aria-pressed="false"
+                                        th:attr="data-value=${bucket.value},
+                                                 aria-label=|Received: ${bucket.value} on ${bucket.tooltipDate()}|"></button>
+                                <span class="analytics-chart-tooltip" aria-hidden="true">
+                                    <strong th:text="${bucket.value}">0</strong>
+                                    <time th:datetime="${bucket.range.startInclusive}"
+                                          th:text="${bucket.tooltipDate()}">2026-07-31</time>
+                                </span>
+                            </span>
+                            <time class="analytics-chart-date"
+                                  th:datetime="${bucket.range.startInclusive}"
+                                  th:text="${bucket.chartLabel()}">Aug 14</time>
+                        </div>
+                    </div>
+                    <div class="analytics-chart-series" data-chart-series="SENT" hidden>
+                        <div class="analytics-chart-column"
+                             th:each="bucket : ${page.mailbox.buckets('SENT')}">
+                            <span class="analytics-chart-track">
+                                <button class="analytics-chart-bar" type="button"
+                                        aria-pressed="false"
+                                        th:attr="data-value=${bucket.value},
+                                                 aria-label=|Sent: ${bucket.value} on ${bucket.tooltipDate()}|"></button>
+                                <span class="analytics-chart-tooltip" aria-hidden="true">
+                                    <strong th:text="${bucket.value}">0</strong>
+                                    <time th:datetime="${bucket.range.startInclusive}"
+                                          th:text="${bucket.tooltipDate()}">2026-07-31</time>
+                                </span>
+                            </span>
+                            <time class="analytics-chart-date"
+                                  th:datetime="${bucket.range.startInclusive}"
+                                  th:text="${bucket.chartLabel()}">Aug 14</time>
+                        </div>
+                    </div>
+                    <div class="analytics-chart-series" data-chart-series="READ" hidden>
+                        <div class="analytics-chart-column"
+                             th:each="bucket : ${page.mailbox.buckets('READ')}">
+                            <span class="analytics-chart-track">
+                                <button class="analytics-chart-bar" type="button"
+                                        aria-pressed="false"
+                                        th:attr="data-value=${bucket.value},
+                                                 aria-label=|Read: ${bucket.value} on ${bucket.tooltipDate()}|"></button>
+                                <span class="analytics-chart-tooltip" aria-hidden="true">
+                                    <strong th:text="${bucket.value}">0</strong>
+                                    <time th:datetime="${bucket.range.startInclusive}"
+                                          th:text="${bucket.tooltipDate()}">2026-07-31</time>
+                                </span>
+                            </span>
+                            <time class="analytics-chart-date"
+                                  th:datetime="${bucket.range.startInclusive}"
+                                  th:text="${bucket.chartLabel()}">Aug 14</time>
+                        </div>
+                    </div>
+                    <div class="analytics-chart-series" data-chart-series="ARCHIVED_DELETED" hidden>
+                        <div class="analytics-chart-column"
+                             th:each="bucket : ${page.mailbox.buckets('ARCHIVED_DELETED')}">
+                            <span class="analytics-chart-track">
+                                <button class="analytics-chart-bar" type="button"
+                                        aria-pressed="false"
+                                        th:attr="data-value=${bucket.value},
+                                                 aria-label=|Archived/Deleted: ${bucket.value} on ${bucket.tooltipDate()}|"></button>
+                                <span class="analytics-chart-tooltip" aria-hidden="true">
+                                    <strong th:text="${bucket.value}">0</strong>
+                                    <time th:datetime="${bucket.range.startInclusive}"
+                                          th:text="${bucket.tooltipDate()}">2026-07-31</time>
+                                </span>
+                            </span>
+                            <time class="analytics-chart-date"
+                                  th:datetime="${bucket.range.startInclusive}"
+                                  th:text="${bucket.chartLabel()}">Aug 14</time>
+                        </div>
+                    </div>
+                    <p id="analytics-chart-axis" class="analytics-chart-axis-label">Date</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <div class="analytics-two-column">
+        <section class="analytics-panel analytics-ranked-panel"
+                 aria-labelledby="top-received-title">
+            <div class="analytics-ranked-header">
+                <h2 id="top-received-title">Top Received</h2>
+            </div>
+            <div class="analytics-ranked-controls" role="tablist"
+                 aria-label="Top Received grouping">
+                <button type="button" role="tab" data-ranking="received-email"
+                        aria-selected="true">Email address</button>
+                <button type="button" role="tab" data-ranking="received-domain"
+                        aria-selected="false">Domain</button>
+            </div>
+            <div class="analytics-ranked-table-wrap">
+                <table class="compact-data-table analytics-ranked-table"
+                       data-ranking-table="received-email">
+                    <thead><tr><th scope="col">Email address</th><th scope="col">Count</th></tr></thead>
+                    <tbody><tr th:each="row : ${page.mailbox.topReceivedEmails}">
+                        <td class="analytics-ranked-label" th:text="${row.label}">email</td>
+                        <td class="analytics-ranked-count" th:text="${row.count}">0</td>
+                    </tr></tbody>
+                </table>
+                <p class="empty-state" data-ranking-table="received-email"
+                   th:if="${#lists.isEmpty(page.mailbox.topReceivedEmails)}">
+                    No received messages in this range.
+                </p>
+                <table class="compact-data-table analytics-ranked-table"
+                       data-ranking-table="received-domain" hidden>
+                    <thead><tr><th scope="col">Domain</th><th scope="col">Count</th></tr></thead>
+                    <tbody><tr th:each="row : ${page.mailbox.topReceivedDomains}">
+                        <td class="analytics-ranked-label" th:text="${row.label}">domain</td>
+                        <td class="analytics-ranked-count" th:text="${row.count}">0</td>
+                    </tr></tbody>
+                </table>
+                <p class="empty-state" data-ranking-table="received-domain" hidden
+                   th:if="${#lists.isEmpty(page.mailbox.topReceivedDomains)}">
+                    No received domains in this range.
+                </p>
+            </div>
+        </section>
+
+        <section class="analytics-panel analytics-ranked-panel" aria-labelledby="top-sent-title">
+            <div class="analytics-ranked-header">
+                <h2 id="top-sent-title">Top Sent</h2>
+            </div>
+            <div class="analytics-ranked-controls analytics-ranked-spacer" aria-hidden="true">
+                <span>Email address</span>
+            </div>
+            <div class="analytics-ranked-table-wrap">
+                <table class="compact-data-table analytics-ranked-table">
+                    <thead><tr><th scope="col">Email address</th><th scope="col">Count</th></tr></thead>
+                    <tbody><tr th:each="row : ${page.mailbox.topSentEmails}">
+                        <td class="analytics-ranked-label" th:text="${row.label}">email</td>
+                        <td class="analytics-ranked-count" th:text="${row.count}">0</td>
+                    </tr></tbody>
+                </table>
+                <p class="empty-state" th:if="${#lists.isEmpty(page.mailbox.topSentEmails)}">
+                    No sent messages in this range.
+                </p>
+            </div>
+        </section>
+    </div>
+
+    <section class="analytics-metrics" aria-label="Storage size metrics">
+        <div class="analytics-metric-grid">
+            <article class="analytics-metric-card">
+                <span>Inbox unread size</span>
+                <strong th:text="${page.bytesValue(page.mailbox.sizes.unreadInboxBytes)}">Unavailable</strong>
+                <p>Full message size for unique Inbox unread messages.</p>
+            </article>
+            <article class="analytics-metric-card">
+                <span>Inbox &gt; 10MB</span>
+                <strong th:text="${page.mailbox.sizes.inboxOverTenMb ?: 'Unavailable'}">Unavailable</strong>
+                <p>Messages over 10MB by full message size.</p>
+            </article>
+            <article class="analytics-metric-card">
+                <span>Sent &gt; 10MB</span>
+                <strong th:text="${page.mailbox.sizes.sentOverTenMb ?: 'Unavailable'}">Unavailable</strong>
+                <p>Sent messages over 10MB by full message size.</p>
+            </article>
+        </div>
+        <p th:if="${!page.mailbox.sizes.available()}"
+           th:text="${page.mailbox.sizes.unavailableReason}">Size data unavailable.</p>
+    </section>
+
+    <section class="analytics-panel" aria-labelledby="tidymail-actions-title">
+        <h2 id="tidymail-actions-title">TidyMail actions</h2>
+        <div class="analytics-action-bars">
+            <div class="analytics-action-row">
+                <span>Archived</span>
+                <span class="analytics-action-track" aria-hidden="true">
+                    <span class="analytics-action-bar"
+                          th:attr="data-value=${page.mailbox.archived}"></span>
+                </span>
+                <strong th:text="${page.mailbox.archived}">0</strong>
+            </div>
+            <div class="analytics-action-row">
+                <span>Deleted</span>
+                <span class="analytics-action-track" aria-hidden="true">
+                    <span class="analytics-action-bar"
+                          th:attr="data-value=${page.mailbox.deleted}"></span>
+                </span>
+                <strong th:text="${page.mailbox.deleted}">0</strong>
+            </div>
+        </div>
+    </section>
+
+    <script>
+        (() => {
+            const labels = {
+                RECEIVED: "Received", SENT: "Sent", READ: "Read",
+                ARCHIVED_DELETED: "Archived/Deleted"
+            };
+            const chartSeries = [...document.querySelectorAll("[data-chart-series]")];
+            const yAxisTicks = [...document.querySelectorAll("[data-chart-y-tick]")];
+            const updateYAxis = (metric) => {
+                const activeSeries = chartSeries.find(
+                    (series) => series.dataset.chartSeries === metric);
+                const maximum = Number(activeSeries?.dataset.axisMaximum || 4);
+                yAxisTicks.forEach((tick) => {
+                    tick.textContent = Math.round(
+                        maximum * Number(tick.dataset.chartYTick)).toLocaleString();
+                });
+            };
+            document.querySelectorAll("[data-metric]").forEach((tab) => {
+                tab.addEventListener("click", () => {
+                    document.querySelectorAll("[data-metric]").forEach((item) => {
+                        const active = item === tab;
+                        item.classList.toggle("is-active", active);
+                        item.setAttribute("aria-selected", String(active));
+                    });
+                    document.querySelectorAll("[data-series]").forEach((series) => {
+                        series.hidden = series.dataset.series !== tab.dataset.metric;
+                    });
+                    document.querySelectorAll("[data-chart-series]").forEach((series) => {
+                        series.hidden = series.dataset.chartSeries !== tab.dataset.metric;
+                    });
+                    document.getElementById("analytics-chart-title").textContent =
+                        labels[tab.dataset.metric] + " over time";
+                    updateYAxis(tab.dataset.metric);
+                });
+            });
+            chartSeries.forEach((series) => {
+                const bars = [...series.querySelectorAll(".analytics-chart-bar")];
+                const maximum = Math.max(1, ...bars.map((bar) => Number(bar.dataset.value)));
+                const axisMaximum = Math.max(4, Math.ceil(maximum / 4) * 4);
+                series.dataset.axisMaximum = String(axisMaximum);
+                bars.forEach((bar) => {
+                    bar.closest(".analytics-chart-column").style.setProperty("--bar-size",
+                        `${Number(bar.dataset.value) / axisMaximum * 100}%`);
+                    bar.addEventListener("click", () => {
+                        const selected = bar.getAttribute("aria-pressed") !== "true";
+                        series.querySelectorAll(".analytics-chart-bar").forEach((item) => {
+                            const active = selected && item === bar;
+                            item.setAttribute("aria-pressed", String(active));
+                            item.closest(".analytics-chart-column")
+                                .classList.toggle("is-selected", active);
+                        });
+                    });
+                });
+                const dateLabels = [...series.querySelectorAll(".analytics-chart-date")];
+                const lastIndex = dateLabels.length - 1;
+                const labelStep = Math.max(1, Math.ceil(lastIndex / 6));
+                dateLabels.forEach((label, index) => {
+                    label.hidden = index !== 0
+                        && index !== lastIndex
+                        && index % labelStep !== 0;
+                });
+            });
+            updateYAxis("RECEIVED");
+            const actionBars = [...document.querySelectorAll(".analytics-action-bar")];
+            const actionMaximum = Math.max(
+                1, ...actionBars.map((bar) => Number(bar.dataset.value)));
+            actionBars.forEach((bar) => {
+                bar.style.setProperty("--bar-size",
+                    `${Number(bar.dataset.value) / actionMaximum * 100}%`);
+            });
+            document.querySelectorAll("[data-ranking]").forEach((tab) => {
+                tab.addEventListener("click", () => {
+                    document.querySelectorAll("[data-ranking]").forEach((item) =>
+                        item.setAttribute("aria-selected", String(item === tab)));
+                    document.querySelectorAll("[data-ranking-table]").forEach((table) => {
+                        table.hidden = table.dataset.rankingTable !== tab.dataset.ranking;
+                    });
+                });
+            });
+        })();
+    </script>
+</div>
+</body>
+</html>

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<section th:fragment="outcome(receipt)" id="review-outcome"
+         class="review-feedback" aria-labelledby="review-outcome-heading"
+         th:attr="role=${receipt.failed > 0 ? 'alert' : 'status'},
+                  aria-live=${receipt.failed > 0 ? 'assertive' : 'polite'}"
+         tabindex="-1">
+    <h2 id="review-outcome-heading"
+        th:text="${receipt.failed > 0 ? 'Some targets were not applied' : (receipt.verificationPending > 0 ? 'Some results still need verification' : 'Batch outcome recorded')}">Batch outcome recorded</h2>
+    <p>
+        <strong th:text="${receipt.requested}">0</strong> requested:
+        <strong th:text="${receipt.succeeded}">0</strong> succeeded,
+        <strong th:text="${receipt.failed}">0</strong> failed,
+        <strong th:text="${receipt.verificationPending}">0</strong> verification pending.
+    </p>
+    <p>
+        <strong th:text="${receipt.actionCount}">0</strong> actions across
+        <strong th:text="${receipt.accountCount}">0</strong> accounts recorded independent outcomes.
+    </p>
+    <p th:if="${receipt.verificationPending > 0}" role="alert">
+        Accepted or unknown remote results are not reported as completed.
+    </p>
+</section>
+</body>
+</html>

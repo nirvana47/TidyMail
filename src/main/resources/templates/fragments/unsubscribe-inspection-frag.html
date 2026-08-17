@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<dialog id="unsubscribe-inspection" class="unsubscribe-inspection"
+        th:fragment="inspection(inspection)" open
+        aria-labelledby="unsubscribe-inspection-heading">
+<section>
+    <header>
+        <div>
+            <p class="eyebrow">Destination inspection</p>
+            <h2 id="unsubscribe-inspection-heading" tabindex="-1">Inspect unsubscribe method</h2>
+        </div>
+        <form method="dialog">
+            <button type="submit" aria-label="Close unsubscribe inspection">Close</button>
+        </form>
+        <p class="long-value">
+            <strong th:text="${#strings.isEmpty(inspection.senderDisplayName) ? inspection.senderAddress : inspection.senderDisplayName}">Sender</strong>
+            <span th:text="${inspection.senderAddress}">sender@example.com</span>
+        </p>
+        <p th:text="|Account: ${inspection.accountLabel}; list: ${inspection.listIdentity}|">Identity</p>
+        <p th:text="|Latest indexed message: ${inspection.lastReceivedAt == null ? 'unknown' : inspection.lastReceivedAt}|">Latest message</p>
+        <p th:text="|Confidence: ${inspection.confidence}. ${inspection.confidenceReason}|">Confidence</p>
+        <p th:text="|Latest outcome: ${inspection.latestOutcome == 'NOT_ATTEMPTED' ? 'Not attempted' : #strings.replace(inspection.latestOutcome, '_', ' ')}|">Outcome</p>
+    </header>
+
+    <p th:if="${inspection.protectedSender}" role="alert" id="protected-inspection-reason">
+        This sender is protected. TidyMail will not send or open an unsubscribe method.
+    </p>
+
+    <section aria-labelledby="detected-facts-heading">
+        <h3 id="detected-facts-heading">Detected source facts</h3>
+        <ul>
+            <li th:text="${inspection.listUnsubscribePresent ? 'List-Unsubscribe detected' : 'List-Unsubscribe not detected'}">Header fact</li>
+            <li th:text="${inspection.listUnsubscribePostPresent ? 'List-Unsubscribe-Post: One-Click detected' : 'List-Unsubscribe-Post: One-Click not detected'}">Post fact</li>
+            <li th:text="${inspection.dkimPassed ? 'Trusted DKIM passed' : 'Trusted DKIM pass not established'}">DKIM fact</li>
+            <li th:text="${inspection.dkimCoversListUnsubscribe ? 'DKIM covers List-Unsubscribe' : 'DKIM coverage of List-Unsubscribe not established'}">Coverage</li>
+            <li th:text="${inspection.dkimCoversListUnsubscribePost ? 'DKIM covers List-Unsubscribe-Post' : 'DKIM coverage of List-Unsubscribe-Post not established'}">Coverage</li>
+        </ul>
+    </section>
+
+    <section aria-labelledby="detected-methods-heading">
+        <h3 id="detected-methods-heading">Detected methods</h3>
+        <div class="method-grid">
+            <article class="capability-panel" th:each="method : ${inspection.methods}">
+                <h4 th:text="${method.label}">Method</h4>
+                <p class="badge" th:text="${method.behavior}">Behavior</p>
+                <dl>
+                    <dt>Destination</dt>
+                    <dd class="long-value" th:text="${method.destinationHost}">Host or recipient</dd>
+                    <dt>Path shape</dt>
+                    <dd th:text="${method.redactedPathShape}">Redacted path</dd>
+                    <dt>Query</dt>
+                    <dd th:text="${method.queryTokenHidden ? 'Query token hidden' : 'No query token detected'}">Query fact</dd>
+                    <dt th:if="${method.label == 'Mailto'}">Subject instruction</dt>
+                    <dd th:if="${method.label == 'Mailto'}"
+                        th:text="${method.mailtoSubjectPresent ? 'Present; value hidden' : 'Not present'}">Subject fact</dd>
+                    <dt th:if="${method.label == 'Mailto'}">Body instruction</dt>
+                    <dd th:if="${method.label == 'Mailto'}"
+                        th:text="${method.mailtoBodyPresent ? 'Present; value hidden' : 'Not present'}">Body fact</dd>
+                    <dt>Availability</dt>
+                    <dd th:text="${method.intent != null && method.eligible && !inspection.protectedSender
+                        ? (method.behavior == 'Automated request'
+                            ? 'Available after the explicit confirmation below'
+                            : 'Available as the explicit manual choice below')
+                        : method.navigationUrl != null && method.eligible && !inspection.protectedSender
+                        ? 'Available as the explicit manual choice below'
+                        : 'Unavailable'}">Availability</dd>
+                </dl>
+                <p th:id="|method-reason-${methodStat.index}|" th:text="${method.reason}">Reason</p>
+
+                <a th:if="${method.navigationUrl != null && !inspection.protectedSender}"
+                   class="external-navigation"
+                   th:href="${method.navigationUrl}"
+                   th:target="${method.label == 'Manual/account page' ? '_blank' : null}"
+                   th:rel="${method.label == 'Manual/account page' ? 'noopener noreferrer' : null}">
+                    <span th:text="${method.navigationLabel}">Open manual alternative</span>
+                    <span class="visually-hidden" th:text="${method.externalNotice}">External navigation</span>
+                </a>
+                <form th:if="${method.intent != null && method.behavior == 'Automated request'}"
+                      method="post" th:action="@{/api/action-commands}"
+                      hx-post="/api/action-commands"
+                      hx-target="#unsubscribe-outcome" hx-swap="outerHTML">
+                    <input type="hidden" name="confirmation" th:value="${method.intent}">
+                    <input type="hidden" name="unsubscribeMethod" th:value="${method.method}">
+                    <p th:if="${method.method == 'RFC8058_POST'}">
+                        Request body: <code>List-Unsubscribe=One-Click</code>
+                    </p>
+                    <p>
+                        <span th:if="${method.method == 'RFC8058_POST'}">
+                            TidyMail will send one HTTPS POST to
+                            <strong th:text="${method.destinationHost}">destination host</strong>.
+                            No mailbox credentials, cookies, or message content will be sent.
+                            A 2xx response means accepted, not independently confirmed.
+                        </span>
+                        <span th:if="${method.method == 'LEGACY_HTTPS_GET'}">
+                            TidyMail will make one HTTPS GET request to
+                            <strong th:text="${method.destinationHost}">destination host</strong>.
+                            The page may require more steps. TidyMail will not follow redirects
+                            or automatically try another method.
+                        </span>
+                    </p>
+                    <fieldset>
+                        <legend>When should TidyMail run this action?</legend>
+                        <label>
+                            <input type="radio" name="executionMode"
+                                   value="STAGED" checked>
+                            Stage for Review
+                        </label>
+                        <p>Nothing changes until you approve it on Review.</p>
+                        <label>
+                            <input type="radio" name="executionMode" value="IMMEDIATE">
+                            Run after this confirmation
+                        </label>
+                        <p>
+                            Uses the same candidate, method, safety checks, and outcome
+                            tracking, then starts now.
+                        </p>
+                    </fieldset>
+                    <label>
+                        <input type="checkbox" name="immediateAcknowledged" value="true">
+                        I understand this action will start after the same preflight completes.
+                    </label>
+                    <button type="submit">Save exact candidate or confirm and run</button>
+                </form>
+                <form th:if="${method.intent != null && method.behavior != 'Automated request'}"
+                      method="post" th:action="@{/unsubscribe/manual-complete}"
+                      hx-post="/unsubscribe/manual-complete"
+                      hx-target="#unsubscribe-outcome" hx-swap="outerHTML">
+                    <input type="hidden" name="candidateKey" th:value="${inspection.candidateKey}">
+                    <input type="hidden" name="method" th:value="${method.method}">
+                    <input type="hidden" name="intent" th:value="${method.intent}">
+                    <label>
+                        <input type="checkbox" name="confirmed" value="true">
+                        I attest that I completed this method
+                    </label>
+                    <button type="submit">I completed this manually</button>
+                </form>
+                <button th:if="${method.navigationUrl == null && method.intent == null}"
+                        type="button" disabled aria-disabled="true"
+                        th:attr="aria-describedby=|method-reason-${methodStat.index}|">
+                    Unavailable
+                </button>
+                <p th:if="${method.externalNotice != null}" th:text="${method.externalNotice}">
+                    External navigation notice
+                </p>
+            </article>
+        </div>
+    </section>
+
+    <p class="privacy-note">
+        Inspection is local. It does not resolve DNS, contact an unsubscribe destination,
+        call the mailbox provider, send mail, or reveal destination tokens.
+    </p>
+    <section id="unsubscribe-outcome" aria-live="polite"
+             aria-labelledby="unsubscribe-outcome-heading">
+        <h3 id="unsubscribe-outcome-heading" tabindex="-1">Unsubscribe outcome</h3>
+        <p>No method has been submitted from this inspection.</p>
+    </section>
+</section>
+</dialog>
+</body>
+</html>

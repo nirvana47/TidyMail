@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<section id="unsubscribe-results" th:fragment="results(page)"
+         aria-labelledby="unsubscribe-results-heading" aria-live="polite">
+    <h2 id="unsubscribe-results-heading" class="visually-hidden">Individual sender results</h2>
+    <p class="result-status" role="status">
+        <strong th:text="${page.results.filteredCount}">0</strong>
+        <span th:text="${page.results.filteredCount == 1 ? ' sender matches.' : ' senders match.'}">senders match.</span>
+        <span th:text="|Exact range ${page.query.from} to ${page.query.to} UTC.|">Range</span>
+    </p>
+
+    <div class="empty-results" th:if="${page.results.rows.empty}">
+        <h3>No senders match these controls</h3>
+        <p>Adjust the category, exact date range, or sender/domain search.</p>
+        <a th:href="${page.clearUrl}">Clear controls</a>
+    </div>
+
+    <div class="unsubscribe-sender-list" aria-label="Individual senders"
+         th:unless="${page.results.rows.empty}">
+        <div class="unsubscribe-list-head" aria-hidden="true">
+            <span>Sender</span>
+            <span># emails</span>
+            <span>Read %</span>
+            <span>Recommended action</span>
+            <span>More</span>
+        </div>
+        <div class="unsubscribe-row" th:each="row, status : ${page.results.rows}"
+             th:id="|unsubscribe-sender-${status.index}|">
+            <div class="unsubscribe-sender-cell">
+                <strong th:text="${#strings.isEmpty(row.senderDisplayName) ? row.senderAddress : row.senderDisplayName}">Sender</strong>
+                <span>
+                    <span th:text="${row.senderAddress}">sender@example.com</span>
+                    <span aria-hidden="true"> · </span>
+                    <span th:text="${#strings.isEmpty(row.senderDomain) ? 'Domain unavailable' : row.senderDomain}">domain</span>
+                </span>
+            </div>
+            <div class="unsubscribe-count" data-label="# emails"
+                 th:text="${row.emailCount}">0</div>
+            <div class="unsubscribe-read" data-label="Read %">
+                <strong th:text="|${row.readPercent}%|">0%</strong>
+                <span aria-hidden="true"><i th:style="|width:${row.readPercent}%|"></i></span>
+                <small th:text="|${row.readCount} of ${row.emailCount} read|">Read count</small>
+            </div>
+            <div class="unsubscribe-primary-action" data-label="Recommended action">
+                <a th:if="${row.unsubscribeExecutable}"
+                   class="action-button"
+                   data-unsubscribe-inspection-trigger
+                   th:href="@{/unsubscribe/candidates/{key}(
+                       key=${row.candidateKey},
+                       account=${page.query.account},
+                       category=${page.query.category.value()},
+                       from=${page.query.from},
+                       to=${page.query.to},
+                       range=${page.query.range.value()},
+                       q=${page.query.search},
+                       defaultAction=${page.query.defaultAction.value()},
+                       sort=${page.query.sort.value()},
+                       page=${page.query.page})}"
+                   th:attr="hx-get=@{/unsubscribe/candidates/{key}(
+                       key=${row.candidateKey},
+                       account=${page.query.account},
+                       category=${page.query.category.value()},
+                       from=${page.query.from},
+                       to=${page.query.to},
+                       range=${page.query.range.value()},
+                       q=${page.query.search},
+                       defaultAction=${page.query.defaultAction.value()},
+                       sort=${page.query.sort.value()},
+                       page=${page.query.page})}"
+                   hx-target="#unsubscribe-inspection-slot" hx-swap="innerHTML"
+                   hx-disabled-elt="this">
+                    <span class="action-label">Unsubscribe</span>
+                    <span class="action-pending" aria-hidden="true">Preparing...</span>
+                </a>
+                <form th:unless="${row.unsubscribeExecutable}"
+                      method="post" action="/unsubscribe/sender-action-preview"
+                      hx-post="/unsubscribe/sender-action-preview"
+                      hx-target="#unsubscribe-action-preview-slot" hx-swap="innerHTML">
+                    <button type="button" class="action-button" disabled>
+                        Use menu
+                    </button>
+                </form>
+            </div>
+            <details class="row-action-menu" data-label="More">
+                <summary th:attr="aria-label=|More actions for ${row.senderAddress}|">•••</summary>
+                <div>
+                    <a th:href="@{/unsubscribe/senders/{rowKey}/stats(
+                                rowKey=${row.senderRowKey},
+                                account=${page.query.account},
+                                from=${page.query.from},
+                                to=${page.query.to})}"
+                       class="sender-stats-link"
+                       data-sender-stats-trigger
+                       th:attr="hx-get=@{/unsubscribe/senders/{rowKey}/stats(
+                                rowKey=${row.senderRowKey},
+                                account=${page.query.account},
+                                from=${page.query.from},
+                                to=${page.query.to})}"
+                       hx-target="#sender-stats-modal-slot" hx-swap="innerHTML"
+                       hx-disabled-elt="this">
+                        <span class="stats-link-label">View stats</span>
+                        <span class="stats-link-pending" aria-hidden="true">Loading...</span>
+                    </a>
+                    <form method="post" action="/unsubscribe/sender-action-preview"
+                          hx-post="/unsubscribe/sender-action-preview"
+                          hx-target="#unsubscribe-action-preview-slot" hx-swap="innerHTML">
+                        <input th:each="entry : ${page.canonicalParameters.entrySet()}"
+                               type="hidden" th:name="${entry.key}" th:value="${entry.value}">
+                        <input type="hidden" name="rowKey" th:value="${row.senderRowKey}">
+                        <button type="submit" name="action" value="ARCHIVE">Archive all</button>
+                    </form>
+                    <form method="post" action="/unsubscribe/sender-action-preview"
+                          hx-post="/unsubscribe/sender-action-preview"
+                          hx-target="#unsubscribe-action-preview-slot" hx-swap="innerHTML">
+                        <input th:each="entry : ${page.canonicalParameters.entrySet()}"
+                               type="hidden" th:name="${entry.key}" th:value="${entry.value}">
+                        <input type="hidden" name="rowKey" th:value="${row.senderRowKey}">
+                        <button type="submit" name="action" value="TRASH">Delete all</button>
+                    </form>
+                </div>
+            </details>
+        </div>
+    </div>
+
+    <nav class="pagination" aria-label="Unsubscribe sender pages"
+         th:if="${page.results.totalPages > 1}">
+        <a th:if="${!#strings.isEmpty(page.previousUrl)}" th:href="${page.previousUrl}">Previous</a>
+        <span th:text="|Page ${page.results.page + 1} of ${page.results.totalPages}|">Page</span>
+        <a th:if="${!#strings.isEmpty(page.nextUrl)}" th:href="${page.nextUrl}">Next</a>
+    </nav>
+</section>
+</body>
+</html>

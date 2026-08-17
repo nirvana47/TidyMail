@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TidyMail - Sender statistics</title>
+    <link rel="stylesheet" th:href="@{/static/css/workspace.css}">
+</head>
+<body>
+<a class="skip-link" href="#workspace-main">Skip to workspace content</a>
+<div class="workspace-shell">
+    <div th:replace="~{fragments/workspace-rail :: rail(${workspace})}"></div>
+    <main id="workspace-main">
+        <header class="route-heading">
+            <p class="eyebrow">Unsubscribe</p>
+            <h1>Sender statistics</h1>
+            <p>Review exact indexed metadata for this sender before taking action.</p>
+        </header>
+        <div th:replace="~{fragments/workspace-state :: state(${workspace})}"></div>
+        <div class="page-inline-modal">
+            <div th:replace="~{fragments/email-stats-modal-frag :: modal(${emailStats})}"></div>
+        </div>
+        <p><a th:href="@{/unsubscribe(account=${workspace.selectedAccountQuery})}">
+            Back to Unsubscribe
+        </a></p>
+    </main>
+</div>
+</body>
+</html>

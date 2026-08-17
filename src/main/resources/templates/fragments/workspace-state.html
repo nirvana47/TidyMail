@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<section id="workspace-state"
+         class="workspace-state"
+         th:classappend="| state-${#strings.toLowerCase(workspace.state.name())}|"
+         th:attr="role=${workspace.state.name() == 'ERROR' ? 'alert' : 'status'},
+                  aria-live=${workspace.state.name() == 'ERROR' ? 'assertive' : 'polite'},
+                  hx-get=${workspace.syncActive} ? @{/workspace/state(route=${workspace.route.value},account=${workspace.selectedAccountQuery})} : null,
+                  hx-trigger=${workspace.syncActive} ? 'every 15s' : null,
+                  hx-swap=${workspace.syncActive} ? 'outerHTML' : null"
+         th:fragment="state(workspace)">
+    <div th:if="${workspace.state.name() == 'LOADING'}">
+        <p class="state-label">Loading</p>
+        <h2>Building your metadata index</h2>
+        <p>
+            <span th:text="${workspace.scannedCount}">0</span> messages scanned for
+            <span th:text="${workspace.selectedAccountLabel}">the selected account scope</span>.
+        </p>
+    </div>
+
+    <div th:if="${workspace.state.name() == 'EMPTY'}">
+        <p class="state-label">Empty</p>
+        <h2>No indexed messages yet</h2>
+        <p th:if="${workspace.neverStarted}">
+            Metadata sync has not started for the selected account scope.
+        </p>
+        <p th:if="${workspace.completedEmpty}">
+            The selected account scope completed sync with no metadata rows.
+        </p>
+        <p th:unless="${workspace.neverStarted or workspace.completedEmpty}">
+            The selected account scope does not have usable indexed metadata yet.
+        </p>
+    </div>
+
+    <div th:if="${workspace.state.name() == 'PARTIAL'}">
+        <p class="state-label">Partial</p>
+        <h2>Showing partial indexed data</h2>
+        <p>
+            <span th:text="${workspace.indexedCount}">0</span> indexed messages are usable;
+            <span th:text="${workspace.pagesCompleted}">0</span> pages are complete.
+            Results remain incomplete for the selected account scope.
+        </p>
+        <p class="safe-detail" th:if="${workspace.safeSyncDetail}"
+           th:text="${workspace.safeSyncDetail}">Safe sync detail</p>
+    </div>
+
+    <div th:if="${workspace.state.name() == 'STALE'}">
+        <p class="state-label">Stale</p>
+        <h2>Indexed data may be stale</h2>
+        <p>
+            Last successful metadata sync:
+            <time th:datetime="${workspace.lastSuccessfulAt}"
+                  th:text="${workspace.lastSuccessfulAt}">unknown</time>.
+            Sync the selected account scope to refresh indexed metadata.
+        </p>
+    </div>
+
+    <div th:if="${workspace.state.name() == 'ERROR'}">
+        <p class="state-label">Error</p>
+        <h2>Metadata sync failed</h2>
+        <p th:text="${workspace.safeSyncDetail != null ? workspace.safeSyncDetail : 'Metadata sync could not complete. Retry the selected account scope.'}">
+            Metadata sync could not complete.
+        </p>
+    </div>
+
+    <div th:if="${workspace.state.name() == 'READY'}">
+        <p class="state-label">Ready</p>
+        <h2>Metadata index is ready</h2>
+        <p>
+            <span th:text="${workspace.indexedCount}">0</span> messages are indexed.
+            Last successful metadata sync:
+            <time th:datetime="${workspace.lastSuccessfulAt}"
+                  th:text="${workspace.lastSuccessfulAt}">unknown</time>.
+        </p>
+    </div>
+
+    <dl class="state-summary">
+        <div><dt>Indexed</dt><dd th:text="${workspace.indexedCount}">0</dd></div>
+        <div><dt>Scanned</dt><dd th:text="${workspace.scannedCount}">0</dd></div>
+        <div><dt>Pages complete</dt><dd th:text="${workspace.pagesCompleted}">0</dd></div>
+        <div><dt>Account scope</dt><dd th:text="${workspace.selectedAccountLabel}">Account</dd></div>
+    </dl>
+
+    <form class="sync-form" method="post" action="/api/metadata-sync"
+          th:if="${workspace.syncActionAvailable()}">
+        <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"
+               th:if="${_csrf != null}">
+        <input type="hidden" name="account" th:value="${workspace.selectedAccountQuery}">
+        <input type="hidden" name="returnTo" th:value="${workspace.route.path}">
+        <button type="submit"
+                th:text="${workspace.state.name() == 'ERROR' ? 'Retry metadata sync' : 'Sync metadata'}">
+            Sync metadata
+        </button>
+    </form>
+    <button class="sync-disabled" type="button" disabled aria-disabled="true"
+            aria-describedby="sync-active-copy"
+            th:if="${workspace.syncActive}">Sync running</button>
+    <p id="sync-active-copy" th:if="${workspace.syncActive}">
+        Metadata sync is queued or running for the selected account scope.
+    </p>
+</section>
+</body>
+</html>

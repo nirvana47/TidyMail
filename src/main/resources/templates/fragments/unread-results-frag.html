@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<section id="unread-results" class="cleanup-categories"
+         th:fragment="results(page)" aria-label="Inbox unread groups">
+    <details class="cleanup-category"
+             th:each="category : ${page.categories}"
+             th:classappend="${category.key == 'lists-automated' ? 'category-accent-neutral category-accent-lists' :
+                 category.key == 'older-than-30-days' ? 'category-accent-neutral category-accent-old' :
+                 category.key == 'direct-mail' ? 'category-accent-neutral category-accent-direct' :
+                 category.key == 'attachments' ? 'category-accent-neutral category-accent-attachments' :
+                 category.key == 'other' ? 'category-accent-neutral category-accent-other' :
+                 'category-accent-neutral'}"
+             th:attr="data-category-key=|unread-${category.key}|,
+                      data-category-url=${page.categoryUrls[category.key]}">
+        <summary>
+            <span class="category-title">
+                <strong th:text="${category.title}">Unread group</strong>
+                <small th:text="${category.description}">Description</small>
+            </span>
+            <span class="category-meta" aria-label="Inbox unread group metrics">
+                <span class="category-count category-sender-count"
+                      th:text="${category.dataAvailable
+                          ? category.senderCount + ' ' + (category.senderCount == 1 ? 'sender' : 'senders')
+                          : 'Unavailable'}">
+                    0 senders
+                </span>
+                <span class="category-unread-count"
+                      th:if="${category.dataAvailable}"
+                      th:text="|${category.unreadCount} Inbox unread|">
+                    0 Inbox unread
+                </span>
+            </span>
+        </summary>
+        <div class="cleanup-category-body">
+            <div class="category-load-guidance"
+                 th:id="|category-error-${category.key}|"
+                 role="status" aria-live="polite"></div>
+            <div class="category-page-content"></div>
+        </div>
+    </details>
+</section>
+
+<th:block th:fragment="categoryChunk(
+        categoryPage, canonicalQuery, cleanupAction,
+        nextCategoryUrl, loadAllCategoryUrl)">
+    <p th:if="${categoryPage.rows.empty}" class="empty-results">
+        No unread senders are currently in this group.
+    </p>
+    <div th:unless="${categoryPage.rows.empty}" class="cleanup-row cleanup-row-head"
+         aria-hidden="true">
+        <span></span>
+        <span>Sender</span>
+        <span>Domain</span>
+        <span>Inbox unread</span>
+        <span>Size (Estimated)</span>
+    </div>
+    <th:block th:replace="~{:: categoryRows(
+            ${categoryPage}, ${canonicalQuery}, ${cleanupAction},
+            ${nextCategoryUrl}, ${loadAllCategoryUrl})}">
+    </th:block>
+</th:block>
+
+<th:block th:fragment="categoryRows(
+        categoryPage, canonicalQuery, cleanupAction,
+        nextCategoryUrl, loadAllCategoryUrl)">
+    <div class="cleanup-row unread-cleanup-row"
+         th:each="row : ${categoryPage.rows}"
+         th:attr="data-sender-address=${row.senderAddress}">
+        <label class="category-select" th:if="${!row.senderAddress.empty}">
+            <input type="checkbox" name="rowKey"
+                   form="unread-bulk-stage"
+                   th:value="${T(com.tidymail.service.DecisionRowKey).unreadSender(
+                       row.accountId, categoryPage.categoryKey, row.senderAddress)}"
+                   th:disabled="${row.protectedSender}"
+                   th:attr="aria-label=|Select ${row.displayName} for staging|">
+            <span class="visually-hidden"
+                  th:text="|Select ${row.displayName} for staging|">Select</span>
+        </label>
+        <span th:if="${row.senderAddress.empty}"></span>
+        <div class="cleanup-sender">
+            <strong th:text="${row.displayName}">Sender</strong>
+            <span th:text="${row.senderAddress.empty ? 'Address unavailable' : row.senderAddress}">
+                sender@example.com
+            </span>
+            <span th:if="${row.protectedSender}" class="badge badge-protected">
+                Protected sender
+            </span>
+        </div>
+        <span class="cleanup-row-domain" data-label="Domain"
+              th:text="${row.domain == null ? 'Unavailable' : row.domain}">
+            example.com
+        </span>
+        <span class="cleanup-row-count" data-label="Inbox unread"
+              th:text="${row.unreadCount}">0</span>
+        <span class="cleanup-row-size" data-label="Size (Estimated)"
+              th:text="${row.estimatedSize == null ? 'Pending sync' : row.estimatedSizeLabel}">
+            0 KB
+        </span>
+    </div>
+    <div th:if="${categoryPage.hasMore}" class="category-load-actions">
+        <button type="button" class="category-load-control"
+                th:attr="hx-get=${nextCategoryUrl}"
+                hx-target="closest .category-load-actions" hx-swap="outerHTML">
+            Load more
+        </button>
+        <button th:if="${categoryPage.loadAllAvailable}"
+                type="button" class="category-load-control"
+                th:attr="hx-get=${loadAllCategoryUrl}"
+                hx-target="closest .category-load-actions" hx-swap="outerHTML">
+            Load all
+        </button>
+    </div>
+</th:block>
+
+<p th:fragment="categoryError" class="category-load-error"
+   th:text="${categoryGuidance}">
+    This category is too large to load all at once. Continue with Load more.
+</p>
+</body>
+</html>

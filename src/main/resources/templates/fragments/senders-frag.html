@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+    <body>
+        <th:block th:if="${#lists.isEmpty(resp.items)}">
+            <div class="empty-state empty-senders"
+                 hx-get="/senders-frag"
+                 hx-trigger="every 3s"
+                 hx-target="#senders-slot"
+                 hx-swap="innerHTML">
+                Inbox data is syncing. This updates automatically when sender groups are ready.
+            </div>
+        </th:block>
+        <th:block th:unless="${#lists.isEmpty(resp.items)}">
+            <table class="sender-table">
+                <thead>
+                    <tr>
+                        <th>From</th>
+                        <th>Count</th>
+                        <th>Unread</th>
+                        <th>Oldest</th>
+                        <th title="Marketing likelihood: each diamond reflects a visible signal, not an AI judgment.">Score</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr th:each="card : ${resp.items}">
+                        <td>
+                            <div class="from-cell">
+                                <span class="from-display" th:text="${card.fromDisplayName()}">Display Name</span>
+                                <span class="from-addr" th:text="${card.fromAddress()}">from@example.com</span>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="badge badge-count" th:text="${card.totalCount()}">0</span>
+                        </td>
+                        <td>
+                            <span class="badge badge-unread" th:if="${card.unreadCount() > 0}" th:text="${card.unreadCount()}">0</span>
+                            <span th:unless="${card.unreadCount() > 0}" style="color:#94a3b8;font-size:12px;">—</span>
+                        </td>
+                        <td style="color:#64748b;font-size:13px;">
+                            <th:block th:if="${card.oldestMessageAt() != null}">
+                                <span th:text="${card.oldestMessageAt().toString().substring(0, 10)}">2025-01-15</span>
+                            </th:block>
+                            <span th:unless="${card.oldestMessageAt() != null}" style="color:#94a3b8;">—</span>
+                        </td>
+                        <td>
+                            <span th:if="${card.bulkMarketingScore() == 0}" class="score-0" title="No bulk-mail signals found.">·</span>
+                            <span th:if="${card.bulkMarketingScore() == 1}" class="score-1" title="1 bulk-mail signal: unsubscribe header, bulk precedence, or no replies to an older sender.">◆</span>
+                            <span th:if="${card.bulkMarketingScore() == 2}" class="score-2" title="2 bulk-mail signals: review before removing.">◆◆</span>
+                            <span th:if="${card.bulkMarketingScore() == 3}" class="score-3" title="3 bulk-mail signals: strongest candidate for review.">◆◆◆</span>
+                        </td>
+                        <td>
+                            <div class="action-buttons">
+                                <form method="post" th:attr="hx-post=|/api/actions/bulk-by-sender/${card.fromAddress()}?action=ARCHIVE|" hx-target="#action-feedback-slot" hx-swap="outerHTML" style="margin:0;">
+                                    <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}" th:if="${_csrf != null}">
+                                    <button type="submit" class="action-btn archive">Archive</button>
+                                </form>
+                                <form method="post" th:attr="hx-post=|/api/actions/bulk-by-sender/${card.fromAddress()}?action=MARK_READ|" hx-target="#action-feedback-slot" hx-swap="outerHTML" style="margin:0;">
+                                    <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}" th:if="${_csrf != null}">
+                                    <button type="submit" class="action-btn mark-read">Mark Read</button>
+                                </form>
+                                <form method="post" th:attr="hx-post=|/api/actions/bulk-by-sender/${card.fromAddress()}?action=TRASH|" hx-target="#action-feedback-slot" hx-swap="outerHTML" style="margin:0;">
+                                    <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}" th:if="${_csrf != null}">
+                                    <button type="submit" class="action-btn trash">Trash</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </th:block>
+    </body>
+</html>

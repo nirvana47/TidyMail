@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<section id="cleanup-action-status"
+         class="cleanup-action-result"
+         th:fragment="status"
+         role="status"
+         aria-live="polite"
+         aria-atomic="true"
+         tabindex="-1">
+    <h2 data-cleanup-result-heading>Ready to stage for Review</h2>
+    <p data-cleanup-result-copy>
+        Exact message IDs are calculated by the server when you choose an action.
+    </p>
+    <p data-cleanup-result-recovery hidden></p>
+    <a href="/review">Open Review</a>
+</section>
+
+<span id="cleanup-review-count"
+      th:fragment="reviewCount(reviewCount)"
+      hx-swap-oob="true"
+      th:text="|Queued actions: ${reviewCount}|">
+    Queued actions: 0
+</span>
+</body>
+</html>

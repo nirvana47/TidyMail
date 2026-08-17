@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<section class="selection-strip" th:fragment="strip(page, surface)"
+         aria-labelledby="selection-heading">
+    <div>
+        <h2 id="selection-heading" tabindex="-1">Preview exact impact</h2>
+        <p th:text="|${page.results.filteredCount} matching targets; exact message count is calculated on the server.|">
+            Exact message count is calculated on the server.
+        </p>
+        <p>Protected senders are excluded from bulk selection unless a reasoned override is submitted from the preview.</p>
+    </div>
+    <div class="selection-actions">
+        <label for="preview-action">Preview action intent</label>
+        <select id="preview-action" name="action" form="individual-preview-form"
+                aria-describedby="preview-intent-help">
+            <option th:each="choice : ${page.previewActions}"
+                    th:value="${choice}"
+                    th:text="${choice.name() == 'MARK_READ' ? 'Mark read'
+                        : #strings.capitalize(#strings.toLowerCase(choice.name()))}">
+                Action
+            </option>
+        </select>
+        <p id="preview-intent-help">This selects a preview intent only. It does not run a mailbox action.</p>
+        <button type="submit" form="individual-preview-form">Preview checked rows</button>
+        <a th:href="${page.currentUrl}">Clear selection</a>
+    </div>
+
+    <form id="visible-preview-form" class="bulk-preview-form" method="post"
+          action="/api/selection-preview" th:attr="hx-post=@{/api/selection-preview}"
+          hx-target="#selection-preview-slot" hx-swap="innerHTML">
+        <input type="hidden" name="surface" th:value="${surface}">
+        <input type="hidden" name="mode" value="VISIBLE_PAGE">
+        <label for="visible-action">This page preview intent</label>
+        <select id="visible-action" name="action">
+            <option th:each="choice : ${page.previewActions}"
+                    th:value="${choice}"
+                    th:text="${choice.name() == 'MARK_READ' ? 'Mark read'
+                        : #strings.capitalize(#strings.toLowerCase(choice.name()))}">
+                Action
+            </option>
+        </select>
+        <input th:each="entry : ${page.canonicalQuery.entrySet()}"
+               type="hidden" th:name="${entry.key}" th:value="${entry.value}">
+        <input type="hidden" th:if="${_csrf != null}"
+               th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+        <button type="submit">Select this page</button>
+    </form>
+    <form id="all-preview-form" class="bulk-preview-form" method="post"
+          action="/api/selection-preview" th:attr="hx-post=@{/api/selection-preview}"
+          hx-target="#selection-preview-slot" hx-swap="innerHTML">
+        <input type="hidden" name="surface" th:value="${surface}">
+        <input type="hidden" name="mode" value="ALL_MATCHING">
+        <label for="all-action">All matching preview intent</label>
+        <select id="all-action" name="action">
+            <option th:each="choice : ${page.previewActions}"
+                    th:value="${choice}"
+                    th:text="${choice.name() == 'MARK_READ' ? 'Mark read'
+                        : #strings.capitalize(#strings.toLowerCase(choice.name()))}">
+                Action
+            </option>
+        </select>
+        <input th:each="entry : ${page.canonicalQuery.entrySet()}"
+               type="hidden" th:name="${entry.key}" th:value="${entry.value}">
+        <input type="hidden" th:if="${_csrf != null}"
+               th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+        <button type="submit" th:text="|Select all ${page.results.filteredCount} matching|">
+            Select all matching
+        </button>
+    </form>
+</section>
+</body>
+</html>

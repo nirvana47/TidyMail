@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<section th:fragment="confirmation" id="undo-confirmation"
+         aria-labelledby="undo-confirmation-heading">
+    <h2 id="undo-confirmation-heading" tabindex="-1">Confirm applied-only undo</h2>
+    <p th:text="|Undo will target only the ${undoConfirmation.appliedCount} messages recorded as applied. ${undoConfirmation.excludedCount} failed or verification-pending messages are excluded.|">
+        Applied-only confirmation
+    </p>
+    <p th:text="|${undoConfirmation.inverseLabel} for ${undoConfirmation.accountLabel}.|">
+        Inverse
+    </p>
+    <form method="post"
+          th:action="@{|/api/actions/${undoConfirmation.actionPublicId}/undo|}">
+        <input type="hidden" name="undoIntent" th:value="${undoConfirmation.intent}">
+        <input type="hidden" name="account" th:value="${undoConfirmation.accountId}">
+        <button type="submit"
+                th:text="|Undo ${undoConfirmation.appliedCount} applied messages|">
+            Undo applied messages
+        </button>
+    </form>
+</section>
+<section th:fragment="result" id="undo-result" aria-live="polite"
+         aria-labelledby="undo-result-heading">
+    <h2 id="undo-result-heading" tabindex="-1">Undo outcome</h2>
+    <p th:text="|Undo reverted ${undoResult.reverted}; ${undoResult.failed} failed; ${undoResult.verificationPending} need verification. The original action remains in history.|">
+        Undo outcome
+    </p>
+</section>
+</body>
+</html>
