@@ -11,6 +11,14 @@ import org.springframework.security.oauth2.client.authentication.OAuth2Authentic
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * Manages the authenticated user's session state: which connected mailbox account
+ * is active, how new accounts are attached to an owner, and how the active account
+ * is resolved from a request.
+ *
+ * <p>Product functionality supported: multi-account support across the workspace,
+ * including login, adding accounts, and per-request account selection.
+ */
 @Service
 public class AccountSessionService {
 
@@ -26,6 +34,7 @@ public class AccountSessionService {
         this.accounts = accounts;
     }
 
+    /** Completes a login, attaching any pending owner key and activating the account. */
     public AccountSession initializeLogin(
             HttpServletRequest request, OAuth2AuthenticationToken authentication) {
         UserAccount authenticated = authenticatedAccount(authentication);
@@ -41,6 +50,7 @@ public class AccountSessionService {
         return new AccountSession(authenticated.getOwnerKey(), authenticated.getId());
     }
 
+    /** Begins adding a new account by recording the owner key as pending. */
     public String beginAddAccount(
             HttpServletRequest request, OAuth2AuthenticationToken authentication) {
         String ownerKey = ownerKey(request.getSession(), authentication);
@@ -48,6 +58,7 @@ public class AccountSessionService {
         return ownerKey;
     }
 
+    /** Resolves the active account for a request, honoring the requested selection. */
     public AccountSession resolve(
             HttpSession session,
             OAuth2AuthenticationToken authentication,
@@ -93,6 +104,7 @@ public class AccountSessionService {
         return new AccountSession(ownerKey, activeId);
     }
 
+    /** Returns the owner key for the session, falling back to the authenticated account. */
     public String ownerKey(
             HttpSession session, OAuth2AuthenticationToken authentication) {
         if (session != null) {
@@ -108,6 +120,7 @@ public class AccountSessionService {
         return authenticated.getOwnerKey();
     }
 
+    /** Loads the connected account for the OAuth authentication, or rejects it. */
     private UserAccount authenticatedAccount(OAuth2AuthenticationToken authentication) {
         String provider = authentication.getAuthorizedClientRegistrationId();
         return accounts.findByProviderAndProviderAccountId(provider, authentication.getName())
@@ -120,6 +133,7 @@ public class AccountSessionService {
                 HttpStatus.UNAUTHORIZED, "Authenticated account is not connected"));
     }
 
+    /** Parses a requested account selector, returning null for the default/current scope. */
     private static Long requestedAccountId(String requested) {
         if (requested.isEmpty()
                 || "current".equalsIgnoreCase(requested)

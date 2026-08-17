@@ -33,6 +33,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * Reserves an execution for a queued action: runs preflight, creates the
+ * execution and its per-target rows under a short lease, and handles idempotent
+ * replay and lease recovery.
+ *
+ * <p>Product functionality supported: the action execution engine's reservation,
+ * idempotency, and lease lifecycle.
+ */
 @Service
 public class ExecutionReservationService {
     private static final Duration LEASE = Duration.ofMinutes(2);
@@ -82,6 +90,7 @@ public class ExecutionReservationService {
         this.clock = clock;
     }
 
+    /** Reserves an execution for a single action. */
     @Transactional
     public Reservation reserve(
             long accountId, UUID actionPublicId, UUID idempotencyToken) {
@@ -90,6 +99,7 @@ public class ExecutionReservationService {
             .getFirst();
     }
 
+    /** Reserves executions for a batch of actions. */
     @Transactional
     public List<Reservation> reserveBatch(List<ReservationRequest> requests) {
         if (requests == null || requests.isEmpty()) {
@@ -137,6 +147,7 @@ public class ExecutionReservationService {
         return List.copyOf(reserved);
     }
 
+    /** Reserves an execution for a locked action, or replays an existing one. */
     private Reservation reserveLocked(
             UserAction action, UUID idempotencyToken, Instant now) {
         long accountId = action.getAccountId();
@@ -179,6 +190,7 @@ public class ExecutionReservationService {
         return receipt(execution, action, true);
     }
 
+    /** Marks a reserved execution as dispatched and its targets as dispatched. */
     @Transactional
     public Reservation markDispatched(long accountId, long executionId, String lease) {
         ActionExecution execution = executions.findForUpdate(executionId, accountId)
@@ -204,6 +216,7 @@ public class ExecutionReservationService {
         return receipt(execution, action, true);
     }
 
+    /** Builds the reservation receipt for an execution. */
     private static Reservation receipt(
             ActionExecution execution, UserAction action, boolean dispatchRequired) {
         return new Reservation(
@@ -212,10 +225,12 @@ public class ExecutionReservationService {
             action.getActionType(), execution.getLeaseFingerprint(), dispatchRequired);
     }
 
+    /** Returns a not-found exception for a missing action. */
     private static ResponseStatusException notFound() {
         return new ResponseStatusException(HttpStatus.NOT_FOUND, "action_not_found");
     }
 
+    /** A reserved execution and whether dispatch is required. */
     public record Reservation(
         long executionId,
         UUID executionPublicId,
@@ -229,6 +244,7 @@ public class ExecutionReservationService {
     ) {
     }
 
+    /** A request to reserve an execution for an action. */
     public record ReservationRequest(
         long accountId,
         UUID actionPublicId,
@@ -236,6 +252,7 @@ public class ExecutionReservationService {
     ) {
     }
 
+    /** A reservation request paired with its locked action. */
     private record RequestAndAction(
         ReservationRequest request,
         UserAction action

@@ -1,5 +1,12 @@
 package com.tidymail.dto;
 
+/**
+ * A safe, hash-based digest of one account's exact selection scope, letting the
+ * client confirm a preview without exposing raw message identifiers.
+ *
+ * <p>Product functionality supported: the <em>Bulk Action Preview</em> flow's
+ * exact-scope confirmation and execution safety.
+ */
 public record SelectionScopeDigest(
     String accountLabel,
     String scopeHash,

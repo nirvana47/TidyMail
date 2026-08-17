@@ -17,6 +17,14 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * High-level entry point for submitting, approving, and cancelling action commands
+ * from the bulk-action and Review flows. Verifies confirmation tokens, persists
+ * queued actions, and dispatches immediate or staged execution.
+ *
+ * <p>Product functionality supported: the <em>Bulk Action</em> and <em>Review</em>
+ * flows' submit/approve/cancel command handling.
+ */
 @Service
 public class ActionCommandService {
     private final ActionConfirmationIntentService confirmations;
@@ -44,6 +52,7 @@ public class ActionCommandService {
         this.intents = intents;
     }
 
+    /** Submits a confirmed action command, persisting and optionally executing it. */
     public CommandResult submit(
             String ownerKey,
             List<Long> authorizedAccountIds,
@@ -55,6 +64,7 @@ public class ActionCommandService {
             immediateAcknowledged, null);
     }
 
+    /** Submits a confirmed action command with an explicit unsubscribe method. */
     public CommandResult submit(
             String ownerKey,
             List<Long> authorizedAccountIds,

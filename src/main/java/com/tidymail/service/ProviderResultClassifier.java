@@ -10,10 +10,19 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * Classifies a provider bulk-action result into per-target facts and execution
+ * counts, enforcing the exact-request contract and flagging invalid or unknown
+ * outcomes as verification-pending.
+ *
+ * <p>Product functionality supported: the action execution engine's result
+ * classification and contract validation.
+ */
 public final class ProviderResultClassifier {
     private ProviderResultClassifier() {
     }
 
+    /** Classifies a provider result against the requested ordinals. */
     public static ClassifiedResult classify(
             Map<String, Integer> requestedOrdinals, BulkActionResult result) {
         if (requestedOrdinals == null || requestedOrdinals.isEmpty()) {
@@ -70,6 +79,7 @@ public final class ProviderResultClassifier {
             contractInvalid);
     }
 
+    /** Classifies an exception after dispatch as verification-pending. */
     public static ClassifiedResult afterDispatchException(
             Map<String, Integer> requestedOrdinals) {
         LinkedHashMap<Integer, TargetFact> facts = new LinkedHashMap<>();
@@ -85,12 +95,14 @@ public final class ProviderResultClassifier {
             false);
     }
 
+    /** Builds a uniform all-succeeded result. */
     public static ClassifiedResult allSucceeded(Map<String, Integer> requestedOrdinals) {
         return uniform(
             requestedOrdinals, ExecutionTargetStatus.SUCCEEDED, true,
             ActionReasonCode.NONE, ExecutionStatus.APPLIED);
     }
 
+    /** Builds a uniform failed result with a reason. */
     public static ClassifiedResult failed(
             Map<String, Integer> requestedOrdinals, ActionReasonCode reason) {
         return uniform(
@@ -98,6 +110,7 @@ public final class ProviderResultClassifier {
             reason, ExecutionStatus.FAILED);
     }
 
+    /** Builds a uniform verification-pending result. */
     public static ClassifiedResult verificationPending(
             Map<String, Integer> requestedOrdinals,
             boolean accepted,
@@ -107,6 +120,7 @@ public final class ProviderResultClassifier {
             accepted, reason, ExecutionStatus.VERIFICATION_PENDING);
     }
 
+    /** Builds a uniform result for all targets. */
     private static ClassifiedResult uniform(
             Map<String, Integer> requestedOrdinals,
             ExecutionTargetStatus targetStatus,
@@ -132,6 +146,7 @@ public final class ProviderResultClassifier {
         return new ClassifiedResult(Map.copyOf(facts), executionFacts, false);
     }
 
+    /** Builds a contract-invalid result for all targets. */
     private static ClassifiedResult invalidAfterDispatch(
             Map<String, Integer> requestedOrdinals) {
         LinkedHashMap<Integer, TargetFact> facts = new LinkedHashMap<>();
@@ -147,6 +162,7 @@ public final class ProviderResultClassifier {
             true);
     }
 
+    /** The classified outcome for a single target. */
     public record TargetFact(
         ExecutionTargetStatus status,
         boolean accepted,
@@ -154,6 +170,7 @@ public final class ProviderResultClassifier {
     ) {
     }
 
+    /** The classified per-target facts and execution counts. */
     public record ClassifiedResult(
         Map<Integer, TargetFact> targets,
         ExecutionFacts facts,
@@ -164,6 +181,7 @@ public final class ProviderResultClassifier {
         }
     }
 
+    /** Thrown when a provider result violates the exact request contract. */
     public static final class InvalidProviderResultException
             extends IllegalArgumentException {
         public InvalidProviderResultException() {

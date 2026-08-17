@@ -10,6 +10,12 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import org.hibernate.annotations.Immutable;
 
+/**
+ * Immutable record of a single lifecycle event for a user action (queued, dispatched,
+ * verified, etc.), capturing the counts and decision facts at the moment the event occurred.
+ * <p>Product functionality: action history/events — powers the audit trail and
+ * progress reporting for cleanup actions.
+ */
 @Entity
 @Immutable
 @Table(name = "action_events")
@@ -53,6 +59,10 @@ public class ActionEvent {
     protected ActionEvent() {
     }
 
+    /**
+     * Builds an event snapshot from an action (and optional execution), capturing the
+     * counts and decision facts at the moment the event occurred.
+     */
     public static ActionEvent from(
             UserAction action, ActionExecution execution, String eventType,
             ActionReasonCode reason, Instant now) {

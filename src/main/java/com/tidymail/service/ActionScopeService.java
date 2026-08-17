@@ -14,6 +14,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * Creates, loads, and validates exact action scopes. Handles deduplication by
+ * scope hash (including concurrent-insert races) and verifies scope integrity
+ * against the canonical form before use.
+ *
+ * <p>Product functionality supported: the <em>Bulk Action Preview</em> flow's
+ * exact-scope materialization and the execution engine's scope validation.
+ */
 @Service
 public class ActionScopeService {
 
@@ -30,6 +38,7 @@ public class ActionScopeService {
         this.persistenceService = persistenceService;
     }
 
+    /** Creates or returns the existing scope for the given exact targets. */
     public ActionScopePreview createOrGet(
             Long accountId,
             String actionType,
@@ -77,6 +86,7 @@ public class ActionScopeService {
         }
     }
 
+    /** Creates or returns the scope within the caller's transaction. */
     public ActionScopePreview createOrGetRequired(
             Long accountId,
             String actionType,
@@ -108,11 +118,13 @@ public class ActionScopeService {
         return toPreview(requireExact(inserted, accountId, canonical));
     }
 
+    /** Returns the preview for an existing scope. */
     @Transactional(readOnly = true)
     public ActionScopePreview getPreview(Long accountId, Long scopeId) {
         return toPreview(requireScope(accountId, scopeId));
     }
 
+    /** Loads and integrity-checks a scope, or fails if missing. */
     @Transactional(readOnly = true)
     public ActionScope requireScope(Long accountId, Long scopeId) {
         if (accountId == null || accountId <= 0 || scopeId == null || scopeId <= 0) {
@@ -124,6 +136,7 @@ public class ActionScopeService {
         return scope;
     }
 
+    /** Verifies an action's scope still matches its recorded facts. */
     @Transactional(readOnly = true)
     public void assertCompatible(UserAction action) {
         if (action == null || action.getActionScopeId() == null) {
@@ -144,6 +157,7 @@ public class ActionScopeService {
         }
     }
 
+    /** Verifies a persisted scope exactly matches the canonical scope. */
     private static ActionScope requireExact(
             ActionScope scope,
             Long accountId,
@@ -161,6 +175,7 @@ public class ActionScopeService {
         return scope;
     }
 
+    /** Recomputes the canonical hash and validates the scope's summaries. */
     private void requireIntegrity(ActionScope scope) {
         ActionScopeHasher.CanonicalScope canonical = hasher.canonicalize(
             scope.getAccountId(),
@@ -178,6 +193,7 @@ public class ActionScopeService {
         validateSummaries(canonical, scope.getTargetSummary(), scope.getRiskSummary());
     }
 
+    /** Validates target/risk summaries against the scope's target kind and size. */
     private static void validateSummaries(
             ActionScopeHasher.CanonicalScope canonical,
             ActionScopeTargetSummary targetSummary,
@@ -203,6 +219,7 @@ public class ActionScopeService {
         }
     }
 
+    /** Returns true if the failure is a scope-hash unique-constraint violation. */
     private static boolean isScopeHashUniqueViolation(Throwable failure) {
         for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
             if (cause instanceof SQLException sqlException
@@ -217,6 +234,7 @@ public class ActionScopeService {
         return false;
     }
 
+    /** Builds a preview DTO from a validated scope. */
     private ActionScopePreview toPreview(ActionScope scope) {
         requireIntegrity(scope);
         if (scope.getMessageCount() != scope.getMessageIds().size()) {

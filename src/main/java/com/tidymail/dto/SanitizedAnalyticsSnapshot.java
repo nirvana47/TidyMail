@@ -5,6 +5,14 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 
+/**
+ * A sanitized, self-describing snapshot of analytics evidence (metrics, trends,
+ * outcomes, ratios, delay distribution, coverage, and top senders) used to render
+ * the Analytics dashboard without exposing raw mailbox data.
+ *
+ * <p>Product functionality supported: the <em>Analytics</em> flow, which presents
+ * received-evidence metrics with explicit historical availability.
+ */
 public record SanitizedAnalyticsSnapshot(
     int schemaVersion,
     Instant generatedAt,
@@ -25,6 +33,7 @@ public record SanitizedAnalyticsSnapshot(
         senderRanks = List.copyOf(senderRanks);
     }
 
+    /** The date range and grouping filters the snapshot was generated for. */
     public record Filter(
         LocalDate from,
         LocalDate to,
@@ -34,9 +43,11 @@ public record SanitizedAnalyticsSnapshot(
     ) {
     }
 
+    /** Describes which accounts the snapshot covers. */
     public record AccountScope(String kind, int count) {
     }
 
+    /** Availability state of a metric or comparison, with a reason when unavailable. */
     public record Availability(
         String state,
         String reason,
@@ -46,6 +57,7 @@ public record SanitizedAnalyticsSnapshot(
     ) {
     }
 
+    /** A single analytics metric with its definition, value, and prior-period delta. */
     public record Metric(
         String name,
         String definition,
@@ -58,6 +70,7 @@ public record SanitizedAnalyticsSnapshot(
     ) {
     }
 
+    /** A time bucket of received vs. cleaned messages for trend charts. */
     public record Trend(
         Instant start,
         Instant end,
@@ -68,6 +81,7 @@ public record SanitizedAnalyticsSnapshot(
     ) {
     }
 
+    /** Outcome counts for cleanup actions in the snapshot period. */
     public record Outcomes(
         long requested,
         long accepted,
@@ -78,6 +92,7 @@ public record SanitizedAnalyticsSnapshot(
     ) {
     }
 
+    /** A computed ratio (e.g. cleanup rate) with its definition and availability. */
     public record Ratio(
         String name,
         String definition,
@@ -89,6 +104,7 @@ public record SanitizedAnalyticsSnapshot(
     ) {
     }
 
+    /** Distribution of action execution delays, used for latency analysis. */
     public record DelayDistribution(
         BigDecimal medianSeconds,
         long sampleSize,
@@ -101,6 +117,7 @@ public record SanitizedAnalyticsSnapshot(
         }
     }
 
+    /** A single bucket in the delay distribution histogram. */
     public record DelayBucket(
         String name,
         long lowerSeconds,
@@ -109,6 +126,7 @@ public record SanitizedAnalyticsSnapshot(
     ) {
     }
 
+    /** Data-coverage bounds describing how reliable the snapshot's evidence is. */
     public record Coverage(
         Instant receivedReliableFrom,
         Instant ledgerReliableFrom,
@@ -121,6 +139,7 @@ public record SanitizedAnalyticsSnapshot(
     ) {
     }
 
+    /** A top-sender entry by received message count. */
     public record SenderRank(String alias, long receivedCount) {
     }
 }

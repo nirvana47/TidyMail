@@ -20,6 +20,14 @@ import java.util.Map;
 import java.util.Set;
 import org.springframework.stereotype.Service;
 
+/**
+ * Drives the backfill phase of mailbox sync: pages through the provider's
+ * historical messages, deduplicates against indexed metadata, enforces the
+ * per-account ceiling, and commits each page.
+ *
+ * <p>Product functionality supported: the metadata-only sync's backfill of
+ * historical messages.
+ */
 @Service
 public class MailboxBackfillService {
     private final MailboxSyncStateRepository states;
@@ -38,6 +46,7 @@ public class MailboxBackfillService {
         this.config = config;
     }
 
+    /** Synchronizes one backfill page, returning whether more work remains. */
     public SyncOutcome synchronizeBackfillPage(
             UserAccount account, MailboxSyncProvider provider, String leaseOwner) {
         StateSnapshot state = states.findByAccountId(account.getId())
@@ -72,6 +81,7 @@ public class MailboxBackfillService {
         return nextPageToken == null ? SyncOutcome.complete() : SyncOutcome.requeue();
     }
 
+    /** Commits a backfill page as a sync unit. */
     private void commitPage(
             UserAccount account,
             String leaseOwner,
@@ -87,6 +97,7 @@ public class MailboxBackfillService {
             fetched, fetchedState.providerTotal(), null, null, false));
     }
 
+    /** Deduplicates a page and selects new messages within the ceiling. */
     private PageSelection selectMessages(
             long accountId, List<MailMessage> page, long ceiling, long indexed) {
         Map<String, MailMessage> unique = new LinkedHashMap<>();
@@ -110,6 +121,7 @@ public class MailboxBackfillService {
         return new PageSelection(List.copyOf(selected), newMessages);
     }
 
+    /** The selected messages and count of new ones. */
     private record PageSelection(List<MailMessage> messages, long newMessages) {
     }
 }

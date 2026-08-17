@@ -15,6 +15,13 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Handles PROTECT and REMOVE_PROTECTION actions locally: verifies the scope's
+ * single sender, then creates or deletes the protected-sender record.
+ *
+ * <p>Product functionality supported: the action execution engine's protect and
+ * compensation (remove-protection) handling.
+ */
 @Service
 public class ProtectionHandler implements ActionHandler {
     private final MessageMetadataRepository metadata;
@@ -32,12 +39,14 @@ public class ProtectionHandler implements ActionHandler {
         this.clock = Clock.systemUTC();
     }
 
+    /** Returns true for PROTECT and REMOVE_PROTECTION actions. */
     @Override
     public boolean supports(ActionType actionType) {
         return actionType == ActionType.PROTECT
             || actionType == ActionType.REMOVE_PROTECTION;
     }
 
+    /** Applies or removes protection for the scope's single sender. */
     @Override
     @Transactional
     public HandlerResult execute(ExecutionContext context) {
@@ -77,6 +86,7 @@ public class ProtectionHandler implements ActionHandler {
             ProviderResultClassifier.allSucceeded(context.targetOrdinals()));
     }
 
+    /** Normalizes a sender address for comparison. */
     private static String normalize(String value) {
         if (value == null || value.isBlank()) return null;
         return value.strip().toLowerCase(Locale.ROOT);

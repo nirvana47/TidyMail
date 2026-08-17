@@ -5,6 +5,13 @@ import com.tidymail.mail.MailMessage;
 import com.tidymail.mail.PageResult;
 import java.util.List;
 
+/**
+ * Provider-agnostic contract for syncing a mailbox, implemented per provider.
+ * Exposes sync capabilities, profiling, bootstrap/backfill listing, and change
+ * and metadata retrieval.
+ *
+ * <p>Product functionality supported: mailbox sync across providers.
+ */
 public interface MailboxSyncProvider {
 
     default SyncCapabilities capabilities() {

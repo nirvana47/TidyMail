@@ -2,6 +2,13 @@ package com.tidymail.dto;
 
 import java.util.Objects;
 
+/**
+ * A top sender ranked in the Analytics dashboard.
+ *
+ * <p>Product functionality supported: the <em>Analytics</em> &quot;top
+ * senders&quot; list. Carries the sender's identity, received count, and a
+ * link to the sender queue, with sanitized/bounded display values.</p>
+ */
 public record AnalyticsTopSender(
     long accountId,
     String senderKey,

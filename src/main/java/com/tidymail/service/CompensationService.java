@@ -29,6 +29,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * Handles protection compensation: creating a REMOVE_PROTECTION action that
+ * reverses a previously applied protect action, guarded by a short-lived intent
+ * token and conflict checks.
+ *
+ * <p>Product functionality supported: the <em>Protect</em> flow's compensation
+ * (removing protection) capability.
+ */
 @Service
 public class CompensationService {
     private static final Duration INTENT_TTL = Duration.ofMinutes(5);
@@ -68,6 +76,7 @@ public class CompensationService {
         this.transactions = transactions;
     }
 
+    /** Prepares a compensation intent token for the original protect action. */
     public CompensationConfirmation prepare(
             String ownerKey, long accountId, UUID originalPublicId) {
         return transactions.execute(status -> {
@@ -87,6 +96,7 @@ public class CompensationService {
         });
     }
 
+    /** Submits the compensation action, optionally executing immediately. */
     public CompensationResult submit(
             String ownerKey,
             long accountId,
@@ -111,6 +121,7 @@ public class CompensationService {
             compensation.getPublicId(), mode, compensation.getStatus(), receipt);
     }
 
+    /** Creates the queued compensation action, consuming the intent token. */
     private UserAction create(
             String ownerKey, long accountId, UUID originalPublicId,
             String rawIntent, ExecutionMode mode) {
@@ -174,6 +185,7 @@ public class CompensationService {
         return action;
     }
 
+    /** Loads and validates the original protect action and its intent. */
     private Original original(long accountId, UUID publicId) {
         UserAction action = actions.findForUpdateByPublicIdAndAccountId(
             publicId, accountId).orElseThrow(CompensationService::notFound);
@@ -190,12 +202,14 @@ public class CompensationService {
         return new Original(action, intent);
     }
 
+    /** Computes the subject fingerprint for a compensation intent. */
     private static String subject(UserAction action, ActionIntent intent) {
         return ActionFingerprints.bind(
             "compensation-subject-v1", action.getPublicId(),
             intent.getNormalizedSenderAddress());
     }
 
+    /** Parses an execution-mode value, defaulting to staged. */
     private static ExecutionMode mode(String value) {
         if (value == null || value.isBlank()) return ExecutionMode.STAGED;
         try {
@@ -206,19 +220,23 @@ public class CompensationService {
         }
     }
 
+    /** Throws a conflict when the compensation intent is stale. */
     private static ResponseStatusException stale() {
         return new ResponseStatusException(
             HttpStatus.CONFLICT, "compensation_intent_stale");
     }
 
+    /** Returns a not-found exception for a missing action. */
     private static ResponseStatusException notFound() {
         return new ResponseStatusException(
             HttpStatus.NOT_FOUND, "action_not_found");
     }
 
+    /** The original protect action and its intent. */
     private record Original(UserAction action, ActionIntent intent) {
     }
 
+    /** The prepared compensation intent confirmation. */
     public record CompensationConfirmation(
         UUID originalActionPublicId,
         long accountId,
@@ -229,6 +247,7 @@ public class CompensationService {
     ) {
     }
 
+    /** The result of submitting a compensation action. */
     public record CompensationResult(
         UUID actionPublicId,
         ExecutionMode mode,

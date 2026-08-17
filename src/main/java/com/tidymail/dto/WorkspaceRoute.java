@@ -4,6 +4,14 @@ import java.util.Arrays;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * The top-level workspace routes (Senders, Unread, Unsubscribe, Review, Activity,
+ * Analytics), each carrying its display metadata, purpose copy, and capability
+ * phase used to render the navigation rail and page headers.
+ *
+ * <p>Product functionality supported: the workspace navigation and the
+ * capability-gated presentation of each cleanup surface.
+ */
 public enum WorkspaceRoute {
     SENDERS(
         "senders", "/senders", "Bulk Archive/Delete", "Sender cleanup",
@@ -86,6 +94,7 @@ public enum WorkspaceRoute {
     public String capabilityHeading() { return capabilityHeading; }
     public String capabilityCopy() { return capabilityCopy; }
     public String unavailableCapability() { return unavailableCapability; }
+    /** Returns the next route in the workspace navigation order. */
     public WorkspaceRoute nextRoute() {
         return switch (this) {
             case SENDERS -> UNREAD;
@@ -97,6 +106,7 @@ public enum WorkspaceRoute {
         };
     }
 
+    /** Parses a route value, rejecting unknown or blank routes. */
     public static WorkspaceRoute parse(String value) {
         if (value == null || value.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Workspace route is required");

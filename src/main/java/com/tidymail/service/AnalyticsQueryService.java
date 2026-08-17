@@ -20,6 +20,13 @@ import org.springframework.security.oauth2.client.authentication.OAuth2Authentic
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * Parses and validates analytics and analytics-source query parameters, and
+ * resolves the selected account scope for the authenticated user.
+ *
+ * <p>Product functionality supported: the <em>Analytics</em> flow's query
+ * parsing, date-range handling, and account resolution.
+ */
 @Service
 public class AnalyticsQueryService {
     private static final Set<String> ANALYTICS_KEYS =
@@ -41,10 +48,12 @@ public class AnalyticsQueryService {
         this.clock = clock;
     }
 
+    /** Parses analytics query parameters into an {@link AnalyticsQuery}. */
     public AnalyticsQuery parse(Map<String, ? extends List<String>> parameters) {
         return parseAnalytics(singleValues(parameters, ANALYTICS_KEYS));
     }
 
+    /** Parses analytics source-query parameters into an {@link AnalyticsSourceQuery}. */
     public AnalyticsSourceQuery parseSource(
             Map<String, ? extends List<String>> parameters) {
         Map<String, String> values = singleValues(parameters, SOURCE_KEYS);
@@ -58,6 +67,7 @@ public class AnalyticsQueryService {
         return AnalyticsSourceQuery.parse(all, analytics);
     }
 
+    /** Resolves the query's account scope to concrete account IDs. */
     public ResolvedAnalyticsQuery resolve(
             AnalyticsQuery query, OAuth2AuthenticationToken authentication) {
         List<Long> accountIds = accountScopeService.resolve(authentication, query.account());
@@ -69,6 +79,7 @@ public class AnalyticsQueryService {
         return new ResolvedAnalyticsQuery(query.withAccount(account), accountIds);
     }
 
+    /** Resolves a source query's account scope to concrete account IDs. */
     public ResolvedAnalyticsSourceQuery resolve(
             AnalyticsSourceQuery source, OAuth2AuthenticationToken authentication) {
         ResolvedAnalyticsQuery resolved = resolve(source.analytics(), authentication);
@@ -79,6 +90,7 @@ public class AnalyticsQueryService {
             resolved.accountIds());
     }
 
+    /** Parses a validated single-value parameter map into an {@link AnalyticsQuery}. */
     private AnalyticsQuery parseAnalytics(Map<String, String> values) {
         LocalDate today = LocalDate.now(clock);
         TimePeriod period = enumeration(
@@ -102,6 +114,7 @@ public class AnalyticsQueryService {
             groupingOverridden);
     }
 
+    /** Returns the start date for a time period ending at the given date. */
     private static LocalDate periodStart(TimePeriod period, LocalDate to) {
         return switch (period) {
             case LAST_WEEK -> to.minusDays(6);
@@ -113,6 +126,7 @@ public class AnalyticsQueryService {
         };
     }
 
+    /** Validates that only recognized single-valued parameters are present. */
     private static Map<String, String> singleValues(
             Map<String, ? extends List<String>> input, Set<String> recognized) {
         if (input == null || input.isEmpty()) return Map.of();
@@ -128,6 +142,7 @@ public class AnalyticsQueryService {
         return result;
     }
 
+    /** Parses a canonical date parameter, falling back to the default. */
     private static LocalDate date(String value, String field, LocalDate defaultValue) {
         if (value == null) return defaultValue;
         if (value.length() != 10) throw bad(field);
@@ -140,6 +155,7 @@ public class AnalyticsQueryService {
         }
     }
 
+    /** Normalizes and validates an account selector. */
     private static String account(String value) {
         String normalized = value == null ? "current" : value.trim().toLowerCase(Locale.ROOT);
         if ("current".equals(normalized) || "all".equals(normalized)) return normalized;
@@ -152,6 +168,7 @@ public class AnalyticsQueryService {
         throw bad("account");
     }
 
+    /** Parses an enum parameter by its value method, defaulting when absent. */
     private static <E extends Enum<E>> E enumeration(
             String value, E defaultValue, Class<E> type, String field) {
         if (value == null) return defaultValue;
@@ -167,11 +184,13 @@ public class AnalyticsQueryService {
         throw bad(field);
     }
 
+    /** Returns a BAD_REQUEST exception for an invalid analytics parameter. */
     private static ResponseStatusException bad(String field) {
         return new ResponseStatusException(
             HttpStatus.BAD_REQUEST, "Invalid analytics " + field + " parameter");
     }
 
+    /** A parsed analytics query bound to concrete account IDs. */
     public record ResolvedAnalyticsQuery(
         AnalyticsQuery query,
         List<Long> accountIds
@@ -181,6 +200,7 @@ public class AnalyticsQueryService {
         }
     }
 
+    /** A parsed analytics source query bound to concrete account IDs. */
     public record ResolvedAnalyticsSourceQuery(
         AnalyticsSourceQuery query,
         List<Long> accountIds

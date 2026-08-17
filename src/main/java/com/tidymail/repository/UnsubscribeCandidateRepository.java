@@ -17,6 +17,13 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+/**
+ * Queries unsubscribe candidates and sender pages, including per-sender
+ * message/email facts, outcomes, and cleanup tracking.
+ * <p>
+ * Product functionality: the unsubscribe flow (candidate discovery, sender
+ * pages, and email drilldowns).
+ */
 @Repository
 public class UnsubscribeCandidateRepository {
     private static final String IDENTITY_FILTER = "/* page_identity_filter */";

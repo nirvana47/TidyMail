@@ -26,6 +26,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+/**
+ * Builds the shared workspace page model rendered across all pages: resolves the
+ * selected account scope, aggregates per-account sync progress into an overall
+ * state, and supplies account options, queued counts, and unread counts.
+ *
+ * <p>Product functionality supported: the workspace shell shared across the
+ * Senders, Unread, Unsubscribe, Review, Activity, and Analytics pages.
+ */
 @Service
 @Transactional(readOnly = true)
 public class WorkspaceModelService {
@@ -34,6 +42,7 @@ public class WorkspaceModelService {
     private static final String JOB_TYPE = MessageMetadataSyncService.JOB_TYPE;
     private static final String LEGACY_JOB_TYPE = "INCREMENTAL_SYNC";
 
+    /** A per-account summary of sync progress and indexed count. */
     public record AccountSummary(
         Long accountId,
         long indexedCount,
@@ -45,6 +54,7 @@ public class WorkspaceModelService {
     ) {
     }
 
+    /** The aggregate workspace sync state across selected accounts. */
     public record Aggregate(
         WorkspaceState state,
         long indexedCount,
@@ -95,6 +105,7 @@ public class WorkspaceModelService {
         this.clock = clock;
     }
 
+    /** Builds the workspace model for a route and account selection. */
     public WorkspacePageModel build(
             WorkspaceRoute route,
             String accountSelection,
@@ -103,6 +114,7 @@ public class WorkspaceModelService {
         return buildResolved(route, accountSelection, selectedIds, authentication);
     }
 
+    /** Builds the workspace model from already-resolved account IDs. */
     public WorkspacePageModel buildResolved(
             WorkspaceRoute route,
             String accountSelection,
@@ -175,6 +187,7 @@ public class WorkspaceModelService {
             aggregate.completedEmpty());
     }
 
+    /** Returns the unread scope counts, or a pending marker if unavailable. */
     public UnreadScopeCounts unreadScopeCounts(List<Long> accountIds) {
         try {
             return decisionQueryRepository.unreadScopeCounts(accountIds);
@@ -183,6 +196,7 @@ public class WorkspaceModelService {
         }
     }
 
+    /** Validates that resolved account IDs match the workspace selection. */
     private static List<Long> requireResolvedScope(
             String accountSelection, List<Long> accountIds) {
         if (accountIds == null || accountIds.isEmpty()
@@ -203,6 +217,7 @@ public class WorkspaceModelService {
         return resolved;
     }
 
+    /** Builds a per-account summary from its sync progress rows. */
     private AccountSummary summary(Long accountId, List<SyncProgress> progressRows) {
         long indexed = metadataQueryService.freshness(List.of(accountId)).messageCount();
         if (progressRows.isEmpty()) {
@@ -232,6 +247,7 @@ public class WorkspaceModelService {
             safeDetail);
     }
 
+    /** Aggregates account summaries into an overall workspace state. */
     public static Aggregate aggregate(List<AccountSummary> summaries, Instant now) {
         if (summaries == null || summaries.isEmpty()) {
             throw new IllegalArgumentException("At least one account summary is required");
@@ -288,6 +304,7 @@ public class WorkspaceModelService {
             neverStarted, completedEmpty);
     }
 
+    /** Builds the account-scope options for the workspace nav. */
     private static List<AccountScopeOption> accountOptions(
             List<UserAccount> accounts, String selectedQuery) {
         List<AccountScopeOption> options = new ArrayList<>();
@@ -299,19 +316,23 @@ public class WorkspaceModelService {
         return List.copyOf(options);
     }
 
+    /** Formats an account label for display. */
     private static String accountLabel(UserAccount account) {
           return account.getEmail();
     }
 
+    /** Returns the normalized principal email. */
     private static String normalizedEmail(OAuth2AuthenticationToken authentication) {
         String email = authentication.getPrincipal().getAttribute("email");
         return email == null ? "" : email.trim().toLowerCase(Locale.ROOT);
     }
 
+    /** Returns the integer value, defaulting to zero when null. */
     private static long value(Integer value) {
         return value == null ? 0 : value.longValue();
     }
 
+    /** Sanitizes a sync error detail for safe display. */
     static String safeDetail(String raw) {
         if (!StringUtils.hasText(raw)) {
             return null;

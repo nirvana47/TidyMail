@@ -14,6 +14,14 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
+/**
+ * Maps a provider {@link MailMessage} into a {@link MessageMetadata} entity,
+ * extracting and sanitizing headers and deriving DKIM/list-unsubscribe
+ * authentication facts for unsubscribe safety.
+ *
+ * <p>Product functionality supported: the metadata-only sync's message mapping
+ * and the unsubscribe flow's DKIM-based destination trust checks.
+ */
 @Component
 public class MessageMetadataMapper {
     private static final int MAX_AUTH_HEADER_LENGTH = 8192;
@@ -26,6 +34,7 @@ public class MessageMetadataMapper {
     private static final Pattern HEADER_S = Pattern.compile(
         "(?i)(?:^|\\s)header\\.s\\s*=\\s*([^\\s;]+)");
 
+    /** Maps a mail message into a metadata entity (new or existing). */
     public MessageMetadata apply(
             Long accountId, MailMessage message, MessageMetadata target, Instant syncedAt) {
         MessageMetadata entity = target == null ? new MessageMetadata() : target;
@@ -77,6 +86,7 @@ public class MessageMetadataMapper {
         return entity;
     }
 
+    /** Records the derived DKIM facts for unsubscribe authentication. */
     private static void applyUnsubscribeAuthenticationFacts(
             MessageMetadata entity, MailMessage message) {
         DkimFacts facts = deriveDkimFacts(message);
@@ -87,6 +97,7 @@ public class MessageMetadataMapper {
         entity.setUnsubscribeAuthReason(facts.reason());
     }
 
+    /** Derives trusted DKIM pass and list-unsubscribe coverage facts. */
     private static DkimFacts deriveDkimFacts(MailMessage message) {
         if (!"google".equals(message.provider())) {
             return DkimFacts.noTrustedResult();
@@ -160,6 +171,7 @@ public class MessageMetadataMapper {
             : DkimFacts.coverageMissing(listUnsubscribe, listUnsubscribePost);
     }
 
+    /** Parses a passing DKIM identity (header.d/header.s) from a clause. */
     private static DkimIdentity parsePassingIdentity(String clause) {
         List<String> domains = matches(HEADER_D, clause);
         List<String> selectors = matches(HEADER_S, clause);
@@ -169,6 +181,7 @@ public class MessageMetadataMapper {
             selectors.isEmpty() ? null : selectors.getFirst().toLowerCase(Locale.ROOT));
     }
 
+    /** Parses a DKIM-Signature header into its tags. */
     private static Map<String, String> parseSignatureTags(String raw) {
         String unfolded = unfold(raw);
         if (unfolded == null) return null;
@@ -184,6 +197,7 @@ public class MessageMetadataMapper {
         return Map.copyOf(tags);
     }
 
+    /** Returns true if a header value is malformed or exceeds the bound. */
     private static boolean invalidHeader(String value, int maximum) {
         return value == null || value.length() > maximum
             || value.indexOf('\0') >= 0
@@ -192,6 +206,7 @@ public class MessageMetadataMapper {
                     && character != '\r' && character != '\n' && character != '\t');
     }
 
+    /** Unfolds a folded header value, or returns null if malformed. */
     private static String unfold(String value) {
         StringBuilder result = new StringBuilder(value.length());
         for (int index = 0; index < value.length(); index++) {
@@ -221,6 +236,7 @@ public class MessageMetadataMapper {
         return result.toString();
     }
 
+    /** Returns all group-1 matches of the pattern in the value. */
     private static List<String> matches(Pattern pattern, String value) {
         ArrayList<String> matches = new ArrayList<>();
         Matcher matcher = pattern.matcher(value);
@@ -228,11 +244,13 @@ public class MessageMetadataMapper {
         return List.copyOf(matches);
     }
 
+    /** Returns the first value of a named header, if any. */
     private static String first(Map<String, List<String>> headers, String name) {
         List<String> values = values(headers, name);
         return values.isEmpty() ? null : values.getFirst();
     }
 
+    /** Returns the values of a named header, case-insensitively. */
     private static List<String> values(Map<String, List<String>> headers, String name) {
         if (headers == null) return List.of();
         for (Map.Entry<String, List<String>> entry : headers.entrySet()) {
@@ -243,6 +261,7 @@ public class MessageMetadataMapper {
         return List.of();
     }
 
+    /** Extracts the display name from a From header value. */
     private static String displayName(String from) {
         if (from == null) return null;
         int angle = from.lastIndexOf('<');
@@ -254,6 +273,7 @@ public class MessageMetadataMapper {
         return display.isEmpty() ? null : display;
     }
 
+    /** A DKIM identity (domain/selector) from a trusted pass. */
     private record DkimIdentity(String domain, String selector) {
         private boolean matches(String signatureDomain, String signatureSelector) {
             return signatureDomain != null
@@ -263,6 +283,7 @@ public class MessageMetadataMapper {
         }
     }
 
+    /** The derived DKIM pass and list-unsubscribe coverage facts. */
     private record DkimFacts(
             boolean pass,
             boolean coversListUnsubscribe,

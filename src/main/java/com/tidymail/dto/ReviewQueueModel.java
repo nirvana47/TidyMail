@@ -3,6 +3,13 @@ package com.tidymail.dto;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * View model for the Review page: the workspace context, the active query, the
+ * queued action rows, their grouped presentation, and pagination/URL metadata.
+ *
+ * <p>Product functionality supported: the <em>Review</em> flow's queue listing,
+ * grouping, filtering, and pagination.
+ */
 public record ReviewQueueModel(
     WorkspacePageModel workspace,
     ReviewQuery query,
@@ -22,6 +29,7 @@ public record ReviewQueueModel(
         groups = List.copyOf(groups);
     }
 
+    /** Aggregate counts summarizing the current review queue. */
     public record Metrics(
         long queuedActions,
         long exactTargets,
@@ -30,6 +38,7 @@ public record ReviewQueueModel(
     ) {
     }
 
+    /** Builds a URL-encoded query string from the given parameters. */
     public static String queryString(Map<String, String> parameters) {
         return parameters.entrySet().stream()
             .map(entry -> org.springframework.web.util.UriUtils.encodeQueryParam(

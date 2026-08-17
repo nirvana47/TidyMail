@@ -19,6 +19,14 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * Runs pre-execution safety checks on a queued action: verifies the scope is
+ * intact and compatible, the intent matches the action type, current protection
+ * still holds, and no open conflict exists.
+ *
+ * <p>Product functionality supported: the action execution engine's safety
+ * preflight, which prevents executing stale or unsafe actions.
+ */
 @Service
 public class ActionPreflightService {
     private final ActionScopeService scopes;
@@ -46,6 +54,7 @@ public class ActionPreflightService {
         this.unsubscribeCandidates = unsubscribeCandidates;
     }
 
+    /** Validates a queued action and returns its preflight facts, or fails. */
     public PreflightResult check(UserAction action) {
         if (action == null || action.getActionScopeId() == null
                 || !"QUEUED".equals(action.getStatus())) {
@@ -90,6 +99,7 @@ public class ActionPreflightService {
         return new PreflightResult(action, scope, intent, type);
     }
 
+    /** Verifies the intent matches the action type's expected subject. */
     private void assertTypedIntent(
             UserAction action, ActionScope scope, ActionIntent intent, ActionType type) {
         switch (type) {
@@ -130,6 +140,7 @@ public class ActionPreflightService {
         }
     }
 
+    /** Returns the normalized senders currently on the scope's messages. */
     private Set<String> uniqueCurrentSenders(ActionScope scope) {
         return metadata.findByAccountIdAndProviderMessageIdIn(
                 scope.getAccountId(), scope.getMessageIds()).stream()
@@ -139,6 +150,7 @@ public class ActionPreflightService {
             .collect(java.util.stream.Collectors.toSet());
     }
 
+    /** Verifies the current protection state still matches the scope's risk summary. */
     private void assertCurrentProtection(ActionScope scope, ActionType type) {
         List<MessageMetadata> messages = metadata.findByAccountIdAndProviderMessageIdIn(
             scope.getAccountId(), scope.getMessageIds());
@@ -186,11 +198,13 @@ public class ActionPreflightService {
         }
     }
 
+    /** Throws a conflict when preflight fails. */
     private static ResponseStatusException conflict() {
         return new ResponseStatusException(
             HttpStatus.CONFLICT, "action_preflight_failed");
     }
 
+    /** The validated facts needed to execute an action. */
     public record PreflightResult(
         UserAction action,
         ActionScope scope,

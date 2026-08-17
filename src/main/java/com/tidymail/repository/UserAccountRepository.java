@@ -12,6 +12,13 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Persists and queries user accounts, including OAuth credential
+ * invalidation/activation and cascade deletion.
+ * <p>
+ * Product functionality: user accounts and OAuth lifecycle across the
+ * product.
+ */
 public interface UserAccountRepository extends JpaRepository<UserAccount, Long> {
 
     Optional<UserAccount> findByProviderAndProviderAccountId(String provider, String providerAccountId);

@@ -4,6 +4,14 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.List;
 
+/**
+ * A detailed inspection of a single unsubscribe candidate: sender identity,
+ * confidence, DKIM/list-unsubscribe facts, prior outcome, and each available
+ * method's redacted destination details.
+ *
+ * <p>Product functionality supported: the <em>Unsubscribe</em> flow's inspection
+ * step, which shows redacted destination facts before the user chooses a method.
+ */
 public record UnsubscribeInspection(
     String candidateKey,
     String accountLabel,
@@ -27,6 +35,7 @@ public record UnsubscribeInspection(
         methods = List.copyOf(methods);
     }
 
+    /** Returns a copy of this inspection with the given per-method intents applied. */
     public UnsubscribeInspection withIntents(Map<String, String> intents) {
         return new UnsubscribeInspection(
             candidateKey, accountLabel, senderDisplayName, senderAddress, listIdentity,
@@ -37,6 +46,7 @@ public record UnsubscribeInspection(
             methods.stream().map(method -> method.withIntent(intents.get(method.method()))).toList());
     }
 
+    /** A single unsubscribe method with its redacted destination facts and eligibility. */
     public record MethodFact(
         String method,
         String label,
@@ -53,6 +63,7 @@ public record UnsubscribeInspection(
         boolean mailtoBodyPresent,
         String intent
     ) {
+        /** Returns a copy of this method fact carrying the user's intent. */
         public MethodFact withIntent(String value) {
             return new MethodFact(
                 method, label, behavior, destinationHost, redactedPathShape,

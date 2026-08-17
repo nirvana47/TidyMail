@@ -10,11 +10,19 @@ import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import org.springframework.stereotype.Service;
 
+/**
+ * Builds safe, validated deep links into the mail provider (currently Gmail) for
+ * an account or a specific thread/message, rejecting malformed input.
+ *
+ * <p>Product functionality supported: the <em>Unread</em> and <em>Review</em>
+ * flows' provider links to open messages in the mailbox.
+ */
 @Service
 public final class ProviderDeepLinkService {
     private static final String GMAIL_HOST = "mail.google.com";
     private static final int MAX_ACCOUNT_EMAIL_LENGTH = 320;
 
+    /** Returns a validated deep link to the account's mailbox, if supported. */
     public Optional<String> accountPage(String provider, String accountEmail) {
         if (!"google".equals(provider) || !validAccountEmail(accountEmail)) {
             return Optional.empty();
@@ -33,6 +41,7 @@ public final class ProviderDeepLinkService {
         }
     }
 
+    /** Returns a validated deep link to a Gmail thread or message. */
     public Optional<String> gmail(
             String provider,
             String accountEmail,
@@ -72,6 +81,7 @@ public final class ProviderDeepLinkService {
         }
     }
 
+    /** Returns true if a URL segment is safe to embed. */
     private static boolean validSegment(String value) {
         if (!hasText(value) || value.length() > 1024) {
             return false;
@@ -96,6 +106,7 @@ public final class ProviderDeepLinkService {
         return true;
     }
 
+    /** Returns true if the value is a plausible account email. */
     private static boolean validAccountEmail(String value) {
         if (!validSegment(value) || value.length() > MAX_ACCOUNT_EMAIL_LENGTH) return false;
         int separator = value.indexOf('@');
@@ -107,6 +118,7 @@ public final class ProviderDeepLinkService {
             && value.chars().noneMatch(Character::isWhitespace);
     }
 
+    /** Percent-encodes a UTF-8 value for a URL path/fragment. */
     private static String encode(String value) throws CharacterCodingException {
         ByteBuffer encoded = StandardCharsets.UTF_8.newEncoder()
             .onMalformedInput(CodingErrorAction.REPORT)
@@ -134,6 +146,7 @@ public final class ProviderDeepLinkService {
         return result.toString();
     }
 
+    /** Returns true if the value has non-blank text. */
     private static boolean hasText(String value) {
         return value != null && !value.isBlank();
     }

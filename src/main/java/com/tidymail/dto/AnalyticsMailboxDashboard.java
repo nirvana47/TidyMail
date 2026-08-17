@@ -6,6 +6,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+/**
+ * Per-mailbox analytics used by the Analytics page's charts and rankings.
+ *
+ * <p>Product functionality supported: the <em>Analytics</em> charts (received /
+ * sent / read / archived-deleted totals and time series), top senders/domains,
+ * and mailbox size metrics. Enforces complete, non-negative facts and bounds
+ * rankings to 10 rows.</p>
+ */
 public record AnalyticsMailboxDashboard(
     Map<MetricTab, Long> totals,
     Map<MetricTab, List<SeriesBucket>> series,
@@ -43,10 +51,16 @@ public record AnalyticsMailboxDashboard(
         return copy;
     }
 
+    /**
+     * Looks up a metric total by its string name.
+     */
     public long total(String metric) {
         return totals.get(MetricTab.valueOf(metric));
     }
 
+    /**
+     * Looks up a metric's time-series buckets by its string name.
+     */
     public List<SeriesBucket> buckets(String metric) {
         return series.get(MetricTab.valueOf(metric));
     }

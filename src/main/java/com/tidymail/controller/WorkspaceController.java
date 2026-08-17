@@ -53,6 +53,18 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.util.UriComponentsBuilder;
 
+/**
+ * The main workspace controller — serves the core pages of the app: Senders,
+ * Unread (Reply Zero), Unsubscribe, and Review, plus their htmx result
+ * fragments and category drill-downs.
+ *
+ * <p>Product functionality supported: the primary <em>workspace tabs</em>.
+ * Each page is built from a query (filters/sort/paging) resolved against the
+ * user's accounts, and rendered either as a full page or a results fragment.
+ * It also handles unsubscribe candidate inspection (with per-method
+ * confirmation intents), manual unsubscribe navigation (mailto/provider
+ * redirects), and the Review queue/history views.</p>
+ */
 @Controller
 public class WorkspaceController {
 
@@ -93,6 +105,10 @@ public class WorkspaceController {
         this.senderCategories = senderCategories;
     }
 
+    /**
+     * Renders the Senders page (sender aggregation dashboard) for the given
+     * query.
+     */
     @GetMapping("/senders")
     public String senders(
             @RequestParam MultiValueMap<String, String> parameters,
@@ -104,6 +120,10 @@ public class WorkspaceController {
         return "senders";
     }
 
+    /**
+     * Renders just the Senders results fragment (htmx), for in-place updates
+     * of the sender list.
+     */
     @GetMapping("/senders/results")
     public String senderResults(
             @RequestParam MultiValueMap<String, String> parameters,
@@ -115,6 +135,11 @@ public class WorkspaceController {
         return "fragments/senders-results-frag :: results";
     }
 
+    /**
+     * Renders a single sender category's rows (paginated), either as a fresh
+     * category chunk or additional rows. Unread-prefixed keys delegate to the
+     * unread category rendering.
+     */
     @GetMapping("/senders/categories/{categoryKey}")
     public String senderCategory(
             @PathVariable String categoryKey,
@@ -174,6 +199,10 @@ public class WorkspaceController {
         }
     }
 
+    /**
+     * Renders a single unread (Reply Zero) category's rows, paginated, with
+     * htmx error handling for stale/invalid category state.
+     */
     private String unreadCategory(
             String categoryKey,
             MultiValueMap<String, String> parameters,
@@ -216,6 +245,9 @@ public class WorkspaceController {
         }
     }
 
+    /**
+     * Renders the Unread (Reply Zero) page for the given query.
+     */
     @GetMapping("/unread")
     public String unread(
             @RequestParam MultiValueMap<String, String> parameters,
@@ -225,6 +257,9 @@ public class WorkspaceController {
         return "unread";
     }
 
+    /**
+     * Renders just the Unread results fragment (htmx).
+     */
     @GetMapping("/unread/results")
     public String unreadResults(
             @RequestParam MultiValueMap<String, String> parameters,
@@ -234,6 +269,9 @@ public class WorkspaceController {
         return "fragments/unread-results-frag :: results";
     }
 
+    /**
+     * Renders the Unsubscribe page (sender candidates) for the given query.
+     */
     @GetMapping("/unsubscribe")
     public String unsubscribe(
             @RequestParam MultiValueMap<String, String> parameters,
@@ -243,6 +281,9 @@ public class WorkspaceController {
         return "unsubscribe";
     }
 
+    /**
+     * Renders just the Unsubscribe results fragment (htmx).
+     */
     @GetMapping("/unsubscribe/results")
     public String unsubscribeResults(
             @RequestParam MultiValueMap<String, String> parameters,
@@ -252,6 +293,10 @@ public class WorkspaceController {
         return "fragments/unsubscribe-results-frag :: results";
     }
 
+    /**
+     * Inspects an unsubscribe candidate and prepares per-method confirmation
+     * intents so the user can proceed with an automated or manual unsubscribe.
+     */
     @GetMapping("/unsubscribe/candidates/{candidateKey}")
     public String unsubscribeCandidate(
             @PathVariable String candidateKey,
@@ -299,6 +344,10 @@ public class WorkspaceController {
             : "unsubscribe";
     }
 
+    /**
+     * Redirects the user to the mailto: unsubscribe link for a candidate's
+     * chosen method (manual unsubscribe navigation).
+     */
     @GetMapping("/unsubscribe/candidates/{candidateKey}/mailto/{methodIndex}")
     public ResponseEntity<Void> unsubscribeMailto(
             @PathVariable String candidateKey,
@@ -316,6 +365,10 @@ public class WorkspaceController {
             .build();
     }
 
+    /**
+     * Redirects the user to the provider's unsubscribe flow for a candidate
+     * (manual unsubscribe navigation).
+     */
     @GetMapping("/unsubscribe/candidates/{candidateKey}/provider")
     public ResponseEntity<Void> unsubscribeProvider(
             @PathVariable String candidateKey,
@@ -332,6 +385,11 @@ public class WorkspaceController {
             .build();
     }
 
+    /**
+     * Renders the Review page: either the action-history view or the staged
+     * action queue, resolving &quot;current&quot; account to the user's
+     * selected account.
+     */
     @GetMapping("/review")
     public String review(
             @RequestParam MultiValueMap<String, String> parameters,
@@ -366,6 +424,10 @@ public class WorkspaceController {
         return "review";
     }
 
+    /**
+     * Renders the workspace state fragment (active tab, account switcher)
+     * used by the shared workspace chrome.
+     */
     @GetMapping("/workspace/state")
     public String state(
             @RequestParam String route,
@@ -378,6 +440,9 @@ public class WorkspaceController {
         return "fragments/workspace-state :: state";
     }
 
+    /**
+     * Renders a workspace page for the given route and account.
+     */
     private String render(
             WorkspaceRoute route,
             String account,
@@ -388,6 +453,11 @@ public class WorkspaceController {
         return route.value();
     }
 
+    /**
+     * Builds the Senders page model: resolves the query and analytics scope,
+     * builds the workspace chrome, computes the category list, and assembles
+     * the page's URLs and available actions.
+     */
     private SenderPageModel senderPage(
             MultiValueMap<String, String> parameters,
             OAuth2AuthenticationToken authentication) {
@@ -444,6 +514,11 @@ public class WorkspaceController {
             workspace.selectedAccountIds().getFirst());
     }
 
+    /**
+     * Builds the Unread (Reply Zero) page model: resolves the query, builds
+     * the workspace chrome, computes category snapshots, and assembles the
+     * page's URLs and available actions.
+     */
     private UnreadPageModel unreadPage(
             MultiValueMap<String, String> parameters,
             OAuth2AuthenticationToken authentication) {
@@ -491,6 +566,10 @@ public class WorkspaceController {
             workspace.selectedAccountIds().getFirst());
     }
 
+    /**
+     * Lists the sender-category options available to the user across their
+     * selected accounts, for the category-assignment UI.
+     */
     private List<SenderCategoryOption> categoryOptions(
             OAuth2AuthenticationToken authentication, WorkspacePageModel workspace) {
         String ownerKey = ActionCommandController.ownerKey(authentication);
@@ -501,6 +580,10 @@ public class WorkspaceController {
             .toList();
     }
 
+    /**
+     * Reads the {@code cleanupAction} query parameter, defaulting to the given
+     * value and rejecting malformed input.
+     */
     private static CleanupAction cleanupAction(
             MultiValueMap<String, String> parameters, CleanupAction defaultValue) {
         List<String> values = parameters.get("cleanupAction");
@@ -512,6 +595,10 @@ public class WorkspaceController {
         return CleanupAction.parse(values.getFirst(), defaultValue);
     }
 
+    /**
+     * Returns a copy of the parameters with the {@code cleanupAction} entry
+     * removed, so the underlying query can be parsed cleanly.
+     */
     private static MultiValueMap<String, String> withoutCleanupAction(
             MultiValueMap<String, String> parameters) {
         LinkedMultiValueMap<String, String> copy = new LinkedMultiValueMap<>(parameters);
@@ -519,6 +606,10 @@ public class WorkspaceController {
         return copy;
     }
 
+    /**
+     * Returns a copy of the parameters with category paging state
+     * ({@code offset}, {@code loadAll}) removed.
+     */
     private static MultiValueMap<String, String> withoutCategoryPaging(
             MultiValueMap<String, String> parameters) {
         LinkedMultiValueMap<String, String> copy =
@@ -528,6 +619,10 @@ public class WorkspaceController {
         return copy;
     }
 
+    /**
+     * Reads the category paging offset, defaulting to 0 and rejecting
+     * non-numeric values.
+     */
     private static long categoryOffset(MultiValueMap<String, String> parameters) {
         String value = singleCategoryParameter(parameters, "offset", "0");
         try {
@@ -538,6 +633,10 @@ public class WorkspaceController {
         }
     }
 
+    /**
+     * Reads the {@code loadAll} flag for category paging, rejecting values
+     * other than true/false.
+     */
     private static boolean categoryLoadAll(MultiValueMap<String, String> parameters) {
         String value = singleCategoryParameter(parameters, "loadAll", "false");
         if ("true".equals(value)) return true;
@@ -546,6 +645,10 @@ public class WorkspaceController {
             HttpStatus.BAD_REQUEST, "Invalid category paging state");
     }
 
+    /**
+     * Reads a single category-paging parameter, defaulting when absent and
+     * rejecting duplicate values.
+     */
     private static String singleCategoryParameter(
             MultiValueMap<String, String> parameters, String name, String defaultValue) {
         List<String> values = parameters.get(name);
@@ -557,6 +660,9 @@ public class WorkspaceController {
         return values.getFirst();
     }
 
+    /**
+     * Builds the &quot;load more&quot; URL map for each sender category.
+     */
     private static Map<String, String> senderCategoryUrls(SenderPageModel page) {
         LinkedHashMap<String, String> urls = new LinkedHashMap<>();
         page.categories().forEach(category -> urls.put(
@@ -569,6 +675,10 @@ public class WorkspaceController {
         return Map.copyOf(urls);
     }
 
+    /**
+     * Builds the URL for paging/loading a sender category, preserving the
+     * query and cleanup action.
+     */
     private static String senderCategoryUrl(
             SenderQuery query,
             CleanupAction cleanupAction,
@@ -583,6 +693,9 @@ public class WorkspaceController {
         return url("/senders/categories/" + categoryKey, parameters);
     }
 
+    /**
+     * Builds the URL map for each unread category.
+     */
     private static Map<String, String> unreadCategoryUrls(
             UnreadQuery query,
             CleanupAction cleanupAction,
@@ -594,6 +707,9 @@ public class WorkspaceController {
         return Map.copyOf(urls);
     }
 
+    /**
+     * Builds the URL for paging/loading an unread category.
+     */
     private static String unreadCategoryUrl(
             UnreadQuery query,
             CleanupAction cleanupAction,
@@ -608,6 +724,11 @@ public class WorkspaceController {
         return url("/senders/categories/unread-" + categoryKey, parameters);
     }
 
+    /**
+     * Builds the Unsubscribe page model: resolves the query, builds the
+     * workspace chrome, queries the unsubscribe candidates, and assembles the
+     * page's URLs and sort label.
+     */
     private UnsubscribePageModel unsubscribePage(
             MultiValueMap<String, String> parameters,
             OAuth2AuthenticationToken authentication) {
@@ -634,6 +755,9 @@ public class WorkspaceController {
             url("/unsubscribe", results.nextQuery()));
     }
 
+    /**
+     * Maps an unsubscribe sort key to its human-readable label.
+     */
     private static String unsubscribeSortLabel(UnsubscribeQuery.Sort sort) {
         return switch (sort) {
             case VOLUME_DESC -> "Email count, highest first";
@@ -648,6 +772,10 @@ public class WorkspaceController {
         };
     }
 
+    /**
+     * Builds a URL from a path and query parameters, or empty when there are
+     * none.
+     */
     private static String url(String path, Map<String, String> parameters) {
         if (parameters == null || parameters.isEmpty()) {
             return "";
@@ -657,6 +785,9 @@ public class WorkspaceController {
         return builder.build().encode().toUriString();
     }
 
+    /**
+     * Rejects a requested page that is beyond the available total pages.
+     */
     private static void requireExistingPage(int page, int totalPages) {
         if (page > 0 && page >= totalPages) {
             throw new ResponseStatusException(

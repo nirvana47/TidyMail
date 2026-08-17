@@ -14,6 +14,13 @@ import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Persists per-sender statistics snapshots and builds the Senders dashboard
+ * response from stored stats, with sorting and domain rollups.
+ *
+ * <p>Product functionality supported: the <em>Senders</em> flow's persisted
+ * sender stats and dashboard listing.
+ */
 @Service
 public class SenderStatsPersistService {
 
@@ -23,6 +30,7 @@ public class SenderStatsPersistService {
         this.senderStatRepository = senderStatRepository;
     }
 
+    /** A per-sender delta to upsert into the stats snapshot. */
     public record SenderStatDelta(
             String fromAddress,
             String fromDisplayName,
@@ -36,6 +44,7 @@ public class SenderStatsPersistService {
             int replyCount
     ) {}
 
+    /** Upserts a snapshot of sender stats for an account. */
     @Transactional
     public List<SenderStat> upsertSnapshot(Long accountId, List<SenderStatDelta> deltas) {
         Map<String, SenderStat> existingByAddress = new HashMap<>();
@@ -65,11 +74,13 @@ public class SenderStatsPersistService {
         return List.copyOf(senderStatRepository.saveAll(toSave));
     }
 
+    /** Returns the account's sender stats sorted by count. */
     @Transactional(readOnly = true)
     public List<SenderStat> findByAccountSortedByCount(Long accountId) {
         return senderStatRepository.findByAccountIdOrderByTotalCountDesc(accountId);
     }
 
+    /** Builds the dashboard response from stored stats. */
     @Transactional(readOnly = true)
     public SenderPageResponse dashboardSnapshot(Long accountId, String sort) {
         List<SenderStat> stats = new ArrayList<>(findByAccountSortedByCount(accountId));
@@ -116,6 +127,7 @@ public class SenderStatsPersistService {
         return new SenderPageResponse(List.copyOf(cards), null, cards.size(), totalMessages, rollups);
     }
 
+    /** Computes a 0-3 bulk-marketing score for a stored stat. */
     private int bulkMarketingScore(SenderStat stat) {
         int score = 0;
         if (Boolean.TRUE.equals(stat.getHasListUnsubscribe())) score++;
@@ -129,6 +141,7 @@ public class SenderStatsPersistService {
         return Math.min(3, score);
     }
 
+    /** Accumulates message/sender counts per domain. */
     private static final class DomainAccumulator {
         private int messageCount;
         private int senderCount;

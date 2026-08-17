@@ -3,6 +3,13 @@ package com.tidymail.dto;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * View model for the Review page's action-history view.
+ *
+ * <p>Product functionality supported: the <em>Review &gt; History</em> tab,
+ * which shows past cleanup actions with aggregate metrics, paginated rows, and
+ * the canonical/clear/prev/next navigation URLs.</p>
+ */
 public record ActionHistoryModel(
     HistoryQuery query,
     Metrics metrics,

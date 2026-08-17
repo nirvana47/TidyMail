@@ -17,6 +17,17 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * Receives the final confirmation POST for a staged bulk cleanup action and
+ * hands it off to be executed against the user's mailbox.
+ *
+ * <p>Product functionality supported: the <em>Bulk Action Review</em>
+ * confirmation button (and its htmx fragment variant). The controller strictly
+ * validates the submitted form (rejects query-string parameters and any
+ * unknown/duplicate/missing fields), then resolves which linked mailbox the
+ * action targets and asks {@link ActionCommandService} to run the action under
+ * a user-chosen execution mode with the user's confirmation.
+ */
 @Controller
 public class ActionCommandController {
     private static final Set<String> PARAMETERS = Set.of(
@@ -33,6 +44,16 @@ public class ActionCommandController {
         this.commands = commands;
     }
 
+    /**
+     * Receives the user's confirmation and executes the staged batch of
+     * cleanup actions.
+     *
+     * <p>Ownership and the target mailbox is authorized before execution. The
+     * response differs by transport: for htmx (HX-Request) requests a fragment
+     * showing the command result is returned for in-place update, otherwise the
+     * user is redirected to the &quot;queued&quot; view of the Review page for
+     * the affected account.</p>
+     */
     @PostMapping("/api/action-commands")
     public String submit(
             @RequestParam MultiValueMap<String, String> parameters,

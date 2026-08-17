@@ -9,6 +9,13 @@ import org.springframework.http.HttpStatus;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * Validated query parameters for the Review page, controlling which queued actions
+ * are shown (view, account, action type, state, target search, and page).
+ *
+ * <p>Product functionality supported: the <em>Review</em> flow's queue listing and
+ * filtering, including canonical URL generation for pagination and filters.
+ */
 public record ReviewQuery(
     String view,
     String account,
@@ -38,6 +45,7 @@ public record ReviewQuery(
         }
     }
 
+    /** Parses and validates raw HTTP query parameters into a {@link ReviewQuery}. */
     public static ReviewQuery parse(MultiValueMap<String, String> parameters) {
         for (String key : parameters.keySet()) {
             if (!KEYS.contains(key) || parameters.getOrDefault(key, List.of()).size() != 1) {
@@ -61,6 +69,7 @@ public record ReviewQuery(
         }
     }
 
+    /** Returns the canonical, minimal set of parameters for this query. */
     public Map<String, String> canonicalParameters() {
         LinkedHashMap<String, String> result = new LinkedHashMap<>();
         result.put("view", view);
@@ -72,6 +81,7 @@ public record ReviewQuery(
         return Map.copyOf(result);
     }
 
+    /** Returns the canonical parameters with the page field removed (for "clear page" links). */
     public Map<String, String> withoutPage() {
         LinkedHashMap<String, String> result = new LinkedHashMap<>(canonicalParameters());
         result.remove("page");

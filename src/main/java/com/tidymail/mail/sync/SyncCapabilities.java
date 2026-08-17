@@ -3,6 +3,12 @@ package com.tidymail.mail.sync;
 import com.tidymail.mail.ProviderCapabilities;
 import java.util.Objects;
 
+/**
+ * Describes what change-feed and scanning behaviors a sync provider supports.
+ *
+ * <p>Product functionality supported: provider-agnostic sync capability
+ * negotiation.
+ */
 public final class SyncCapabilities extends ProviderCapabilities {
 
     private final ChangeFeedKind changeFeedKind;

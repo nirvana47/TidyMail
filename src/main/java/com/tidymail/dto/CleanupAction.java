@@ -5,6 +5,13 @@ import java.util.Locale;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * The cleanup actions available on the Senders/Unread pages (archive, delete,
+ * mark-read), with their display labels and the preview action they map to.
+ *
+ * <p>Product functionality supported: the <em>Bulk Actions</em> feature's
+ * action selection on the Senders and Unread pages.</p>
+ */
 public enum CleanupAction {
     ARCHIVE("Archive", "Bulk archive", PreviewAction.ARCHIVE),
     DELETE("Delete", "Bulk delete", PreviewAction.TRASH),
@@ -37,6 +44,10 @@ public enum CleanupAction {
         return name().toLowerCase(Locale.ROOT);
     }
 
+    /**
+     * Parses a cleanup action from its URL parameter value, defaulting when
+     * absent and rejecting unknown values.
+     */
     public static CleanupAction parse(String value, CleanupAction defaultValue) {
         if (value == null) return defaultValue;
         for (CleanupAction action : values()) {

@@ -21,6 +21,14 @@ import org.springframework.security.oauth2.client.authentication.OAuth2Authentic
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * Issues and resolves short-lived, encrypted drilldown tokens that let the
+ * Analytics page link a top sender to a pre-filtered Senders view without exposing
+ * the sender key or scope in the URL.
+ *
+ * <p>Product functionality supported: the <em>Analytics</em> flow's sender
+ * drilldown links.
+ */
 @Service
 public class AnalyticsDrilldownKeyService {
     private static final String PREFIX = "v1.";
@@ -47,6 +55,7 @@ public class AnalyticsDrilldownKeyService {
         this.random = java.util.Objects.requireNonNull(random, "random");
     }
 
+    /** Issues an encrypted drilldown token for the given sender scope. */
     public String issue(
             OAuth2AuthenticationToken authentication,
             AnalyticsSenderScope scope) {
@@ -79,6 +88,7 @@ public class AnalyticsDrilldownKeyService {
         }
     }
 
+    /** Resolves and validates a drilldown token back to its sender scope. */
     public AnalyticsSenderScope resolve(
             OAuth2AuthenticationToken authentication, String token) {
         try {
@@ -128,6 +138,7 @@ public class AnalyticsDrilldownKeyService {
         }
     }
 
+    /** Verifies the decrypted payload matches the canonical encoding. */
     private static boolean issuePayloadCanonical(
             AnalyticsSenderScope scope, byte[] owner, Instant expiry, byte[] original)
             throws Exception {
@@ -146,6 +157,7 @@ public class AnalyticsDrilldownKeyService {
         return MessageDigest.isEqual(canonical.toByteArray(), original);
     }
 
+    /** Computes the owner fingerprint bound into the token. */
     private static byte[] ownerFingerprint(OAuth2AuthenticationToken authentication)
             throws Exception {
         String email = authentication == null
@@ -157,6 +169,7 @@ public class AnalyticsDrilldownKeyService {
             .digest(owner.getBytes(StandardCharsets.UTF_8));
     }
 
+    /** Writes a bounded length-prefixed string to the payload. */
     private static void writeBounded(DataOutputStream out, String value) throws Exception {
         byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
         if (bytes.length == 0 || bytes.length > 640) throw invalid();
@@ -164,6 +177,7 @@ public class AnalyticsDrilldownKeyService {
         out.write(bytes);
     }
 
+    /** Reads a bounded length-prefixed string from the payload. */
     private static String readBounded(DataInputStream in) throws Exception {
         int length = in.readUnsignedShort();
         if (length == 0 || length > 640) throw invalid();
@@ -172,12 +186,14 @@ public class AnalyticsDrilldownKeyService {
         return new String(bytes, StandardCharsets.UTF_8);
     }
 
+    /** Generates a random 256-bit encryption key. */
     private static byte[] randomKey() {
         byte[] key = new byte[32];
         new SecureRandom().nextBytes(key);
         return key;
     }
 
+    /** Returns the exception for an invalid or expired drilldown token. */
     private static ResponseStatusException invalid() {
         return new ResponseStatusException(
             HttpStatus.NOT_FOUND, "Analytics sender drilldown is unavailable");

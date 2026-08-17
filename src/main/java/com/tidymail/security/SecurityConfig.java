@@ -37,12 +37,19 @@ import static org.springframework.security.config.Customizer.withDefaults;
  * credentials are absent — matches PITFALLS §J2 mitigation pattern. OAuth credentials are always
  * conditionally loaded only when both client-id AND client-secret environment variables for that
  * provider are non-empty via OAuthProviderAvailability.
+ *
+ * <p>Product functionality supported: Gmail and Outlook OAuth login, route
+ * protection for the inbox cleanup app, and the login/logout flows.
  */
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
 public class SecurityConfig {
 
+    /**
+     * Builds an OAuth2AuthorizedClientProvider that enables refresh-token renewal with
+     * the configured clock-skew, so linked accounts can keep their tokens fresh.
+     */
     @Bean
     public OAuth2AuthorizedClientProvider authorizedClientProvider(
             @Value("${app.oauth.refresh-expiry-skew-seconds}") long expirySkewSeconds) {
@@ -87,6 +94,11 @@ public class SecurityConfig {
         return manager;
     }
 
+    /**
+     * Builds the security filter chain that protects routes, enables form login,
+     * conditionally wires OAuth2 login for configured providers, and configures
+     * session-based logout.
+     */
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http,
                                             OAuth2AuthorizedClientService authorizedClientService,
@@ -160,6 +172,11 @@ public class SecurityConfig {
         return http.build();
     }
 
+    /**
+     * Augments the OAuth authorization request with Google-specific parameters
+     * ({@code access_type=offline}, {@code prompt=consent}) so a refresh token is
+     * made available after the Gmail/Outlook login.
+     */
     static void customizeAuthorizationRequest(OAuth2AuthorizationRequest.Builder requestBuilder) {
         OAuth2AuthorizationRequest built = requestBuilder.build();
         boolean isGoogle = built.getClientId() != null
@@ -174,6 +191,10 @@ public class SecurityConfig {
         }
     }
 
+    /**
+     * Builds the in-memory ClientRegistration repository from configured providers,
+     * returning a no-op repository when none are configured to avoid startup failure.
+     */
     @Bean
     public ClientRegistrationRepository clientRegistrationRepository(OAuthProviderAvailability props) {
         List<ClientRegistration> registrations = new ArrayList<>();

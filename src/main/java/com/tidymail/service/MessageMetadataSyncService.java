@@ -8,6 +8,13 @@ import com.tidymail.repository.MailboxSyncStateRepository.StateSnapshot;
 import com.tidymail.service.MailboxFreshnessService.SyncOutcome;
 import org.springframework.stereotype.Service;
 
+/**
+ * Top-level dispatcher for the metadata-only mailbox sync, routing each sync
+ * lane (freshness, backfill, rescan) to the appropriate phase service.
+ *
+ * <p>Product functionality supported: the metadata-only sync's orchestration
+ * across bootstrap, backfill, freshness, and rescan.
+ */
 @Service
 public class MessageMetadataSyncService {
     public static final String JOB_TYPE = "MAILBOX_SYNC";
@@ -31,6 +38,7 @@ public class MessageMetadataSyncService {
         this.rescan = rescan;
     }
 
+    /** Synchronizes the account for the given lane, returning the outcome. */
     public SyncOutcome synchronize(
             UserAccount account,
             MailboxSyncProvider provider,
@@ -43,6 +51,7 @@ public class MessageMetadataSyncService {
         };
     }
 
+    /** Runs bootstrap if not yet complete, otherwise the next backfill page. */
     private SyncOutcome synchronizeBootstrapOrBackfill(
             UserAccount account, MailboxSyncProvider provider, String leaseOwner) {
         StateSnapshot state = states.findByAccountId(account.getId())

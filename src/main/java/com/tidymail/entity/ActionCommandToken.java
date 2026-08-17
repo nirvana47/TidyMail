@@ -9,6 +9,13 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
 
+/**
+ * Persists a single-use action command token as opaque SHA-256 fingerprints for
+ * the EXACT-scope action-execution engine.
+ *
+ * <p>Product functionality supported: user-confirmed inbox actions executed via
+ * command token, including unsubscribe confirmation.
+ */
 @Entity
 @Table(name = "action_command_tokens")
 public class ActionCommandToken {
@@ -43,6 +50,9 @@ public class ActionCommandToken {
     protected ActionCommandToken() {
     }
 
+    /**
+     * Issues a new token from the required lowercase SHA-256 fingerprints.
+     */
     public static ActionCommandToken issue(
             long accountId, String token, String owner, String operation,
             String subject, Instant createdAt, Instant expiresAt) {
@@ -66,6 +76,9 @@ public class ActionCommandToken {
         return row;
     }
 
+    /**
+     * Marks the token consumed and links it to the resulting action.
+     */
     public void consume(long actionId, Instant now) {
         if (consumedAt != null || !now.isBefore(expiresAt) || actionId <= 0) {
             throw new IllegalStateException("Command token cannot be consumed");
@@ -74,6 +87,9 @@ public class ActionCommandToken {
         resultingActionId = actionId;
     }
 
+    /**
+     * Links this consumed token to the execution it produced.
+     */
     public void linkExecution(long executionId) {
         if (executionId <= 0 || resultingActionId == null) {
             throw new IllegalStateException("Execution cannot be linked");

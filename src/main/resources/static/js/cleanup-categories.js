@@ -1,3 +1,16 @@
+/**
+ * Client-side behavior for the TidyMail Cleanup and Senders/Unread category pages.
+ *
+ * Product functionality supported: the interstitial "Review" stage of the bulk
+ * cleanup workflow. These pages group messages by sender, let the user select
+ * senders and stage an exact/counted/previewable/reversible bulk action
+ * (archive, trash, mark-read, unsubscribe, or delete), and surface the grouped
+ * Senders and Unread categories. This script wires up the sticky selection bar
+ * (counts selected senders, enables/disables action buttons), lazy-loads category
+ * contents on expand, drives the modal dialogs (bulk action confirmation, delete
+ * source confirmation), and reconciles the Review view after an action is staged
+ * so already-staged senders can't be double-counted.
+ */
 document.addEventListener("DOMContentLoaded", () => {
     updateSelectionBars();
 
@@ -136,12 +149,26 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 });
 
+/**
+ * Returns all category <details> elements currently present on the page.
+ *
+ * Product functionality: used by the "Expand/Collapse all" toggle to discover
+ * every category element on the Cleanup page without knowing their count ahead
+ * of time.
+ */
 function currentCleanupCategories() {
     return Array.from(
         document.querySelectorAll(".cleanup-categories > details")
     ).filter((category) => category instanceof HTMLDetailsElement);
 }
 
+/**
+ * Opens a single category <details> element, lazy-loading its content on first
+ * display.
+ *
+ * Product functionality: the expand/collapse-all control calls this to expand
+ * categories and ensure their grouped sender list is fetched on demand.
+ */
 function openCategory(category) {
     if (!(category instanceof HTMLDetailsElement)) return;
     if (!category.open) {
@@ -154,6 +181,15 @@ function openCategory(category) {
     }
 }
 
+/**
+ * Fills the hidden sender-address inputs inside a bulk-action dialog from the
+ * currently selected senders (or from a single sender when opened from a row).
+ *
+ * Product functionality: the staging dialogs submit the exact set of senders
+ * selected in the Cleanup table, so the backend stages an action only on those
+ * senders. Returned to the "unread" category it uses the unread bulk-stage form,
+ * otherwise the sender bulk-stage form.
+ */
 function populateSelectedSenders(dialog, openButton) {
     const target = dialog.querySelector("[data-selected-senders]");
     if (!(target instanceof HTMLElement)) return;
@@ -171,6 +207,14 @@ function populateSelectedSenders(dialog, openButton) {
     });
 }
 
+/**
+ * Recomputes every sticky selection bar based on the currently selected
+ * checkboxes, showing the select-count summary and enabling/disabling actions.
+ *
+ * Product functionality: keeps the Review/cleanup UI honest about exactly how
+ *   many senders will be affected, letting the user review before staging an
+ *   action.
+ */
 function updateSelectionBars() {
     document.querySelectorAll("[data-selection-bar]").forEach((bar) => {
         if (!(bar instanceof HTMLFormElement)) return;
@@ -192,12 +236,24 @@ function updateSelectionBars() {
     });
 }
 
+/**
+ * Returns the checked, non-disabled rowKey checkboxes belonging to the given
+ * form.
+ *
+ * Product functionality: the single source of truth for which senders are
+ *   selected when counting, staging, or clearing a selection.
+ */
 function selectedCheckboxesFor(formId) {
     return Array.from(
         document.querySelectorAll(`input[name='rowKey'][form='${formId}']:checked`)
     ).filter((checkbox) => checkbox instanceof HTMLInputElement && !checkbox.disabled);
 }
 
+/**
+ * Deselects all checked senders in the selection bar's form.
+ *
+ * Product functionality: the "Clear selection" reset for the cleanup workflow.
+ */
 function clearSelection(button) {
     const form = button.closest("[data-selection-bar]");
     if (!(form instanceof HTMLFormElement)) return;
@@ -207,6 +263,13 @@ function clearSelection(button) {
     updateSelectionBars();
 }
 
+/**
+ * Appends a hidden input carrying a selected sender address to the given
+ * container.
+ *
+ * Product functionality: serializes the selected senders into a form so a bulk
+ *   action can be staged for exactly those senders.
+ */
 function appendSelectedSender(target, senderAddress) {
     const input = document.createElement("input");
     input.type = "hidden";
@@ -215,6 +278,14 @@ function appendSelectedSender(target, senderAddress) {
     target.append(input);
 }
 
+/**
+ * Fetches the first page of a category's grouped sender list on expand,
+ * preserving filters but resetting pagination, and swaps it into place.
+ *
+ * Product functionality: lazy-loads the Senders/Unread category contents one
+ *   page at a time so the Cleanup page loads fast and large groups don't block
+ *   initial render.
+ */
 function loadInitialCategory(category, content) {
     const key = category.dataset.categoryKey;
     if (!key) return;
@@ -248,6 +319,12 @@ function loadInitialCategory(category, content) {
         });
 }
 
+/**
+ * Shows a friendly message inside the category when its contents fail to load.
+ *
+ * Product functionality: surfaces load failures without breaking the rest of
+ *   the cleanup page.
+ */
 function showCategoryLoadError(target, message) {
     const category = target?.closest?.(".cleanup-category");
     const guidance = category?.querySelector?.(".category-load-guidance");
@@ -260,6 +337,13 @@ function showCategoryLoadError(target, message) {
     }
 }
 
+/**
+ * Prepares the delete-source confirmation dialog by copying the source form's
+ * data into a hidden input surface, ensuring at least one sender is selected.
+ *
+ * Product functionality: the destructive sender-delete flow that requires an
+ * exact pre-stage confirmation before any messages are removed.
+ */
 function prepareDeleteDialog(button) {
     const source = button.dataset.deleteSource === "closest"
         ? button.closest("form")
@@ -304,6 +388,14 @@ function prepareDeleteDialog(button) {
     dialog.showModal();
 }
 
+/**
+ * Applies the server response after an action is staged, marking the affected
+ * senders' rows as staged and disabling their controls.
+ *
+ * Product functionality: keeps the Review stage consistent — sender rows that
+ * already had a message staged (reused) or were just staged become immutable,
+ * and an accessible summary is announced.
+ */
 function reconcileCleanupResult(result, sourceForm) {
     if (!Array.isArray(result.senders)) {
         showCleanupError("Action not staged. Reload to reconcile the latest Review state.", sourceForm);
@@ -334,6 +426,13 @@ function reconcileCleanupResult(result, sourceForm) {
     announceCleanupFeedback(sourceForm, message, false);
 }
 
+/**
+ * Rotates the CSRF/idempotency request token on the form after a successful
+ * stage.
+ *
+ * Product functionality: prevents stale submissions / duplicate staging of the
+ *   same sender after a successful action has been accepted.
+ */
 function refreshRequestToken(form) {
     const token = form.querySelector("input[name='requestToken']");
     if (token instanceof HTMLInputElement && window.crypto?.randomUUID) {
@@ -341,10 +440,22 @@ function refreshRequestToken(form) {
     }
 }
 
+/**
+ * Displays a non-blocking error message for a failed cleanup action.
+ *
+ * Product functionality: keeps the user informed when an action could not be
+ * staged without discarding the current page state.
+ */
 function showCleanupError(message, source) {
     announceCleanupFeedback(source, message, true);
 }
 
+/**
+ * Writes feedback text into the cleanup feedback element and shows or hides it.
+ *
+ * Product functionality: the status announcements (success counts and errors)
+ *   for the staged-action flow.
+ */
 function announceCleanupFeedback(source, message, visible) {
     const feedback = findOrCreateCleanupFeedback(source);
     if (!(feedback instanceof HTMLElement)) return;
@@ -354,6 +465,13 @@ function announceCleanupFeedback(source, message, visible) {
     if (visible) feedback.focus();
 }
 
+/**
+ * Locates the feedback element for a form, creating one if needed, so
+ * announcements show up on every cleanup surface.
+ *
+ * Product functionality: guarantees there is a visible/accessible status region
+ *   (aria-live) for the cleanup workflow regardless of which form triggered it.
+ */
 function findOrCreateCleanupFeedback(source) {
     const form = source instanceof HTMLFormElement
         ? source

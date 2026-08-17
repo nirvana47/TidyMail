@@ -14,6 +14,13 @@ import java.time.Instant;
 import java.util.List;
 import org.springframework.stereotype.Service;
 
+/**
+ * Performs the initial bootstrap of mailbox sync: obtains a complete history
+ * anchor and a recent message page, then commits the bootstrap unit.
+ *
+ * <p>Product functionality supported: the metadata-only sync's initial bootstrap
+ * and history-anchor establishment.
+ */
 @Service
 public class MailboxBootstrapService {
     private final MailboxSyncStateRepository states;
@@ -29,6 +36,7 @@ public class MailboxBootstrapService {
         this.config = config;
     }
 
+    /** Bootstraps the account, returning the sync outcome. */
     public SyncOutcome bootstrap(
             UserAccount account, MailboxSyncProvider provider, String leaseOwner) {
         StateSnapshot state = states.findByAccountId(account.getId())
@@ -52,6 +60,7 @@ public class MailboxBootstrapService {
         return SyncOutcome.bootstrapComplete();
     }
 
+    /** Requires the provider to support a complete history anchor. */
     private static void requireHistoryAnchor(
             MailboxSyncProvider provider, MailboxSnapshot anchor) {
         if (provider.capabilities().changeFeedKind()
@@ -62,6 +71,7 @@ public class MailboxBootstrapService {
         }
     }
 
+    /** Maps a change-feed kind to its cursor-kind label. */
     static String cursorKind(SyncCapabilities.ChangeFeedKind kind) {
         return switch (kind) {
             case HISTORY -> "GMAIL_HISTORY_ID";

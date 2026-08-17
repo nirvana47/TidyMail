@@ -4,6 +4,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * The confirmation shown before executing staged actions on the Review page.
+ *
+ * <p>Product functionality supported: the <em>Review</em> approve step.
+ * Summarizes how many actions/accounts/targets will be affected, which actions
+ * are being approved, excluded-target reasons, a warning (with destructive
+ * flag), and the intent token needed to actually execute.</p>
+ */
 public record ApprovalConfirmation(
     String kind,
     int actionCount,

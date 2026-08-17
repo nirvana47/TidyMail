@@ -5,6 +5,12 @@ import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+/**
+ * Persists and queries per-sender statistics (message counts, unread, etc.).
+ * <p>
+ * Product functionality: sender stats on the Senders decision surface and
+ * analytics.
+ */
 public interface SenderStatRepository extends JpaRepository<SenderStat, Long> {
 
     long countByAccountId(Long accountId);

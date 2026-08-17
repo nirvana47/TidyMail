@@ -12,6 +12,13 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Scheduled job that vacuums per-account sender statistics for stale accounts.
+ *
+ * <p>Product functionality supported: inbox cleanup data retention — nightly purges
+ * sender stats, user actions, and sync progress for accounts that have not
+ * logged in within 90 days, keeping derived cleanup data bounded.
+ */
 @Component
 public class SenderStatsVacuumJob {
 
@@ -30,6 +37,7 @@ public class SenderStatsVacuumJob {
         this.syncProgressRepository = syncProgressRepository;
     }
 
+    /** Deletes sender-stats, user-action, and sync-progress rows for inactive accounts. */
     @Scheduled(cron = "0 0 2 * * *")
     @Transactional
     public void run() {

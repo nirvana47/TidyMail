@@ -16,6 +16,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.util.UriComponentsBuilder;
 
+/**
+ * Builds the Review queue view model: the filtered action rows, their grouped
+ * presentation by action kind, metrics, and pagination URLs, with per-row
+ * cancellation intents.
+ *
+ * <p>Product functionality supported: the <em>Review</em> flow's queue listing,
+ * grouping, and pagination.
+ */
 @Service
 public class ReviewActionService {
     private final ReviewActionQueryRepository repository;
@@ -28,6 +36,7 @@ public class ReviewActionService {
         this.intents = intents;
     }
 
+    /** Builds the review queue model for the workspace and query. */
     public ReviewQueueModel queue(
             String ownerKey, WorkspacePageModel workspace, ReviewQuery query) {
         List<Long> accountIds = workspace.selectedAccountIds();
@@ -78,6 +87,7 @@ public class ReviewActionService {
             null);
     }
 
+    /** Returns the query parameters with the given page applied. */
     private static Map<String, String> page(ReviewQuery query, int page) {
         LinkedHashMap<String, String> values =
             new LinkedHashMap<>(query.withoutPage());
@@ -85,6 +95,7 @@ public class ReviewActionService {
         return values;
     }
 
+    /** Builds a /review URL from the given query parameters. */
     private static String url(Map<String, String> parameters) {
         UriComponentsBuilder builder = UriComponentsBuilder.fromPath("/review");
         parameters.forEach(builder::queryParam);

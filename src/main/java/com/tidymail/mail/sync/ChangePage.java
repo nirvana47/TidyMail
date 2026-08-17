@@ -2,6 +2,12 @@ package com.tidymail.mail.sync;
 
 import java.util.Set;
 
+/**
+ * A page of mailbox changes (added/modified vs deleted message IDs) plus the
+ * sync cursors needed to resume change-feed iteration.
+ *
+ * <p>Product functionality supported: provider-agnostic change-feed sync.
+ */
 public record ChangePage(
     Set<String> changedIds,
     Set<String> deletedIds,

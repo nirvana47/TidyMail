@@ -29,6 +29,13 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Repository;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * Executes the Senders/Unread decision-surface queries, materializing sender
+ * and unread facts, category summaries, and selection results.
+ * <p>
+ * Product functionality: the Senders, Unread, and Review decision surfaces
+ * (querying, counting, streaming, and materializing selections).
+ */
 @Repository
 public class DecisionSurfaceQueryRepository {
     private static final String SENDER_COLUMNS = """

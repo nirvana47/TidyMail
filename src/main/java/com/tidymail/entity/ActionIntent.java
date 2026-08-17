@@ -9,6 +9,13 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import org.hibernate.annotations.Immutable;
 
+/**
+ * Immutable record of what a user action intends to affect, such as a set of
+ * messages, a sender, or an unsubscribe candidate.
+ *
+ * <p>Product functionality supported: exact-scope action-execution engine for
+ * messages, protection, review, compensation, and unsubscribe intents.
+ */
 @Entity
 @Immutable
 @Table(name = "action_intents")
@@ -44,6 +51,9 @@ public class ActionIntent {
     protected ActionIntent() {
     }
 
+    /**
+     * Builds an intent over a set of messages described by a search key.
+     */
     public static ActionIntent messages(
             long actionId, long accountId, String label, String searchKey, Instant now) {
         if (actionId <= 0 || accountId <= 0 || label == null || label.isBlank()
@@ -60,6 +70,9 @@ public class ActionIntent {
         return intent;
     }
 
+    /**
+     * Builds a sender-protection intent from a normalized sender address.
+     */
     public static ActionIntent protection(
             long actionId, long accountId, String label,
             String normalizedSenderAddress, Instant now) {
@@ -70,6 +83,9 @@ public class ActionIntent {
         return intent;
     }
 
+    /**
+     * Builds a local-review intent over the given messages.
+     */
     public static ActionIntent review(
             long actionId, long accountId, String label, String searchKey, Instant now) {
         ActionIntent intent = messages(actionId, accountId, label, searchKey, now);
@@ -77,6 +93,9 @@ public class ActionIntent {
         return intent;
     }
 
+    /**
+     * Builds a compensation intent that reverses a prior action.
+     */
     public static ActionIntent compensation(
             long actionId, long accountId, String label,
             String normalizedSenderAddress, long compensatesActionId, Instant now) {
@@ -90,6 +109,9 @@ public class ActionIntent {
         return intent;
     }
 
+    /**
+     * Builds an unsubscribe-candidate intent with its fingerprints and method.
+     */
     public static ActionIntent unsubscribe(
             long actionId,
             long accountId,

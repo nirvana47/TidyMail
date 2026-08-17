@@ -4,6 +4,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * Confirmation payload for undoing a batch of review actions, capturing how many
+ * actions/accounts/messages were affected and the filter context they were undone in.
+ *
+ * <p>Product functionality supported: the <em>Review</em> flow's undo capability,
+ * which reverses previously approved cleanup actions.
+ */
 public record ReviewUndoConfirmation(
     int actionCount,
     int accountCount,

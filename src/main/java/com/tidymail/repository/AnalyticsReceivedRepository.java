@@ -17,6 +17,13 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+/**
+ * Queries received-message facts for analytics, including bucketed counts,
+ * earliest-received timestamps, and null-received diagnostics.
+ * <p>
+ * Product functionality: analytics dashboards and drilldowns over received
+ * messages.
+ */
 @Repository
 public class AnalyticsReceivedRepository {
     private static final String SAFE_COLUMNS = """
@@ -34,6 +41,10 @@ public class AnalyticsReceivedRepository {
         this.jdbc = jdbc;
     }
 
+    /**
+     * Builds a received-message fact for the given authorized accounts and
+     * time window, which can be counted, paged, or streamed.
+     */
     public ReceivedFact receivedFact(
             Collection<Long> authorizedAccountIds,
             Instant startInclusive,

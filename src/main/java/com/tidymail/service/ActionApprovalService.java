@@ -24,6 +24,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * Orchestrates approving and executing queued cleanup actions from the Review page:
+ * confirming selected or all eligible actions, executing them, undoing them, and
+ * cancelling them, all guarded by operation intents and conflict checks.
+ *
+ * <p>Product functionality supported: the <em>Review</em> flow's approve, execute,
+ * undo, and cancel capabilities.
+ */
 @Service
 public class ActionApprovalService {
     private static final int MAX_SELECTED = 100;
@@ -55,6 +63,7 @@ public class ActionApprovalService {
         this.maximumAllActions = maximumAllActions;
     }
 
+    /** Builds an approval confirmation for the selected queued actions. */
     public ApprovalConfirmation confirmSelected(
             String ownerKey,
             List<Long> authorizedAccountIds,
@@ -68,6 +77,7 @@ public class ActionApprovalService {
         return confirmation(ownerKey, "selected", query, candidates, Map.of());
     }
 
+    /** Builds an approval confirmation for all eligible actions under the query. */
     public ApprovalConfirmation confirmAll(
             String ownerKey,
             List<Long> authorizedAccountIds,
@@ -88,6 +98,7 @@ public class ActionApprovalService {
         return confirmation(ownerKey, "all", query, eligible, exclusions(all));
     }
 
+    /** Executes the selected actions, verifying the operation intent. */
     public BatchExecutionReceipt executeSelected(
             String ownerKey,
             List<Long> authorizedAccountIds,
@@ -105,6 +116,7 @@ public class ActionApprovalService {
         return execute(ownerKey, "selected", query, candidates, intent);
     }
 
+    /** Executes all eligible actions, verifying the operation intent and set. */
     public BatchExecutionReceipt executeAll(
             String ownerKey,
             List<Long> authorizedAccountIds,
@@ -129,6 +141,7 @@ public class ActionApprovalService {
         return execute(ownerKey, "all", query, eligible, intent);
     }
 
+    /** Builds an undo confirmation for the selected actions. */
     public ReviewUndoConfirmation confirmUndoSelected(
             String ownerKey,
             List<Long> authorizedAccountIds,
@@ -152,6 +165,7 @@ public class ActionApprovalService {
             query.withoutPage());
     }
 
+    /** Undoes the selected actions, cancelling them and resolving open conflicts. */
     @Transactional
     public void undoSelected(
             String ownerKey,
@@ -182,6 +196,7 @@ public class ActionApprovalService {
         }
     }
 
+    /** Cancels a single action after verifying the operation intent. */
     @Transactional
     public void cancel(
             String ownerKey,
@@ -205,6 +220,7 @@ public class ActionApprovalService {
         conflicts.resolveOpenForCancelled(action);
     }
 
+    /** Executes a batch of candidates and summarizes the receipts. */
     private BatchExecutionReceipt execute(
             String ownerKey,
             String kind,
@@ -240,6 +256,7 @@ public class ActionApprovalService {
             receipts);
     }
 
+    /** Builds an approval confirmation with warnings and an operation intent. */
     private ApprovalConfirmation confirmation(
             String ownerKey,
             String kind,
@@ -265,6 +282,7 @@ public class ActionApprovalService {
             query.withoutPage());
     }
 
+    /** Produces a user-facing warning appropriate to the action types being approved. */
     private static ApprovalConfirmation.Warning warning(
             List<ReviewActionQueryRepository.ApprovalCandidate> candidates) {
         Set<String> types = candidates.stream()
@@ -298,6 +316,7 @@ public class ActionApprovalService {
             false);
     }
 
+    /** Loads the selected candidates from the review query, or empty if any is missing. */
     private List<ReviewActionQueryRepository.ApprovalCandidate> selectedCandidates(
             List<Long> authorizedAccountIds,
             ReviewQuery query,
@@ -320,6 +339,7 @@ public class ActionApprovalService {
             .toList();
     }
 
+    /** Rebuilds candidates from already-executed actions for idempotent replay. */
     private List<ReviewActionQueryRepository.ApprovalCandidate> replayCandidates(
             List<Long> authorizedAccountIds,
             List<UUID> selected,
@@ -360,6 +380,7 @@ public class ActionApprovalService {
             .toList();
     }
 
+    /** Rejects the set if any candidate is no longer eligible. */
     private static void requireEligible(
             List<ReviewActionQueryRepository.ApprovalCandidate> candidates) {
         if (candidates.stream().anyMatch(candidate -> !candidate.eligible())) {
@@ -368,6 +389,7 @@ public class ActionApprovalService {
         }
     }
 
+    /** Validates a bounded, unique list of action public IDs. */
     private static List<UUID> uniqueActions(List<UUID> values, int maximum) {
         if (maximum <= 0 || values == null || values.isEmpty()
                 || values.size() > maximum
@@ -379,6 +401,7 @@ public class ActionApprovalService {
         return List.copyOf(values);
     }
 
+    /** Counts why actions were excluded from an all-approval set. */
     private static Map<String, Long> exclusions(
             List<ReviewActionQueryRepository.ApprovalCandidate> all) {
         Map<String, Long> result = new LinkedHashMap<>();
@@ -392,6 +415,7 @@ public class ActionApprovalService {
         return result;
     }
 
+    /** Builds the operation-intent subject for an approval. */
     private static String subject(
             String kind,
             ReviewQuery query,
@@ -414,6 +438,7 @@ public class ActionApprovalService {
         return ReviewOperationIntentService.subject(values.toArray());
     }
 
+    /** Builds the operation-intent subject for an undo. */
     private static String undoSubject(
             ReviewQuery query,
             List<ReviewActionQueryRepository.ApprovalCandidate> candidates) {
@@ -432,10 +457,12 @@ public class ActionApprovalService {
         return ActionFingerprints.bind("review-undo-selected-v1", values.toArray());
     }
 
+    /** Throws a conflict when the action set changed underneath the request. */
     private static void stale() {
         throw new ResponseStatusException(HttpStatus.CONFLICT, "action_set_changed");
     }
 
+    /** Returns a not-found exception for a missing action. */
     private static ResponseStatusException notFound() {
         return new ResponseStatusException(HttpStatus.NOT_FOUND, "action_not_found");
     }

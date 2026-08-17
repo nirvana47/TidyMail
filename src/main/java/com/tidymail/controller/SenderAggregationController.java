@@ -25,6 +25,15 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * JSON API for sender aggregation, full sync, and the Reply Zero queue.
+ *
+ * <p>Product functionality supported: the <em>Senders</em> dashboard and
+ * <em>Reply Zero</em> queue, plus a manual full-sync trigger. These endpoints
+ * fetch messages from the mail provider, aggregate them by sender (and detect
+ * Reply Zero items), and persist a snapshot so the dashboard can be served
+ * quickly without re-hitting the provider on every load.</p>
+ */
 @RestController
 @RequestMapping("/api")
 public class SenderAggregationController {
@@ -48,6 +57,10 @@ public class SenderAggregationController {
         this.senderStatsPersistService = senderStatsPersistService;
     }
 
+    /**
+     * Maps a stored account's provider string to the Spring bean that talks to
+     * that mail provider (Gmail or Outlook).
+     */
     private MailProvider resolveProvider(UserAccount account) {
         String beanName = switch (account.getProvider()) {
             case "google" -> "gmailMailService";
@@ -59,6 +72,10 @@ public class SenderAggregationController {
         return p;
     }
 
+    /**
+     * Resolves the authenticated user's mailbox account row from the OAuth
+     * principal (email + provider).
+     */
     private UserAccount currentAccount(OAuth2AuthenticationToken token) {
         OAuth2AuthenticatedPrincipal principal = token.getPrincipal();
         String email = principal.getAttribute("email");
@@ -68,6 +85,12 @@ public class SenderAggregationController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "no account row"));
     }
 
+    /**
+     * Returns a page of senders aggregated from the provider (paginated via an
+     * opaque cursor), persisting a snapshot of the aggregate for the dashboard.
+     * Sort is only honored on the first page, since it is locked into the
+     * cursor thereafter.
+     */
     @GetMapping("/senders")
     public SenderPageResponse getSenders(
             @RequestParam(name = "cursor", required = false) String cursor,
@@ -107,6 +130,10 @@ public class SenderAggregationController {
         return senderAggregator.toPageResponse(agg, newCursor, sort);
     }
 
+    /**
+     * Runs a full sender aggregation sync (up to 5 pages of messages) and
+     * persists a fresh sender snapshot.
+     */
     @PostMapping("/senders/_sync")
     public Map<String, Object> runFullSync(OAuth2AuthenticationToken auth) {
         UserAccount account = currentAccount(auth);
@@ -125,6 +152,11 @@ public class SenderAggregationController {
         return Map.of("syncedSenders", n, "messagesScanned", agg.totalMessagesScanned(), "pagesFetched", pages);
     }
 
+    /**
+     * Returns a page of Reply Zero items: messages old enough to warrant
+     * attention that the detector flags as personal and awaiting a reply,
+     * paginated via the mail provider's cursor.
+     */
     @GetMapping("/reply-zero")
     public ReplyZeroPageResponse getReplyZero(
             @RequestParam(name = "olderThanDays", defaultValue = "3") int olderThanDays,

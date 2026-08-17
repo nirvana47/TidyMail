@@ -12,6 +12,12 @@ import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import java.time.Instant;
 
+/**
+ * User override that pins a sender to a specific {@link SenderType} (LIST, AUTOMATED,
+ * TRANSACTIONAL, PERSONAL), overriding the type inferred during sync.
+ * <p>Product functionality: sender-type overrides — lets users correct how
+ * TidyMail classifies a sender so cleanup rules treat it appropriately.
+ */
 @Entity
 @Table(name = "sender_type_overrides")
 public class SenderTypeOverride {
@@ -39,6 +45,9 @@ public class SenderTypeOverride {
     protected SenderTypeOverride() {
     }
 
+    /**
+     * Creates a sender-type override, validating the account, sender address, and type.
+     */
     public static SenderTypeOverride create(
             long accountId, String senderAddress, SenderType senderType) {
         if (accountId <= 0 || senderAddress == null || senderAddress.isBlank()
@@ -78,6 +87,9 @@ public class SenderTypeOverride {
         updatedAt = Instant.now();
     }
 
+    /**
+     * The sender classification used by cleanup decisioning.
+     */
     public enum SenderType {
         LIST, AUTOMATED, TRANSACTIONAL, PERSONAL
     }

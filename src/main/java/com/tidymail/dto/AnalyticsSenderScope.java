@@ -3,6 +3,14 @@ package com.tidymail.dto;
 import java.time.Instant;
 import java.util.Objects;
 
+/**
+ * A bounded, normalized sender scope used to restrict analytics to a single
+ * sender over a time window.
+ *
+ * <p>Product functionality supported: the <em>Analytics</em> sender drill-down
+ * (e.g. &quot;show me exactly what this sender sent between these dates&quot;),
+ * which later feeds the Senders page's exact-scope view.</p>
+ */
 public record AnalyticsSenderScope(
     long accountId,
     String senderKey,

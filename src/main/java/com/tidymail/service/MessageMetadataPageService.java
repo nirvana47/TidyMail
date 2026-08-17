@@ -12,6 +12,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Upserts a page of provider messages into message metadata in its own
+ * transaction, deduplicating by provider message ID and reusing existing rows.
+ *
+ * <p>Product functionality supported: the metadata-only sync's page commits.
+ */
 @Service
 public class MessageMetadataPageService {
 
@@ -24,6 +30,7 @@ public class MessageMetadataPageService {
         this.mapper = mapper;
     }
 
+    /** Upserts a page of messages, returning the number stored. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public int upsertPage(Long accountId, List<MailMessage> messages, Instant syncedAt) {
         Map<String, MailMessage> uniqueMessages = new LinkedHashMap<>();

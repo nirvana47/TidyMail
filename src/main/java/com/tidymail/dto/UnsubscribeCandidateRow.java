@@ -3,6 +3,13 @@ package com.tidymail.dto;
 import java.time.Instant;
 import java.util.List;
 
+/**
+ * A single unsubscribe candidate in the Unsubscribe page, aggregating a sender's
+ * volume, available unsubscribe methods, confidence, and prior outcome.
+ *
+ * <p>Product functionality supported: the <em>Unsubscribe</em> flow's candidate
+ * list and method selection.
+ */
 public record UnsubscribeCandidateRow(
     String candidateKey,
     long accountId,

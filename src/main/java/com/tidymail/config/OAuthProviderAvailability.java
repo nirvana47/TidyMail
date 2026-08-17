@@ -4,6 +4,15 @@ import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+/**
+ * Component that reports which OAuth providers are configured and exposes their
+ * client credentials.
+ *
+ * <p>Product functionality supported: provider authentication for inbox cleanup —
+ * detects whether Google and/or Microsoft (Outlook) OAuth credentials are
+ * present at startup (with short-secret alias fallback), routing connect and
+ * sync flows to only the providers that are actually available.
+ */
 @Component
 public class OAuthProviderAvailability implements InitializingBean {
 
@@ -55,6 +64,7 @@ public class OAuthProviderAvailability implements InitializingBean {
         }
     }
 
+    /** Returns whether Google OAuth credentials are fully configured. */
     public boolean isGoogleConfigured() {
         return googleClientId != null && !googleClientId.isBlank()
             && !googleClientId.startsWith("your-") && !googleClientId.equals("skipped")
@@ -62,6 +72,7 @@ public class OAuthProviderAvailability implements InitializingBean {
             && !googleClientSecret.startsWith("your-") && !googleClientSecret.equals("skipped");
     }
 
+    /** Returns whether Microsoft OAuth credentials are fully configured. */
     public boolean isMicrosoftConfigured() {
         return microsoftClientId != null && !microsoftClientId.isBlank()
             && !microsoftClientId.startsWith("your-") && !microsoftClientId.equals("skipped")

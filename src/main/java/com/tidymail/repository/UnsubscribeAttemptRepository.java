@@ -9,10 +9,20 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+/**
+ * Persists and queries unsubscribe attempts, including pessimistic-lock
+ * lookups for concurrent processing.
+ * <p>
+ * Product functionality: the unsubscribe flow (attempt tracking and
+ * concurrency).
+ */
 public interface UnsubscribeAttemptRepository
         extends JpaRepository<UnsubscribeAttempt, Long> {
     Optional<UnsubscribeAttempt> findByIdAndAccountId(Long id, Long accountId);
 
+    /**
+     * Loads an attempt with a pessimistic write lock for concurrent update.
+     */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
         select attempt from UnsubscribeAttempt attempt

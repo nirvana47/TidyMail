@@ -26,6 +26,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Issues and verifies signed, short-lived confirmation tokens that bind an owner,
+ * action type, and exact scope set to a user's intent to execute. Tokens are
+ * HMAC-signed, persisted per account, and expire after a short lifetime.
+ *
+ * <p>Product functionality supported: the <em>Bulk Action</em> and <em>Review</em>
+ * flows' confirmation step, which prevents stale or replayed executions.
+ */
 @Service
 public class ActionConfirmationIntentService {
     private static final byte VERSION = 2;
@@ -55,6 +63,7 @@ public class ActionConfirmationIntentService {
         this.random = random;
     }
 
+    /** Issues a signed confirmation token for the given scope bindings. */
     @Transactional
     public String issue(
             String ownerKey, ActionType actionType, DecisionSource source,
@@ -91,6 +100,7 @@ public class ActionConfirmationIntentService {
         return token;
     }
 
+    /** Verifies a token's signature, owner, and freshness, returning its payload. */
     public Payload verify(String ownerKey, String token) {
         if (token == null || token.length() > MAX_TOKEN
                 || token.chars().anyMatch(Character::isWhitespace)) {
@@ -122,6 +132,7 @@ public class ActionConfirmationIntentService {
         return payload;
     }
 
+    /** Computes a fingerprint binding the exact scope set for a confirmation. */
     public static String subjectFingerprint(List<ScopeBinding> bindings) {
         List<Object> values = new ArrayList<>();
         bindings.forEach(binding -> {
@@ -135,6 +146,7 @@ public class ActionConfirmationIntentService {
             "action-subject-v1", values.toArray());
     }
 
+    /** Serializes a payload to its canonical binary form. */
     private byte[] encode(Payload payload) {
         try {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
@@ -161,6 +173,7 @@ public class ActionConfirmationIntentService {
         }
     }
 
+    /** Deserializes and validates a payload from its canonical binary form. */
     private Payload decode(byte[] encoded) {
         try {
             DataInputStream input = new DataInputStream(new ByteArrayInputStream(encoded));
@@ -196,6 +209,7 @@ public class ActionConfirmationIntentService {
         }
     }
 
+    /** Computes the HMAC-SHA256 signature of a payload. */
     private byte[] sign(byte[] payload) {
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
@@ -207,12 +221,14 @@ public class ActionConfirmationIntentService {
         }
     }
 
+    /** Writes a length-prefixed ASCII string to the output stream. */
     private static void write(DataOutputStream output, String value) throws Exception {
         byte[] bytes = value.getBytes(StandardCharsets.US_ASCII);
         output.writeShort(bytes.length);
         output.write(bytes);
     }
 
+    /** Writes a nullable length-prefixed string (empty length means null). */
     private static void writeOptional(
             DataOutputStream output, String value) throws Exception {
         if (value == null) {
@@ -222,12 +238,14 @@ public class ActionConfirmationIntentService {
         write(output, value);
     }
 
+    /** Reads a bounded length-prefixed ASCII string. */
     private static String read(DataInputStream input, int maximum) throws Exception {
         int length = input.readUnsignedShort();
         if (length < 1 || length > maximum) throw invalid();
         return new String(input.readNBytes(length), StandardCharsets.US_ASCII);
     }
 
+    /** Reads a nullable bounded string (empty length means null). */
     private static String readOptional(
             DataInputStream input, int maximum) throws Exception {
         int length = input.readUnsignedShort();
@@ -236,14 +254,17 @@ public class ActionConfirmationIntentService {
         return new String(input.readNBytes(length), StandardCharsets.US_ASCII);
     }
 
+    /** URL-safe base64-encodes a value without padding. */
     private static String base64(byte[] value) {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(value);
     }
 
+    /** Returns the exception for an invalid or expired confirmation. */
     private static IllegalArgumentException invalid() {
         return new IllegalArgumentException("Action confirmation is no longer valid");
     }
 
+    /** One exact scope (and optional unsubscribe binding) in a confirmation. */
     public record ScopeBinding(
         long accountId,
         String scopeHash,
@@ -271,6 +292,7 @@ public class ActionConfirmationIntentService {
         }
     }
 
+    /** The verified contents of a confirmation token. */
     public record Payload(
         String ownerFingerprint,
         ActionType actionType,

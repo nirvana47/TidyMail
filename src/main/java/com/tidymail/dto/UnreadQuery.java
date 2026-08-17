@@ -7,6 +7,14 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * Validated query parameters for the Unread page, controlling which unread
+ * messages are listed (account, search, type, age, waiting-on-me, thread shape,
+ * recommendation, sender, provider, sort, and page).
+ *
+ * <p>Product functionality supported: the <em>Unread</em> flow's list, filtering,
+ * sorting, and pagination.
+ */
 public record UnreadQuery(
     String account,
     String search,
@@ -39,6 +47,7 @@ public record UnreadQuery(
         if (page < 0) throw QueryParsing.bad("page");
     }
 
+    /** Parses and validates raw HTTP parameters into an {@link UnreadQuery}. */
     public static UnreadQuery parse(Map<String, ? extends List<String>> parameters) {
         Map<String, String> values = QueryParsing.singleValues(parameters, PARAMETERS);
         return new UnreadQuery(
@@ -60,6 +69,7 @@ public record UnreadQuery(
             QueryParsing.page(values.get("page")));
     }
 
+    /** Returns the canonical parameter set for this query. */
     public Map<String, String> canonicalParameters() {
         LinkedHashMap<String, String> values = new LinkedHashMap<>();
         values.put("account", account);
@@ -76,16 +86,19 @@ public record UnreadQuery(
         return Collections.unmodifiableMap(values);
     }
 
+    /** Returns a copy of this query with the given page number. */
     public UnreadQuery withPage(int newPage) {
         return new UnreadQuery(
             account, search, type, age, waiting, thread, recommendation,
             sender, provider, sort, newPage);
     }
 
+    /** Returns a copy of this query reset to the first page. */
     public UnreadQuery resetPage() {
         return withPage(0);
     }
 
+    /** Returns the row offset for the current page. */
     public long offset() {
         return Math.multiplyExact((long) page, PAGE_SIZE);
     }
@@ -95,6 +108,7 @@ public record UnreadQuery(
         return value;
     }
 
+    /** Inferred message type filter. */
     public enum Type implements QueryValue {
         ALL("all"), ONE_TO_ONE("one_to_one"), LIST("list");
         private final String value;
@@ -102,6 +116,7 @@ public record UnreadQuery(
         public String value() { return value; }
     }
 
+    /** Message age filter. */
     public enum Age implements QueryValue {
         ALL("all"), TODAY("today"), D7("7d"), D30("30d"), OLDER_30D("older_30d");
         private final String value;
@@ -109,6 +124,7 @@ public record UnreadQuery(
         public String value() { return value; }
     }
 
+    /** Whether the thread is waiting on the user to reply. */
     public enum Waiting implements QueryValue {
         ALL("all"), WAITING_ON_ME("waiting_on_me"), NOT_WAITING("not_waiting");
         private final String value;
@@ -116,6 +132,7 @@ public record UnreadQuery(
         public String value() { return value; }
     }
 
+    /** Thread shape filter (single message vs. threaded). */
     public enum ThreadShape implements QueryValue {
         ALL("all"), SINGLE("single"), THREADED("threaded");
         private final String value;
@@ -123,6 +140,7 @@ public record UnreadQuery(
         public String value() { return value; }
     }
 
+    /** Recommended handling filter. */
     public enum Recommendation implements QueryValue {
         ALL("all"), REPLY_REQUIRED("reply_required"), REVIEW("review"), ARCHIVE("archive"),
         TRASH("trash"), MARK_READ("mark_read"), KEEP("keep");
@@ -131,6 +149,7 @@ public record UnreadQuery(
         public String value() { return value; }
     }
 
+    /** Mail provider filter. */
     public enum Provider implements QueryValue {
         ALL("all"), GOOGLE("google");
         private final String value;
@@ -138,6 +157,7 @@ public record UnreadQuery(
         public String value() { return value; }
     }
 
+    /** Sort order for the unread listing. */
     public enum Sort implements QueryValue {
         OLDEST_FIRST("oldest_first"), NEWEST_FIRST("newest_first"),
         SENDER_ASC("sender_asc"), RECOMMENDATION("recommendation");

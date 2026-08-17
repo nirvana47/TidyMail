@@ -6,6 +6,13 @@ import java.time.Instant;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Consumes short-lived unsubscribe intent nonces, guarding against replay,
+ * expiration, and stale tokens, then exactly once per issue.
+ * <p>
+ * Product functionality supported: the nonce-based intent lifecycle in
+ * TidyMail's unsubscribe flow.
+ */
 @Service
 public class UnsubscribeIntentNonceService {
     private final UnsubscribeIntentNonceRepository nonces;
@@ -14,6 +21,10 @@ public class UnsubscribeIntentNonceService {
         this.nonces = nonces;
     }
 
+    /**
+     * Marks a nonce consumed if it still matches the issued characteristics and
+     * has not expired, returning the consumption verdict.
+     */
     @Transactional
     public ConsumeResult consume(
             long accountId,

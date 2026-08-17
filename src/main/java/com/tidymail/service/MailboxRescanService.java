@@ -18,6 +18,14 @@ import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
+/**
+ * Drives the rescan phase of mailbox sync: repairs the history anchor and begins
+ * a full rescan when required, then pages through the provider's messages and
+ * commits each rescan unit.
+ *
+ * <p>Product functionality supported: the metadata-only sync's rescan recovery
+ * after history expiration.
+ */
 @Service
 public class MailboxRescanService {
     private static final String START = "__START__";
@@ -35,6 +43,7 @@ public class MailboxRescanService {
         this.config = config;
     }
 
+    /** Synchronizes one rescan page, returning whether more work remains. */
     public SyncOutcome synchronizeRescanPage(
             UserAccount account, MailboxSyncProvider provider, String leaseOwner) {
         StateSnapshot state = states.findByAccountId(account.getId())
@@ -66,6 +75,7 @@ public class MailboxRescanService {
         return nextPageToken == null ? SyncOutcome.complete() : SyncOutcome.requeue();
     }
 
+    /** Repairs the history anchor and begins a new rescan generation. */
     private SyncOutcome repairAndBegin(
             UserAccount account, MailboxSyncProvider provider, String leaseOwner) {
         Instant startedAt = Instant.now();

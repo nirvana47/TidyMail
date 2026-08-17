@@ -10,6 +10,12 @@ import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import java.time.Instant;
 
+/**
+ * User-defined category for grouping senders (e.g. "Newsletters"), keyed by a
+ * normalized name_key per account.
+ * <p>Product functionality: sender categorization — lets users organize senders
+ * into named categories that drive cleanup decisions.
+ */
 @Entity
 @Table(name = "sender_categories")
 public class SenderCategory {
@@ -36,6 +42,9 @@ public class SenderCategory {
     protected SenderCategory() {
     }
 
+    /**
+     * Creates a sender category, validating the account and required name fields.
+     */
     public static SenderCategory create(long accountId, String name, String nameKey) {
         if (accountId <= 0 || name == null || nameKey == null) {
             throw new IllegalArgumentException("Invalid sender category");

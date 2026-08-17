@@ -18,6 +18,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * Executes queued actions against their exact materialized scopes by reserving an
+ * execution, dispatching to the appropriate {@link ActionHandler}, and recording
+ * the completion. Supports single and batch execution with idempotency.
+ *
+ * <p>Product functionality supported: the action execution engine that applies
+ * cleanup, protect, review, and unsubscribe actions.
+ */
 @Service
 public class ExactScopeExecutor {
     private final ExecutionReservationService reservations;
@@ -61,6 +69,7 @@ public class ExactScopeExecutor {
         this.handlers = Map.copyOf(registry);
     }
 
+    /** Executes a single action, returning its receipt. */
     public ExecutionReceipt execute(
             long accountId, UUID actionPublicId, UUID idempotencyToken) {
         if (TransactionSynchronizationManager.isActualTransactionActive()) {
@@ -71,6 +80,7 @@ public class ExactScopeExecutor {
         return dispatch(reservation);
     }
 
+    /** Dispatches a reservation to its handler and records completion. */
     private ExecutionReceipt dispatch(
             ExecutionReservationService.Reservation reservation) {
         long accountId = reservation.accountId();
@@ -132,6 +142,7 @@ public class ExactScopeExecutor {
             completion.facts().verificationPending(), true);
     }
 
+    /** Returns true if the action is handled locally (not a provider mutation). */
     private static boolean localAction(ActionType actionType) {
         return actionType == ActionType.KEEP
             || actionType == ActionType.PROTECT
@@ -139,6 +150,7 @@ public class ExactScopeExecutor {
             || actionType == ActionType.REMOVE_PROTECTION;
     }
 
+    /** Executes a batch of actions for one account. */
     public List<ExecutionReceipt> executeBatch(
             long accountId, List<UUID> actionPublicIds, List<UUID> idempotencyTokens) {
         if (actionPublicIds.size() != idempotencyTokens.size()
@@ -153,6 +165,7 @@ public class ExactScopeExecutor {
         return executeBatch(actions);
     }
 
+    /** Executes a batch of actions, returning their receipts. */
     public List<ExecutionReceipt> executeBatch(List<BatchAction> actions) {
         if (TransactionSynchronizationManager.isActualTransactionActive()) {
             throw new IllegalStateException("Executor entry must not have a transaction");
@@ -168,6 +181,7 @@ public class ExactScopeExecutor {
         return reserved.stream().map(this::dispatch).toList();
     }
 
+    /** One action to execute in a batch. */
     public record BatchAction(
         long accountId,
         UUID actionPublicId,
@@ -175,6 +189,7 @@ public class ExactScopeExecutor {
     ) {
     }
 
+    /** The result of executing an action. */
     public record ExecutionReceipt(
         UUID executionPublicId,
         UUID actionPublicId,

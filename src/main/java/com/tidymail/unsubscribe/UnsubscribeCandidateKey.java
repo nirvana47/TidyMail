@@ -6,6 +6,13 @@ import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
 import java.util.regex.Pattern;
 
+/**
+ * Derives a canonical opaque identifier for an unsubscribe candidate from its
+ * account, metadata, sender, and list identity, for stable correlation.
+ * <p>
+ * Product functionality supported: candidate correlation in TidyMail's
+ * unsubscribe flow.
+ */
 public final class UnsubscribeCandidateKey {
     private static final String PREFIX = "c1.";
     private static final int DIGEST_LENGTH = 43;
@@ -15,6 +22,9 @@ public final class UnsubscribeCandidateKey {
     private UnsubscribeCandidateKey() {
     }
 
+    /**
+     * Encodes the candidate identity into a canonical key string.
+     */
     public static String encode(
             long accountId, long metadataId, String senderKey, String listIdentity) {
         if (accountId <= 0 || metadataId <= 0 || invalid(senderKey) || invalid(listIdentity)) {
@@ -32,6 +42,9 @@ public final class UnsubscribeCandidateKey {
         }
     }
 
+    /**
+     * Returns whether the given key matches the expected canonical format.
+     */
     public static boolean isCanonical(String key) {
         return key != null
             && key.length() == PREFIX.length() + DIGEST_LENGTH

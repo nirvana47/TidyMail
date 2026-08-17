@@ -9,6 +9,14 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
+/**
+ * The parsed, validated query for the Analytics source (per-sender) drill-down.
+ *
+ * <p>Product functionality supported: the <em>Analytics</em> source page.
+ * Wraps an {@link AnalyticsQuery} plus the specific series and time bucket
+ * being drilled into, with strict parsing and validation of the bucket and
+ * page parameters.</p>
+ */
 public record AnalyticsSourceQuery(
     AnalyticsQuery analytics,
     SourceSeries series,
@@ -35,6 +43,10 @@ public record AnalyticsSourceQuery(
         if (!exactBucket) throw QueryParsing.bad("bucket");
     }
 
+    /**
+     * Parses and validates the source query from request parameters, requiring
+     * the series and bucket bounds.
+     */
     public static AnalyticsSourceQuery parse(
             Map<String, ? extends List<String>> parameters,
             AnalyticsQuery analytics) {
@@ -54,10 +66,16 @@ public record AnalyticsSourceQuery(
             QueryParsing.page(values.get("page")));
     }
 
+    /**
+     * The row offset for the current page.
+     */
     public long offset() {
         return Math.multiplyExact((long) page, PAGE_SIZE);
     }
 
+    /**
+     * The canonical URL parameters for this source query.
+     */
     public Map<String, String> canonicalParameters() {
         LinkedHashMap<String, String> values =
             new LinkedHashMap<>(analytics.canonicalParameters());
@@ -68,6 +86,9 @@ public record AnalyticsSourceQuery(
         return Collections.unmodifiableMap(values);
     }
 
+    /**
+     * Returns a copy of this query at a different page.
+     */
     public AnalyticsSourceQuery withPage(int newPage) {
         return new AnalyticsSourceQuery(
             analytics, series, bucketStart, bucketEnd, newPage);

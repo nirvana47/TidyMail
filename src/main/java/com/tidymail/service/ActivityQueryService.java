@@ -31,6 +31,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @Transactional(readOnly = true)
+/**
+ * Builds the Activity page model, summarizing the current mailbox indexing/sync
+ * status, progress lanes, recent events, and freshness for the selected account.
+ *
+ * <p>Product functionality supported: the <em>Activity</em> flow, which shows
+ * indexing readiness, freshness, and bounded recent sync activity.
+ */
 public class ActivityQueryService {
 
     private static final int EVENT_LIMIT = 8;
@@ -67,6 +74,7 @@ public class ActivityQueryService {
         this.clock = clock;
     }
 
+    /** Builds the activity page model for the selected account. */
     public ActivityPageModel pageModel(
             String accountSelection, OAuth2AuthenticationToken authentication) {
         List<Long> accountIds = accountScope.resolve(authentication, accountSelection);
@@ -83,6 +91,7 @@ public class ActivityQueryService {
             status(account, indexed, state.orElse(null), progress, clock.instant()));
     }
 
+    /** Summarizes the account's sync state and progress into a status model. */
     private ActivityStatusModel status(
             UserAccount account,
             long indexed,
@@ -221,6 +230,7 @@ public class ActivityQueryService {
             lanes(state, progress, now), events(progress, now), null, null, false);
     }
 
+    /** Assembles an activity status model from its parts. */
     private ActivityStatusModel model(
             String stateClass,
             String headline,
@@ -246,6 +256,7 @@ public class ActivityQueryService {
             rescan, showProgress, lanes, events, action, pollingSeconds, alert, headline);
     }
 
+    /** Loads the account's current sync state row. */
     private Optional<StateRow> state(long accountId) {
         List<StateRow> rows = jdbc.query("""
             SELECT lifecycle, incremental_last_success_at,
@@ -259,6 +270,7 @@ public class ActivityQueryService {
         return rows.stream().findFirst();
     }
 
+    /** Loads the account's recent sync progress rows. */
     private List<ProgressRow> progress(long accountId) {
         return jdbc.query("""
             SELECT lane, phase, status, started_at, finished_at, last_successful_at,
@@ -271,6 +283,7 @@ public class ActivityQueryService {
             """, (result, rowNumber) -> progressRow(result), accountId);
     }
 
+    /** Builds the ordered progress lanes from the state and progress rows. */
     private static List<Lane> lanes(
             StateRow state, List<ProgressRow> progress, Instant now) {
         Map<String, ProgressRow> latest = new LinkedHashMap<>();
@@ -291,6 +304,7 @@ public class ActivityQueryService {
         return List.copyOf(result);
     }
 
+    /** Adds a single progress lane with its work copy and status. */
     private static void addLane(
             List<Lane> lanes, String key, String name, ProgressRow row, Instant now) {
         if (row == null) {
@@ -306,6 +320,7 @@ public class ActivityQueryService {
             workCopy(row)));
     }
 
+    /** Builds the recent event list from the progress rows. */
     private static List<Event> events(List<ProgressRow> progress, Instant now) {
         return progress.stream()
             .filter(row -> !"LEGACY".equals(row.lane()))
@@ -321,6 +336,7 @@ public class ActivityQueryService {
             .toList();
     }
 
+    /** Produces a human-readable description of a progress row's work. */
     private static String workCopy(ProgressRow row) {
         if ("QUEUED".equals(row.status())) {
             return "Waiting to start";
@@ -336,6 +352,7 @@ public class ActivityQueryService {
             + deleted + " removed; " + indexed + " indexed";
     }
 
+    /** Returns true if the given lane is currently active. */
     private static boolean laneActive(List<ProgressRow> progress, String lane) {
         return progress.stream()
             .filter(row -> lane.equals(row.lane()))
@@ -344,40 +361,48 @@ public class ActivityQueryService {
             .orElse(false);
     }
 
+    /** Returns true if any progress row is eligible for automatic retry. */
     private static boolean hasAutomaticRetry(List<ProgressRow> progress) {
         return progress.stream().findFirst()
             .map(row -> "QUEUED".equals(row.status()) && row.retryCode() != null)
             .orElse(false);
     }
 
+    /** Returns true if sync progress is currently permitted for the state. */
     private static boolean progressAllowed(StateRow state) {
         return state != null && state.providerTotal() != null
             && state.providerTotalObservedAt() != null && state.providerTotal() > 0;
     }
 
+    /** Returns the provider total when it is reliable, else null. */
     private static Long reliableTotal(StateRow state) {
         return state != null && state.providerTotalObservedAt() != null
             ? state.providerTotal() : null;
     }
 
+    /** Returns when the provider total was observed. */
     private static Instant observedAt(StateRow state) {
         return state == null ? null : state.providerTotalObservedAt();
     }
 
+    /** Computes the remaining messages to index, if known. */
     private static Long remaining(StateRow state, long indexed, boolean allowed) {
         Long total = reliableTotal(state);
         return allowed && total != null ? Math.max(total - indexed, 0) : null;
     }
 
+    /** Describes the initial-batch completion state. */
     private static String initialBatch(StateRow state) {
         return state != null && state.initialBatchCompletedAt() != null
             ? "Ready" : "Preparing";
     }
 
+    /** Describes how fresh the last successful sync was. */
     private static String freshness(Instant instant, Instant now) {
         return instant == null ? "Not checked yet" : "Checked " + relative(instant, now);
     }
 
+    /** Describes the rescan state and its timing. */
     private static String rescan(StateRow state, Instant now) {
         if (state == null) return "Not needed";
         return switch (state.rescanStatus()) {
@@ -389,6 +414,7 @@ public class ActivityQueryService {
         };
     }
 
+    /** Formats a relative time description between two instants. */
     private static String relative(Instant instant, Instant now) {
         if (instant == null) return "Not recorded";
         Duration age = Duration.between(instant, now);
@@ -405,12 +431,14 @@ public class ActivityQueryService {
         return days + (days == 1 ? " day ago" : " days ago");
     }
 
+    /** Formats a provider identifier as a display name. */
     private static String providerName(String provider) {
         if ("google".equalsIgnoreCase(provider)) return "Gmail";
         if ("microsoft".equalsIgnoreCase(provider)) return "Microsoft Outlook";
         return "Connected provider";
     }
 
+    /** Formats a lane identifier as a display name. */
     private static String laneName(String lane) {
         return switch (lane) {
             case "FRESHNESS" -> "New mail";
@@ -420,6 +448,7 @@ public class ActivityQueryService {
         };
     }
 
+    /** Maps a raw status to a human-readable description. */
     private static String statusCopy(String status) {
         return switch (status) {
             case "QUEUED" -> "Queued";
@@ -430,10 +459,12 @@ public class ActivityQueryService {
         };
     }
 
+    /** Returns the long value, defaulting to zero when null. */
     private static long value(Long value) {
         return value == null ? 0 : value;
     }
 
+    /** Maps a result-set row to a state row. */
     private static StateRow stateRow(ResultSet result) throws SQLException {
         return new StateRow(
             result.getString("lifecycle"),
@@ -451,6 +482,7 @@ public class ActivityQueryService {
             instant(result, "backfill_lease_expires_at"));
     }
 
+    /** Maps a result-set row to a progress row. */
     private static ProgressRow progressRow(ResultSet result) throws SQLException {
         return new ProgressRow(
             result.getString("lane"),
@@ -466,6 +498,7 @@ public class ActivityQueryService {
             result.getString("retry_code"));
     }
 
+    /** Reads a nullable timestamp column as an instant. */
     private static Instant instant(ResultSet result, String column) throws SQLException {
         Timestamp value = result.getTimestamp(column);
         return value == null ? null : value.toInstant();

@@ -30,6 +30,17 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * The Review page controller — the heart of TidyMail's safe bulk-action
+ * workflow.
+ *
+ * <p>Product functionality supported: the <em>Review</em> workspace tab, where
+ * staged cleanup actions are approved, executed, undone, or cancelled. It
+ * handles single and batch approval/undo confirmations, unsubscribe approval,
+ * conflict resolution, and the &quot;remove protection&quot; (compensation)
+ * flow, returning either htmx fragments for in-place updates or full Review
+ * page renders.</p>
+ */
 @Controller
 public class ReviewActionsController {
     private static final Set<String> FILTER_KEYS =
@@ -66,6 +77,11 @@ public class ReviewActionsController {
         this.compensation = compensation;
     }
 
+    /**
+     * Shows the email-stats modal for a single staged action (which exact
+     * messages it targets), either as an htmx fragment or within the Review
+     * page.
+     */
     @GetMapping("/review/actions/{actionPublicId}/emails")
     public String emails(
             @PathVariable UUID actionPublicId,
@@ -83,6 +99,9 @@ public class ReviewActionsController {
         return "review";
     }
 
+    /**
+     * Builds the approval confirmation for executing a single staged action.
+     */
     @PostMapping("/review/actions/{actionPublicId}/execute/confirm")
     public String confirmOne(
             @PathVariable UUID actionPublicId,
@@ -98,6 +117,10 @@ public class ReviewActionsController {
         return confirmation(model, principal, query, confirmation, htmx);
     }
 
+    /**
+     * Builds the confirmation for un-staging (undoing the staging of) a single
+     * action before it has been executed.
+     */
     @PostMapping("/review/actions/{actionPublicId}/undo-staged/confirm")
     public String confirmUndoOne(
             @PathVariable UUID actionPublicId,
@@ -113,6 +136,10 @@ public class ReviewActionsController {
         return "fragments/review-confirmation-frag :: undoConfirmation";
     }
 
+    /**
+     * Prepares the confirmation for undoing an already-executed action,
+     * showing what the undo will reverse.
+     */
     @PostMapping("/review/actions/{actionPublicId}/undo/confirm")
     public String confirmUndo(
             @PathVariable UUID actionPublicId,
@@ -125,6 +152,10 @@ public class ReviewActionsController {
         return "fragments/undo-confirmation-frag :: confirmation";
     }
 
+    /**
+     * Executes the undo of a previously executed action and returns the result
+     * fragment.
+     */
     @PostMapping("/api/actions/{actionPublicId}/undo")
     public String executeUndo(
             @PathVariable UUID actionPublicId,
@@ -138,6 +169,11 @@ public class ReviewActionsController {
         return "fragments/undo-confirmation-frag :: result";
     }
 
+    /**
+     * Prepares the confirmation for the &quot;remove protection&quot;
+     * (compensation) flow, which lets the user proceed with an action that
+     * would otherwise be blocked by protected messages.
+     */
     @PostMapping("/review/actions/{actionPublicId}/remove-protection/confirm")
     public String confirmCompensation(
             @PathVariable UUID actionPublicId,
@@ -150,6 +186,10 @@ public class ReviewActionsController {
         return "fragments/compensation-frag :: confirmation";
     }
 
+    /**
+     * Executes the remove-protection (compensation) flow for an action and
+     * returns the result fragment.
+     */
     @PostMapping("/api/actions/{actionPublicId}/remove-protection")
     public String executeCompensation(
             @PathVariable UUID actionPublicId,
@@ -166,6 +206,9 @@ public class ReviewActionsController {
         return "fragments/compensation-frag :: result";
     }
 
+    /**
+     * Approves and executes an unsubscribe action for a single staged action.
+     */
     @PostMapping("/api/actions/{actionPublicId}/approve")
     public String approveUnsubscribe(
             @PathVariable UUID actionPublicId,
@@ -178,6 +221,9 @@ public class ReviewActionsController {
         return "redirect:/review?view=queued";
     }
 
+    /**
+     * Prepares the confirmation for approving an unsubscribe action.
+     */
     @PostMapping("/review/unsubscribe/{actionPublicId}/confirm")
     public String confirmUnsubscribe(
             @PathVariable UUID actionPublicId,
@@ -198,6 +244,9 @@ public class ReviewActionsController {
         return "review";
     }
 
+    /**
+     * Cancels a staged action (removes it from the Review queue).
+     */
     @PostMapping("/api/actions/{actionPublicId}/cancel")
     public String cancel(
             @PathVariable UUID actionPublicId,
@@ -210,6 +259,10 @@ public class ReviewActionsController {
         return "redirect:/review?view=queued&account=" + account;
     }
 
+    /**
+     * Builds the approval confirmation for executing a batch of selected
+     * staged actions.
+     */
     @PostMapping("/review/approve-selected/confirm")
     public String confirmSelected(
             @RequestParam MultiValueMap<String, String> parameters,
@@ -224,6 +277,9 @@ public class ReviewActionsController {
         return confirmation(model, principal, query, confirmation, htmx);
     }
 
+    /**
+     * Builds the confirmation for un-staging a batch of selected actions.
+     */
     @PostMapping("/review/undo-selected/confirm")
     public String confirmUndoSelected(
             @RequestParam MultiValueMap<String, String> parameters,
@@ -238,6 +294,9 @@ public class ReviewActionsController {
         return "fragments/review-confirmation-frag :: undoConfirmation";
     }
 
+    /**
+     * Un-stages (removes from the queue) a batch of selected actions.
+     */
     @PostMapping("/review/undo-selected")
     public String undoSelected(
             @RequestParam MultiValueMap<String, String> parameters,
@@ -252,6 +311,10 @@ public class ReviewActionsController {
         return "redirect:/review?view=queued&account=" + query.account();
     }
 
+    /**
+     * Builds the approval confirmation for executing all staged actions in the
+     * current Review view.
+     */
     @PostMapping("/review/approve-all/confirm")
     public String confirmAll(
             @RequestParam MultiValueMap<String, String> parameters,
@@ -264,6 +327,9 @@ public class ReviewActionsController {
         return confirmation(model, principal, query, confirmation, htmx);
     }
 
+    /**
+     * Executes a batch of selected staged actions and returns the outcome.
+     */
     @PostMapping("/review/approve-selected")
     public String executeSelected(
             @RequestParam MultiValueMap<String, String> parameters,
@@ -280,6 +346,10 @@ public class ReviewActionsController {
         return outcome(model, principal, query, receipt, htmx);
     }
 
+    /**
+     * Executes all staged actions in the current Review view and returns the
+     * outcome.
+     */
     @PostMapping("/review/approve-all")
     public String executeAll(
             @RequestParam MultiValueMap<String, String> parameters,
@@ -296,6 +366,10 @@ public class ReviewActionsController {
         return outcome(model, principal, query, receipt, htmx);
     }
 
+    /**
+     * Shows the detail of a single action conflict (an action that can't be
+     * executed as staged) and its resolution options.
+     */
     @GetMapping("/review/conflicts/{conflictPublicId}")
     public String conflict(
             @PathVariable UUID conflictPublicId,
@@ -314,6 +388,10 @@ public class ReviewActionsController {
         return "review";
     }
 
+    /**
+     * Resolves a conflict by applying the chosen command to the affected
+     * action.
+     */
     @PostMapping("/review/conflicts/{conflictPublicId}/resolve")
     public String resolveConflict(
             @PathVariable UUID conflictPublicId,
@@ -327,11 +405,19 @@ public class ReviewActionsController {
         return "redirect:/review?view=queued&account=" + account;
     }
 
+    /**
+     * Legacy blanket-apply endpoint; the blanket apply flow has been removed
+     * in favor of explicit per-action approval, so this always returns 410.
+     */
     @PostMapping("/api/actions/review/apply")
     public String removedBlanketApply() {
         throw new ResponseStatusException(HttpStatus.GONE, "blanket_apply_removed");
     }
 
+    /**
+     * Renders the approval confirmation, either as an htmx fragment or within
+     * the full Review page.
+     */
     private String confirmation(
             Model model,
             OAuth2AuthenticationToken principal,
@@ -346,6 +432,10 @@ public class ReviewActionsController {
         return "review";
     }
 
+    /**
+     * Renders the batch execution outcome, either as an htmx fragment or within
+     * the full Review page.
+     */
     private String outcome(
             Model model,
             OAuth2AuthenticationToken principal,
@@ -360,6 +450,10 @@ public class ReviewActionsController {
         return "review";
     }
 
+    /**
+     * Builds the workspace chrome and the Review queue page model for the given
+     * query and adds them to the model.
+     */
     private void populate(
             Model model,
             OAuth2AuthenticationToken principal,
@@ -370,6 +464,11 @@ public class ReviewActionsController {
         model.addAttribute("page", reviewActions.queue(owner(principal), workspace, query));
     }
 
+    /**
+     * Parses the Review filter parameters (view, account, action, state,
+     * target, page) into a {@link ReviewQuery}, rejecting unknown or malformed
+     * parameters.
+     */
     private static ReviewQuery query(
             MultiValueMap<String, String> parameters, Set<String> allowedExtras) {
         LinkedMultiValueMap<String, String> filters = new LinkedMultiValueMap<>();
@@ -389,15 +488,25 @@ public class ReviewActionsController {
         return ReviewQuery.parse(filters);
     }
 
+    /**
+     * Convenience factory for a 400 Bad Request with the review error reason.
+     */
     private static ResponseStatusException invalidRequest() {
         return new ResponseStatusException(
             HttpStatus.BAD_REQUEST, "invalid_review_request");
     }
 
+    /**
+     * Derives the owner key from the OAuth principal.
+     */
     private static String owner(OAuth2AuthenticationToken principal) {
         return ActionCommandController.ownerKey(principal);
     }
 
+    /**
+     * Requires exactly one account to be in scope, returning its id; used by
+     * single-account operations like undo and compensation.
+     */
     private static long oneAccount(List<Long> accountIds) {
         if (accountIds.size() != 1) {
             throw new ResponseStatusException(

@@ -11,6 +11,14 @@ import org.springframework.http.HttpStatus;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * The parsed, validated query for the Review page's action-history view.
+ *
+ * <p>Product functionality supported: the <em>Review &gt; History</em> tab's
+ * filters (date range, action, status, target). Parses and validates the
+ * request parameters, defaults a missing end/start of the range, and produces
+ * canonical URL parameters.</p>
+ */
 public record HistoryQuery(
     String account,
     LocalDate from,
@@ -48,6 +56,9 @@ public record HistoryQuery(
         }
     }
 
+    /**
+     * Parses and validates the history query from request parameters.
+     */
     public static HistoryQuery parse(MultiValueMap<String, String> parameters) {
         for (String key : parameters.keySet()) {
             if (!KEYS.contains(key)
@@ -74,6 +85,9 @@ public record HistoryQuery(
         }
     }
 
+    /**
+     * The canonical URL parameters for this history query.
+     */
     public Map<String, String> canonicalParameters() {
         LinkedHashMap<String, String> values = new LinkedHashMap<>();
         values.put("view", "history");
@@ -87,6 +101,10 @@ public record HistoryQuery(
         return Map.copyOf(values);
     }
 
+    /**
+     * The canonical parameters without the page entry (for &quot;clear
+     * paging&quot; links).
+     */
     public Map<String, String> withoutPage() {
         LinkedHashMap<String, String> values =
             new LinkedHashMap<>(canonicalParameters());

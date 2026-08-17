@@ -18,6 +18,13 @@ import org.hibernate.annotations.JdbcType;
 import org.hibernate.type.SqlTypes;
 import org.hibernate.type.descriptor.jdbc.NumericJdbcType;
 
+/**
+ * Cached metadata for an individual email message, excluding its body, used to
+ * power filtering, risk, and unsubscribe decisions.
+ *
+ * <p>Product functionality supported: metadata-only mailbox sync feeding the
+ * EXACT-scope action engine and unsubscribe detection.
+ */
 @Entity
 @Table(
     name = "message_metadata",

@@ -19,6 +19,14 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * Records and reads unsubscribe attempt outcomes: creates pending attempts,
+ * appends accepted/failed/manual events, and builds the outcome view with a
+ * human-readable event timeline.
+ *
+ * <p>Product functionality supported: the <em>Unsubscribe</em> flow's outcome
+ * tracking and verification status.
+ */
 @Service
 public class UnsubscribeOutcomeService {
     private final UnsubscribeAttemptRepository attempts;
@@ -41,6 +49,7 @@ public class UnsubscribeOutcomeService {
         this.clock = clock;
     }
 
+    /** Creates a pending attempt and returns its ID. */
     @Transactional
     public long createPending(UnsubscribeCandidateService.ExecutionCandidate candidate) {
         Instant now = clock.instant();
@@ -54,6 +63,7 @@ public class UnsubscribeOutcomeService {
         return attempt.getId();
     }
 
+    /** Records an accepted outcome and returns the view. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public OutcomeView accepted(long accountId, long attemptId) {
         append(accountId, attemptId, UnsubscribeOutcomeStatus.ACCEPTED,
@@ -63,6 +73,7 @@ public class UnsubscribeOutcomeService {
         return view(accountId, attemptId);
     }
 
+    /** Records a failed outcome and returns the view. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public OutcomeView failed(
             long accountId,
@@ -74,6 +85,7 @@ public class UnsubscribeOutcomeService {
         return view(accountId, attemptId);
     }
 
+    /** Records a manual completion and returns the view. */
     @Transactional
     public OutcomeView manualCompleted(
             UnsubscribeCandidateService.ExecutionCandidate candidate,
@@ -98,6 +110,7 @@ public class UnsubscribeOutcomeService {
         return view(candidate.accountId(), attempt.getId());
     }
 
+    /** Returns the outcome view for an attempt. */
     @Transactional(readOnly = true)
     public OutcomeView view(long accountId, long attemptId) {
         UnsubscribeAttempt attempt = attempts.findByIdAndAccountId(attemptId, accountId)
@@ -111,6 +124,7 @@ public class UnsubscribeOutcomeService {
             attempt.getLatestStatus(), timeline);
     }
 
+    /** Returns the outcome view for an attempt owned by the user. */
     @Transactional(readOnly = true)
     public OutcomeView viewOwned(Collection<Long> authorizedAccountIds, long attemptId) {
         if (authorizedAccountIds == null || authorizedAccountIds.isEmpty() || attemptId <= 0) {
@@ -125,6 +139,7 @@ public class UnsubscribeOutcomeService {
                 HttpStatus.NOT_FOUND, "Outcome not found"));
     }
 
+    /** Appends an outcome event and updates the attempt summary. */
     private void append(
             long accountId,
             long attemptId,
@@ -143,6 +158,7 @@ public class UnsubscribeOutcomeService {
         attempts.save(attempt);
     }
 
+    /** Maps an outcome event to its display view. */
     private static OutcomeEventView eventView(UnsubscribeOutcomeEvent event) {
         String label = switch (event.getStatus()) {
             case PENDING -> "Pending";
@@ -174,6 +190,7 @@ public class UnsubscribeOutcomeService {
             event.getReasonCode(), event.getHttpStatusClass(), source);
     }
 
+    /** Returns the human-readable copy for a failure reason. */
     private static String failureCopy(UnsubscribeReasonCode reason) {
         return switch (reason) {
             case REDIRECT_BLOCKED ->
@@ -189,6 +206,7 @@ public class UnsubscribeOutcomeService {
         };
     }
 
+    /** The outcome view for an unsubscribe attempt. */
     public record OutcomeView(
         long attemptId,
         UnsubscribeMethod method,
@@ -201,6 +219,7 @@ public class UnsubscribeOutcomeService {
         }
     }
 
+    /** A single outcome event in the timeline. */
     public record OutcomeEventView(
         UnsubscribeOutcomeStatus status,
         String label,

@@ -3,6 +3,14 @@ package com.tidymail.dto;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * A validated request to preview or execute a bulk action over a selection of rows
+ * on the Senders or Unread surface, including the selection mode, the matching
+ * query, and any protected-sender override.
+ *
+ * <p>Product functionality supported: the <em>Bulk Action Preview</em> flow, which
+ * turns user selections into exact, countable action scopes before execution.
+ */
 public record SelectionRequest(
     SelectionSurface surface,
     SelectionMode mode,
@@ -65,22 +73,26 @@ public record SelectionRequest(
         return List.copyOf(rowKeys);
     }
 
+    /** Returns the account the selection applies to, from the surface-specific query. */
     public String accountSelection() {
         return surface == SelectionSurface.SENDERS
             ? senderQuery.account() : unreadQuery.account();
     }
 
+    /** Returns the canonical query parameters that define the selection scope. */
     public Map<String, String> canonicalQuery() {
         return surface == SelectionSurface.SENDERS
             ? senderQuery.canonicalParameters() : unreadQuery.canonicalParameters();
     }
 
+    /** Returns a copy of this request carrying an analytics sender drilldown scope. */
     public SelectionRequest withAnalyticsSenderScope(AnalyticsSenderScope scope) {
         return new SelectionRequest(
             surface, mode, senderQuery, unreadQuery, rowKeys, action,
             includeProtected, reason, scope);
     }
 
+    /** The bulk action being previewed or executed. */
     public enum PreviewAction {
         ARCHIVE,
         TRASH,
@@ -90,6 +102,7 @@ public record SelectionRequest(
         REVIEW
     }
 
+    /** A recorded reason for overriding protected-sender protection. */
     public enum OverrideReason {
         FALSE_POSITIVE,
         BUSINESS_REQUIRED,

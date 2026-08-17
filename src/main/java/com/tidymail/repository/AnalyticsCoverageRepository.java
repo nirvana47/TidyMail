@@ -13,6 +13,13 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+/**
+ * Computes analytics coverage metrics, quantifying how much of the recorded
+ * action history is backed by event/execution data versus legacy gaps.
+ * <p>
+ * Product functionality: analytics dashboards and drilldowns that report
+ * coverage, legacy gaps, unsubscribe linkage gaps, and top senders.
+ */
 @Repository
 public class AnalyticsCoverageRepository {
     private final NamedParameterJdbcTemplate jdbc;
@@ -40,6 +47,10 @@ public class AnalyticsCoverageRepository {
             });
     }
 
+    /**
+     * Counts actions in the given range that lack a corresponding event or
+     * execution record (legacy or incomplete history).
+     */
     public long legacyGapCount(
             Collection<Long> accountIds,
             AnalyticsQuery.DateRange range,
@@ -155,6 +166,10 @@ public class AnalyticsCoverageRepository {
             }));
     }
 
+    /**
+     * Counts unsubscribe executions whose targets have no linked attempt or
+     * confirmed outcome event.
+     */
     public long unsubscribeLinkageGapCount(
             Collection<Long> accountIds,
             AnalyticsQuery.DateRange range) {
@@ -244,6 +259,9 @@ public class AnalyticsCoverageRepository {
         return bucketCounts(buckets.size(), rows);
     }
 
+    /**
+     * Returns the top senders by received-message volume within the range.
+     */
     public List<AnalyticsTopSender> topSenders(
             Collection<Long> accountIds,
             AnalyticsQuery.DateRange range,

@@ -2,6 +2,14 @@ package com.tidymail.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
+/**
+ * Describes what a staged action scope targets: the sender display label,
+ * address, domain, and how many targets were selected.
+ *
+ * <p>Product functionality supported: the <em>Bulk Actions</em> preview and
+ * Review UI. Bounds and trims string fields (and caps the target count) so the
+ * values are safe to display and persist.</p>
+ */
 @JsonIgnoreProperties(ignoreUnknown = false)
 public record ActionScopeTargetSummary(
         String displayLabel,

@@ -10,6 +10,12 @@ import jakarta.persistence.UniqueConstraint;
 import java.time.Instant;
 import org.hibernate.annotations.Immutable;
 
+/**
+ * Immutable entity representing a sender address a user has protected from cleanup
+ * actions, unique per account and sender address.
+ * <p>Product functionality: protected-sender protection — keeps protected senders'
+ * messages safe from bulk cleanup operations.
+ */
 @Entity
 @Immutable
 @Table(
@@ -39,6 +45,10 @@ public class ProtectedSender {
     protected ProtectedSender() {
     }
 
+    /**
+     * Creates a protected sender, validating the account, normalized sender address,
+     * and source before persisting.
+     */
     public static ProtectedSender create(
             long accountId, String senderAddress, String source, Instant createdAt) {
         if (accountId <= 0 || senderAddress == null || senderAddress.isBlank()

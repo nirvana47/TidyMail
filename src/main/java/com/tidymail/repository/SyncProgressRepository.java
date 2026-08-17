@@ -5,6 +5,11 @@ import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+/**
+ * Persists and queries mailbox sync progress per account and job type.
+ * <p>
+ * Product functionality: sync progress tracking for mailbox synchronization.
+ */
 public interface SyncProgressRepository extends JpaRepository<SyncProgress, Long> {
 
     Optional<SyncProgress> findTopByAccountIdAndJobTypeOrderByIdDesc(Long accountId, String jobType);

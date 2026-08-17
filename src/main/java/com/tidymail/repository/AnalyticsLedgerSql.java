@@ -7,6 +7,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Holds shared raw-SQL fragments and predicates for the analytics ledger
+ * queries.
+ * <p>
+ * Product functionality: analytics dashboards and drilldowns over the action
+ * ledger.
+ */
 public final class AnalyticsLedgerSql {
     private static final List<String> DECISIONS = List.of(
         "KEEP", "REVIEW", "PROTECT", "ARCHIVE", "TRASH", "MARK_READ", "UNSUBSCRIBE");

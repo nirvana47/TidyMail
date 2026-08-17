@@ -3,6 +3,13 @@ package com.tidymail.dto;
 import java.time.Instant;
 import java.util.Objects;
 
+/**
+ * A single time bucket in the Analytics trend chart.
+ *
+ * <p>Product functionality supported: the <em>Analytics</em> trend
+ * visualization. Holds the received/cleaned counts for a time range, their
+ * availability, and links to the per-bucket source drill-downs.</p>
+ */
 public record AnalyticsTrendBucket(
     Instant startInclusive,
     Instant endExclusive,

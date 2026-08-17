@@ -13,6 +13,14 @@ import org.springframework.security.oauth2.client.authentication.OAuth2LoginAuth
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.stereotype.Component;
 
+/**
+ * Listens for successful OAuth logins, persists the authorized client and
+ * profile claims, and triggers the initial bootstrap or incremental sync for
+ * the linked account.
+ * <p>
+ * Product functionality supported: per-owner account linking and kicking off
+ * mailbox sync after Gmail/Outlook login.
+ */
 @Component
 public class OAuthLoginSuccessListener {
 
@@ -28,6 +36,11 @@ public class OAuthLoginSuccessListener {
         this.incrementalSyncJob = incrementalSyncJob;
     }
 
+    /**
+     * On an OAuth login success, saves the authorized client, records the last
+     * login time, and requests a bootstrap (new account) or incremental sync
+     * (existing account) for Google logins.
+     */
     @EventListener(AuthenticationSuccessEvent.class)
     public void onAuthenticationSuccess(AuthenticationSuccessEvent event) {
         Authentication authentication = event.getAuthentication();

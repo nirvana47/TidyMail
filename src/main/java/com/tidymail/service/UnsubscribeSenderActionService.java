@@ -17,6 +17,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Builds the preview for a bulk cleanup action (archive/trash) on a single
+ * unsubscribe candidate sender, respecting protection and the exact-message cap.
+ *
+ * <p>Product functionality supported: the <em>Unsubscribe</em> flow's sender
+ * cleanup preview and execution entry point.
+ */
 @Service
 public class UnsubscribeSenderActionService {
     private static final int SCOPE_LIMIT = 1000;
@@ -37,6 +44,7 @@ public class UnsubscribeSenderActionService {
         this.confirmations = confirmations;
     }
 
+    /** Previews the cleanup action for the sender's messages. */
     @Transactional(isolation = Isolation.REPEATABLE_READ)
     public SelectionScopePreview preview(
             String ownerKey,

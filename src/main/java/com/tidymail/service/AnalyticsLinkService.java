@@ -11,6 +11,13 @@ import org.springframework.security.oauth2.client.authentication.OAuth2Authentic
 import org.springframework.stereotype.Service;
 import org.springframework.web.util.UriComponentsBuilder;
 
+/**
+ * Attaches drilldown and source-detail URLs to the Analytics page model, including
+ * encrypted sender-drilldown links from top senders.
+ *
+ * <p>Product functionality supported: the <em>Analytics</em> flow's navigation to
+ * detail/source views and sender drilldowns.
+ */
 @Service
 public class AnalyticsLinkService {
     private final AnalyticsDrilldownKeyService drilldownKeys;
@@ -19,6 +26,7 @@ public class AnalyticsLinkService {
         this.drilldownKeys = drilldownKeys;
     }
 
+    /** Returns a copy of the analytics page with queue and detail links attached. */
     public AnalyticsPageModel attach(
             AnalyticsPageModel page, OAuth2AuthenticationToken authentication) {
         AnalyticsDashboard dashboard = page.dashboard();
@@ -43,6 +51,7 @@ public class AnalyticsLinkService {
             detailUrls(page.query()), page.mailbox(), page.loadingCopy());
     }
 
+    /** Adds a sender-queue URL (with drilldown token) to a top sender. */
     private AnalyticsTopSender withQueueUrl(
             AnalyticsTopSender sender,
             AnalyticsQuery query,
@@ -68,6 +77,7 @@ public class AnalyticsLinkService {
             sender.receivedCount(), url("/senders", parameters));
     }
 
+    /** Builds source-detail URLs for each metric series under the query. */
     private static Map<String, String> detailUrls(AnalyticsQuery query) {
         LinkedHashMap<String, String> links = new LinkedHashMap<>();
         links.put("RECEIVED", source(query, "received"));
@@ -124,6 +134,7 @@ public class AnalyticsLinkService {
         return Map.copyOf(links);
     }
 
+    /** Returns a query over the given date range. */
     private static AnalyticsQuery withRange(
             AnalyticsQuery query, AnalyticsQuery.DateRange range) {
         return new AnalyticsQuery(
@@ -133,6 +144,7 @@ public class AnalyticsLinkService {
             query.account(), query.action(), query.grouping(), query.comparison());
     }
 
+    /** Builds an analytics source URL for a series. */
     private static String source(AnalyticsQuery sourceQuery, String series) {
         UriComponentsBuilder builder = UriComponentsBuilder.fromPath("/analytics/source");
         sourceQuery.canonicalParameters().forEach(builder::queryParam);
@@ -143,6 +155,7 @@ public class AnalyticsLinkService {
         return builder.build().encode().toUriString();
     }
 
+    /** Builds a history URL for an action/status from the analytics query. */
     public static String history(AnalyticsQuery query, String action, String status) {
         UriComponentsBuilder builder = UriComponentsBuilder.fromPath("/review")
             .queryParam("view", "history")
@@ -156,6 +169,7 @@ public class AnalyticsLinkService {
         return builder.build().encode().toUriString();
     }
 
+    /** Builds an encoded URL from a path and query parameters. */
     private static String url(String path, Map<String, String> parameters) {
         UriComponentsBuilder builder = UriComponentsBuilder.fromPath(path);
         parameters.forEach(builder::queryParam);

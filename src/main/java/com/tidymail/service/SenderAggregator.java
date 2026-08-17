@@ -15,6 +15,14 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
+/**
+ * Aggregates raw messages into per-sender accumulators, computes a bulk-marketing
+ * score, persists sender snapshots, and builds the Senders page response with
+ * sorting and domain rollups.
+ *
+ * <p>Product functionality supported: the <em>Senders</em> flow's aggregation,
+ * scoring, and listing.
+ */
 @Service
 public class SenderAggregator {
 
@@ -24,6 +32,7 @@ public class SenderAggregator {
         this.senderStatsPersistService = senderStatsPersistService;
     }
 
+    /** Aggregates messages into per-sender accumulators. */
     public AggregationResult aggregate(List<MailMessage> messages) {
         Map<String, SenderAccumulator> perSender = new LinkedHashMap<>();
         for (MailMessage m : messages) {
@@ -45,6 +54,7 @@ public class SenderAggregator {
         return new AggregationResult(perSender, messages.size());
     }
 
+    /** Computes a 0-3 bulk-marketing score for a sender. */
     public static int bulkMarketingScore(SenderAccumulator acc, Instant now) {
         if (acc == null) return 0;
         int sum = 0;
@@ -58,6 +68,7 @@ public class SenderAggregator {
         return Math.min(3, Math.max(0, sum));
     }
 
+    /** Persists the aggregation as a sender-stats snapshot. */
     public int persistSnapshot(Long accountId, AggregationResult agg) {
         List<SenderStatsPersistService.SenderStatDelta> deltas = new ArrayList<>(agg.perSender().size());
         for (SenderAccumulator acc : agg.perSender().values()) {
@@ -78,6 +89,7 @@ public class SenderAggregator {
         return deltas.size();
     }
 
+    /** Builds the sender page response with sorting and domain rollups. */
     public SenderPageResponse toPageResponse(AggregationResult agg, String nextCursor, String sort) {
         List<SenderAccumulator> list = new ArrayList<>(agg.perSender().values());
         Comparator<SenderAccumulator> primary;
@@ -142,6 +154,7 @@ public class SenderAggregator {
         );
     }
 
+    /** Extracts the display name from an RFC-5322 address. */
     private static String extractDisplayOnly(String rfc5322Address) {
         if (rfc5322Address == null) return null;
         int lt = rfc5322Address.indexOf('<');
@@ -153,6 +166,7 @@ public class SenderAggregator {
         return namePart.isEmpty() ? null : namePart;
     }
 
+    /** Accumulates per-sender statistics across messages. */
     public static final class SenderAccumulator {
         public String fromAddress;
         public String fromDisplayName;
@@ -166,6 +180,7 @@ public class SenderAggregator {
         public int replyCount;
         public final List<String> sampleMessageIds = new ArrayList<>(5);
 
+        /** Adds a message's facts to this sender's statistics. */
         public void accumulate(MailMessage m) {
             totalCount++;
             if (m.isUnread()) unreadCount++;
@@ -202,6 +217,7 @@ public class SenderAggregator {
         }
     }
 
+    /** The aggregated senders and total messages scanned. */
     public record AggregationResult(
             Map<String, SenderAccumulator> perSender,
             int totalMessagesScanned

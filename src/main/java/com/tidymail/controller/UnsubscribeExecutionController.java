@@ -22,6 +22,15 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * Handles the unsubscribe execution and outcome views.
+ *
+ * <p>Product functionality supported: the <em>One-Click Unsubscribe</em>
+ * feature. This controller completes a user-confirmed manual unsubscribe
+ * (validating that the candidate/method intent is still fresh and un-replayed),
+ * and renders unsubscribe attempt outcomes. A retired direct-execution
+ * endpoint is preserved but always returns 410.</p>
+ */
 @Controller
 public class UnsubscribeExecutionController {
     private static final Set<String> MANUAL_FIELDS =
@@ -40,12 +49,24 @@ public class UnsubscribeExecutionController {
         this.outcomes = outcomes;
     }
 
+    /**
+     * Retired endpoint for direct automated unsubscribe execution; kept as a
+     * 410 so old links fail loudly instead of being silently ignored.
+     */
     @PostMapping("/unsubscribe/execute")
     public void retiredAutomatedExecution() {
         throw new ResponseStatusException(
             HttpStatus.GONE, "direct_unsubscribe_execution_removed");
     }
 
+    /**
+     * Completes a manual unsubscribe for the confirmed candidate.
+     *
+     * <p>Validates the submitted fields (candidate key, method, intent,
+     * attestation), completes the manual unsubscribe under the user's owner
+     * key, and renders the outcome fragment. Protected, expired, or replayed
+     * intents are surfaced as safe error outcomes rather than exceptions.</p>
+     */
     @PostMapping("/unsubscribe/manual-complete")
     public String manualComplete(
             @RequestParam MultiValueMap<String, String> parameters,
@@ -77,6 +98,9 @@ public class UnsubscribeExecutionController {
         return "fragments/unsubscribe-outcome-frag :: outcome";
     }
 
+    /**
+     * Renders the outcome fragment for a completed unsubscribe attempt.
+     */
     @GetMapping("/unsubscribe/outcomes/{attemptId}")
     public String outcome(
             @PathVariable long attemptId,
@@ -86,11 +110,19 @@ public class UnsubscribeExecutionController {
         return "fragments/unsubscribe-outcome-frag :: outcome";
     }
 
+    /**
+     * Resolves the account ids the authenticated user owns for the unsubscribe
+     * scope.
+     */
     private List<Long> owned(OAuth2AuthenticationToken authentication) {
         return workspace.build(WorkspaceRoute.UNSUBSCRIBE, "current", authentication)
             .selectedAccountIds();
     }
 
+    /**
+     * Renders a safe error outcome fragment with the HTTP status and a
+     * user-facing reason copy, without leaking internal details.
+     */
     private static void safeError(
             HttpServletResponse response,
             Model model,
@@ -111,6 +143,10 @@ public class UnsubscribeExecutionController {
         });
     }
 
+    /**
+     * Ensures only the allowed fields are present and that the required fields
+     * are single-valued.
+     */
     private static void requireFields(
             MultiValueMap<String, String> parameters, Set<String> allowlist) {
         if (!allowlist.containsAll(parameters.keySet())) {
@@ -122,12 +158,19 @@ public class UnsubscribeExecutionController {
         one(parameters, "_csrf");
     }
 
+    /**
+     * Reads a required single field value, rejecting missing fields.
+     */
     private static String one(MultiValueMap<String, String> parameters, String name) {
         String value = optionalOne(parameters, name);
         if (value == null) throw new IllegalArgumentException("Missing request field");
         return value;
     }
 
+    /**
+     * Reads an optional single-valued field, rejecting blank, oversized, or
+     * control-character values.
+     */
     private static String optionalOne(
             MultiValueMap<String, String> parameters, String name) {
         List<String> values = parameters.get(name);
@@ -140,6 +183,10 @@ public class UnsubscribeExecutionController {
         return values.getFirst();
     }
 
+    /**
+     * Parses a string into an {@link UnsubscribeMethod}, rejecting invalid
+     * values with a 400.
+     */
     private static UnsubscribeMethod method(String value) {
         try {
             return UnsubscribeMethod.valueOf(value);

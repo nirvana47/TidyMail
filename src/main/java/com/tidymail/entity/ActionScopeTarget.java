@@ -8,6 +8,13 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import org.hibernate.annotations.Immutable;
 
+/**
+ * Immutable row listing a single fingerprint-identified item within an action
+ * scope.
+ *
+ * <p>Product functionality supported: exact-scope targeting for the
+ * action-execution engine.
+ */
 @Entity
 @Immutable
 @Table(name = "action_scope_targets")
@@ -27,6 +34,9 @@ public class ActionScopeTarget {
     protected ActionScopeTarget() {
     }
 
+    /**
+     * Creates a scope target from its scope, account, ordinal, and fingerprint.
+     */
     public static ActionScopeTarget create(
             long scopeId, long accountId, int ordinal, String fingerprint) {
         if (scopeId <= 0 || accountId <= 0 || ordinal < 0

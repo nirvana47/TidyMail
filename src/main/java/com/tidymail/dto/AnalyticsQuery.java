@@ -12,6 +12,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+/**
+ * The parsed, validated analytics query: date range, account, action filter,
+ * bucket grouping, and prior-period comparison.
+ *
+ * <p>Product functionality supported: the <em>Analytics</em> dashboard's
+ * filters and time-series. Derives the selected range, the prior comparison
+ * range, and the time buckets (day/week/month/year), and produces the
+ * canonical URL parameters for the query.</p>
+ */
 public record AnalyticsQuery(
     LocalDate from,
     LocalDate to,
@@ -51,18 +60,29 @@ public record AnalyticsQuery(
         }
     }
 
+    /**
+     * The selected date range as instants (inclusive start, exclusive end).
+     */
     public DateRange range() {
         return new DateRange(
             from.atStartOfDay(ZoneOffset.UTC).toInstant(),
             to.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant());
     }
 
+    /**
+     * The immediately preceding range of equal duration, for prior-period
+     * comparison.
+     */
     public DateRange priorRange() {
         DateRange current = range();
         Duration duration = current.duration();
         return new DateRange(current.startInclusive().minus(duration), current.startInclusive());
     }
 
+    /**
+     * Splits the selected range into buckets according to the grouping
+     * (day/week/month/year), capped at {@link #MAX_BUCKETS}.
+     */
     public List<DateRange> buckets() {
         DateRange selected = range();
         java.util.ArrayList<DateRange> buckets = new java.util.ArrayList<>();
@@ -86,6 +106,10 @@ public record AnalyticsQuery(
         return List.copyOf(buckets);
     }
 
+    /**
+     * The canonical URL parameters for this query (from/to/account/action/
+     * group/compare).
+     */
     public Map<String, String> canonicalParameters() {
         LinkedHashMap<String, String> values = new LinkedHashMap<>();
         values.put("from", from.toString());

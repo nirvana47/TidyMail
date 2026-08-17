@@ -2,6 +2,12 @@ package com.tidymail.mail.sync;
 
 import java.util.Set;
 
+/**
+ * A single page of attachment-related message memberships returned by a
+ * provider query, with paging support.
+ *
+ * <p>Product functionality supported: attachment membership queries during sync.
+ */
 public record AttachmentMembershipPage(
     Set<String> messageIds,
     String nextPageToken,

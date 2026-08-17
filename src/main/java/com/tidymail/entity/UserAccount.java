@@ -15,6 +15,12 @@ import java.util.List;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+/**
+ * A user's connected mailbox account with its OAuth provider credentials (encrypted
+ * access/refresh tokens), scopes, key-id, and OAuth status.
+ * <p>Product functionality: user accounts — backs authentication, token refresh,
+ * and the per-account context all cleanup features operate within.
+ */
 @Entity
 @Table(
     name = "user_accounts",
@@ -24,6 +30,9 @@ import org.hibernate.type.SqlTypes;
     }
 )
 public class UserAccount {
+    /**
+     * OAuth health of the linked account.
+     */
     public enum OAuthStatus {
         ACTIVE,
         REAUTH_REQUIRED

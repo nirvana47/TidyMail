@@ -16,11 +16,20 @@ import java.util.Locale;
 import java.util.TreeSet;
 import org.springframework.stereotype.Component;
 
+/**
+ * Produces a canonical, deterministic representation of an exact action scope
+ * (account, action type, target kind, and sorted message IDs) and its SHA-256
+ * hash, so identical scopes can be deduplicated and verified.
+ *
+ * <p>Product functionality supported: the <em>Bulk Action Preview</em> flow's
+ * exact-scope materialization and integrity checks.
+ */
 @Component
 public class ActionScopeHasher {
 
     static final String CANONICAL_VERSION = "scope-v1";
 
+    /** The canonicalized scope and its computed hash. */
     public record CanonicalScope(
             String actionType,
             String targetKind,
@@ -39,6 +48,7 @@ public class ActionScopeHasher {
         }
     }
 
+    /** Canonicalizes a scope and returns its canonical form and hash. */
     public CanonicalScope canonicalize(
             Long accountId, String actionType, String targetKind, Collection<String> messageIds) {
         if (accountId == null || accountId <= 0) {
@@ -64,6 +74,7 @@ public class ActionScopeHasher {
             normalizedAction, normalizedTarget, canonicalIds, bytes, sha256(bytes));
     }
 
+    /** Normalizes an enum-like value, rejecting malformed input. */
     private static String normalize(String value, String field) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(field + " must not be blank");
@@ -75,6 +86,7 @@ public class ActionScopeHasher {
         return normalized;
     }
 
+    /** Serializes the canonical scope to its deterministic byte form. */
     private static byte[] canonicalBytes(
             String version,
             String accountId,
@@ -99,12 +111,14 @@ public class ActionScopeHasher {
         }
     }
 
+    /** Writes a length-prefixed value to the canonical buffer. */
     private static void writeValue(DataOutputStream output, String value) throws IOException {
         byte[] encoded = encodeUtf8(value);
         output.writeInt(encoded.length);
         output.write(encoded);
     }
 
+    /** UTF-8 encodes a value, rejecting malformed Unicode. */
     private static byte[] encodeUtf8(String value) {
         try {
             ByteBuffer encoded = StandardCharsets.UTF_8.newEncoder()
@@ -120,6 +134,7 @@ public class ActionScopeHasher {
         }
     }
 
+    /** Returns the lowercase hex SHA-256 of the given bytes. */
     private static String sha256(byte[] bytes) {
         try {
             return java.util.HexFormat.of().formatHex(

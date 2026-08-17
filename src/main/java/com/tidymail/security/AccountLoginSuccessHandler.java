@@ -11,6 +11,14 @@ import org.springframework.security.oauth2.client.authentication.OAuth2Authentic
 import org.springframework.security.web.authentication.SavedRequestAwareAuthenticationSuccessHandler;
 import org.springframework.stereotype.Component;
 
+/**
+ * Handles post-OAuth login success by initializing the per-owner account session
+ * and routing the user to the activity page when their mailbox still needs an
+ * initial bootstrap sync.
+ * <p>
+ * Product functionality supported: session-based account selection and the
+ * initial mailbox bootstrap flow after Gmail/Outlook login.
+ */
 @Component
 public class AccountLoginSuccessHandler
         extends SavedRequestAwareAuthenticationSuccessHandler {
@@ -27,6 +35,11 @@ public class AccountLoginSuccessHandler
         setAlwaysUseDefaultTargetUrl(true);
     }
 
+    /**
+     * Initializes the account session for the authenticated OAuth principal and
+     * redirects to {@code /activity} when the mailbox bootstrap is still pending,
+     * otherwise defers to the default target URL handling.
+     */
     @Override
     public void onAuthenticationSuccess(
             HttpServletRequest request,

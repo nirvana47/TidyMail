@@ -7,6 +7,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+/**
+ * Throttles outbound Gmail API requests with semaphore-based concurrency
+ * limits and an inter-request delay, reserving capacity for freshness
+ * operations so backfill/rescan work cannot starve live sync.
+ *
+ * <p>Product functionality supported: Gmail provider rate limiting.
+ */
 @Component
 public class GmailRateLimiter {
 

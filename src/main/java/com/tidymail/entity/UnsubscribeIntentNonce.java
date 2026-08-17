@@ -11,6 +11,12 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
 
+/**
+ * Single-purpose, time-limited nonce that authorizes one unsubscribe intent,
+ * fingerprinting the sender candidate and destination, and records when consumed.
+ * <p>Product functionality: truncate flow unsubscribe — gates the intent end-point
+ * so only legitimate, unexpired unsubscribe requests are honored.
+ */
 @Entity
 @Table(name = "unsubscribe_intent_nonces")
 public class UnsubscribeIntentNonce {
@@ -46,6 +52,9 @@ public class UnsubscribeIntentNonce {
     protected UnsubscribeIntentNonce() {
     }
 
+    /**
+     * Issues a nonce for the given account and destination, requiring a future expiry.
+     */
     public static UnsubscribeIntentNonce issue(
             long accountId,
             String nonceFingerprint,

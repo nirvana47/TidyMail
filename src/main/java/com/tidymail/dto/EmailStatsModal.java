@@ -9,9 +9,15 @@ import java.util.Locale;
 import java.util.UUID;
 
 /**
- * Shared, provider-free model for Review and Unsubscribe email statistics modals.
+ * Shared, provider-free model for Review and Unsubscribe email statistics
+ * modals.
  * The reusable Thymeleaf contract is
  * {@code fragments/email-stats-modal-frag :: modal}.
+ *
+ * <p>Product functionality supported: the <em>email stats modal</em> shown on
+ * the Review and Unsubscribe pages, which lists the exact messages behind an
+ * action/sender with a distribution chart and top actions. Provides helper
+ * methods for the chart's range label, axis ticks, and attachment labels.</p>
  */
 public record EmailStatsModal(
     UUID actionPublicId,
@@ -41,6 +47,9 @@ public record EmailStatsModal(
         emails = List.copyOf(emails);
     }
 
+    /**
+     * The human-readable date range covered by the distribution buckets.
+     */
     public String rangeLabel() {
         if (distribution.isEmpty()) return "Selected range unavailable";
         return RANGE_DATE.format(distribution.getFirst().startInclusive())
@@ -48,6 +57,9 @@ public record EmailStatsModal(
             + RANGE_DATE.format(distribution.getLast().endExclusive().minusMillis(1));
     }
 
+    /**
+     * The largest bucket count, for scaling the chart.
+     */
     public long maxDistributionCount() {
         return distribution.stream()
             .mapToLong(DistributionBucket::count)
@@ -55,6 +67,9 @@ public record EmailStatsModal(
             .orElse(0);
     }
 
+    /**
+     * A &quot;nice&quot; rounded maximum for the chart's y-axis.
+     */
     public long distributionAxisMax() {
         long max = maxDistributionCount();
         if (max <= 5) return 5;
@@ -67,6 +82,9 @@ public record EmailStatsModal(
         return Math.max(1, Math.round(nice * magnitude));
     }
 
+    /**
+     * The y-axis tick values (descending to 0).
+     */
     public List<Long> distributionAxisTicks() {
         long max = distributionAxisMax();
         long step = Math.max(1, max / 5);
@@ -74,6 +92,10 @@ public record EmailStatsModal(
             max - (3 * step), max - (4 * step), 0L);
     }
 
+    /**
+     * Whether the bucket at the given index should show a label (first,
+     * middle, last).
+     */
     public boolean showDistributionLabel(int index) {
         if (distribution.isEmpty()) return false;
         return index == 0
@@ -81,6 +103,10 @@ public record EmailStatsModal(
             || index == distribution.size() - 1;
     }
 
+    /**
+     * Whether any listed email has an unknown attachment state (still being
+     * checked).
+     */
     public boolean hasUnknownAttachmentState() {
         return emails.stream()
             .anyMatch(email -> email.attachmentState() == AttachmentState.UNKNOWN);

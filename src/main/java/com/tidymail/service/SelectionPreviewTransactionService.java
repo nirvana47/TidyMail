@@ -37,6 +37,15 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+/**
+ * Materializes bulk-action selections into exact scopes within repeatable-read
+ * transactions: computes the preview (with protection/cap/ambiguity checks),
+ * records protected overrides, and prepares per-sender cleanup stages with
+ * confirmation intents.
+ *
+ * <p>Product functionality supported: the <em>Bulk Action Preview</em> flow's
+ * exact-scope materialization, preview, and cleanup staging.
+ */
 public class SelectionPreviewTransactionService {
     private static final int SCOPE_LIMIT = 1000;
 
@@ -78,6 +87,7 @@ public class SelectionPreviewTransactionService {
         this.clock = clock;
     }
 
+    /** Materializes a selection and returns its exact-scope preview. */
     @Transactional(
         propagation = Propagation.REQUIRED,
         isolation = Isolation.REPEATABLE_READ)
@@ -182,6 +192,7 @@ public class SelectionPreviewTransactionService {
             State.READY, digests, materialized, request, null, 0, null, confirmation);
     }
 
+    /** Prepares per-sender cleanup stages for a Senders selection. */
     @Transactional(
         propagation = Propagation.REQUIRED,
         isolation = Isolation.REPEATABLE_READ)
@@ -298,6 +309,7 @@ public class SelectionPreviewTransactionService {
         return new CleanupPreparation(prepared, union.size());
     }
 
+    /** Prepares per-sender cleanup stages for an Unread selection. */
     @Transactional(
         propagation = Propagation.REQUIRED,
         isolation = Isolation.REPEATABLE_READ)
@@ -398,6 +410,7 @@ public class SelectionPreviewTransactionService {
         return new CleanupPreparation(prepared, union.size());
     }
 
+    /** Materializes the selection via the query repository. */
     private MaterializationResult preflight(
             List<Long> accountIds,
             SelectionRequest request,
@@ -412,6 +425,7 @@ public class SelectionPreviewTransactionService {
                 request.includeProtected(), now);
     }
 
+    /** Builds the warning codes for an account's materialization. */
     private static List<String> warnings(
             AccountMaterialization account, boolean includeProtected) {
         List<String> warnings = new ArrayList<>();
@@ -422,6 +436,7 @@ public class SelectionPreviewTransactionService {
         return List.copyOf(warnings);
     }
 
+    /** Builds a preview result without a confirmation. */
     private static SelectionScopePreview result(
             State state,
             List<SelectionScopeDigest> digests,
@@ -434,6 +449,7 @@ public class SelectionPreviewTransactionService {
             state, digests, materialized, request, capAccountLabel, capCount, error, null);
     }
 
+    /** Builds a preview result with aggregated counts and a confirmation. */
     private static SelectionScopePreview result(
             State state,
             List<SelectionScopeDigest> digests,
@@ -461,22 +477,26 @@ public class SelectionPreviewTransactionService {
             error, confirmation);
     }
 
+    /** Formats an account label for display. */
     private static String accountLabel(UserAccount account) {
         return account.getEmail() + " (Gmail)";
     }
 
+    /** Extracts the domain from a sender address. */
     private static String senderDomain(String senderAddress) {
         int separator = senderAddress.lastIndexOf('@');
         return separator < 0 || separator == senderAddress.length() - 1
             ? null : senderAddress.substring(separator + 1);
     }
 
+    /** Normalizes a sender address for grouping. */
     private static String normalizeSender(String senderAddress) {
         return senderAddress == null || senderAddress.isBlank()
             ? "__missing__"
             : senderAddress.strip().toLowerCase(Locale.ROOT);
     }
 
+    /** A sender's materialized message IDs for one account. */
     private record SenderMaterialization(
         String senderAddress,
         long accountId,
@@ -487,12 +507,15 @@ public class SelectionPreviewTransactionService {
         }
     }
 
+    /** A distinct (account, message) pair. */
     private record AccountMessageId(long accountId, String messageId) {
     }
 
+    /** A distinct (account, sender) pair. */
     private record AccountSender(long accountId, String senderAddress) {
     }
 
+    /** One prepared cleanup stage with its scope and confirmation. */
     public record PreparedCleanupStage(
         long accountId,
         String senderAddress,
@@ -501,6 +524,7 @@ public class SelectionPreviewTransactionService {
     ) {
     }
 
+    /** The prepared cleanup stages and distinct message count. */
     public record CleanupPreparation(
         List<PreparedCleanupStage> stages,
         int distinctMessageCount

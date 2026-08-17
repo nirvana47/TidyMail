@@ -9,6 +9,12 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import java.time.Instant;
 
+/**
+ * Tracks the progress and status of a mailbox sync job per account (messages scanned,
+ * pages completed, checkpoint token, lane/phase), including retry and error details.
+ * <p>Product functionality: mailbox sync progress — drives sync status reporting
+ * and resumable, checkpointed mailbox synchronization.
+ */
 @Entity
 @Table(name = "sync_progress")
 public class SyncProgress {

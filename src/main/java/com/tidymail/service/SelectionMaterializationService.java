@@ -10,6 +10,14 @@ import java.util.List;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
+/**
+ * Materializes a bulk-action selection into an exact-scope preview, decoding the
+ * selected row keys, validating the account scope, and handling concurrent
+ * scope-insert races.
+ *
+ * <p>Product functionality supported: the <em>Bulk Action Preview</em> flow's
+ * exact-scope materialization.
+ */
 @Service
 public class SelectionMaterializationService {
     private final SelectionPreviewTransactionService transactionService;
@@ -19,6 +27,7 @@ public class SelectionMaterializationService {
         this.transactionService = transactionService;
     }
 
+    /** Materializes the selection and returns its preview. */
     public SelectionScopePreview preview(
             Collection<Long> authorizedAccountIds, SelectionRequest request) {
         if (request == null) throw new IllegalArgumentException("Selection request is required");
@@ -33,6 +42,7 @@ public class SelectionMaterializationService {
         }
     }
 
+    /** Decodes and validates the selected row keys into locators. */
     private static List<SelectionLocator> decode(
             SelectionRequest request, List<Long> authorizedAccountIds) {
         if (request.mode() != com.tidymail.dto.SelectionMode.INDIVIDUAL) {
@@ -51,6 +61,7 @@ public class SelectionMaterializationService {
         }).toList();
     }
 
+    /** Validates the authorized account scope matches the query. */
     private static List<Long> requireScope(
             Collection<Long> accountIds, String accountSelector) {
         if (accountIds == null || accountIds.isEmpty()
@@ -67,6 +78,7 @@ public class SelectionMaterializationService {
         return scope;
     }
 
+    /** Returns true if the failure is a scope-hash unique-constraint violation. */
     private static boolean isScopeHashUniqueViolation(Throwable failure) {
         for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
             if (cause instanceof SQLException sql && "23505".equals(sql.getSQLState())) {

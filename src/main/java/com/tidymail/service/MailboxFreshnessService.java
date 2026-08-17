@@ -19,6 +19,14 @@ import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+/**
+ * Synchronizes incremental mailbox changes (new/deleted messages) from the
+ * provider's change feed, committing freshness units and handling history
+ * expiration by triggering a rescan.
+ *
+ * <p>Product functionality supported: the metadata-only sync's incremental
+ * freshness updates.
+ */
 @Service
 public class MailboxFreshnessService {
     private static final int MAX_CHANGE_IDS_PER_UNIT = 500;
@@ -33,6 +41,7 @@ public class MailboxFreshnessService {
         this.commits = commits;
     }
 
+    /** Synchronizes one freshness pass, returning the sync outcome. */
     public SyncOutcome synchronizeFreshness(
             UserAccount account, MailboxSyncProvider provider, String leaseOwner) {
         StateSnapshot state = states.findByAccountId(account.getId())
@@ -106,6 +115,7 @@ public class MailboxFreshnessService {
         return SyncOutcome.complete();
     }
 
+    /** Maps a stored cursor-kind label to its change-feed kind. */
     private static SyncCapabilities.ChangeFeedKind parseCursorKind(String cursorKind) {
         return switch (cursorKind) {
             case "GMAIL_HISTORY_ID" -> SyncCapabilities.ChangeFeedKind.HISTORY;
@@ -114,12 +124,14 @@ public class MailboxFreshnessService {
         };
     }
 
+    /** Requires provider work to run outside a transaction. */
     static void assertProviderOutsideTransaction() {
         if (TransactionSynchronizationManager.isActualTransactionActive()) {
             throw new IllegalStateException("Provider work must run outside a transaction");
         }
     }
 
+    /** The outcome of a sync pass: whether more work, freshness, or rescan is queued. */
     public record SyncOutcome(
             boolean moreWork, boolean queueFreshness, boolean queueRescan) {
         public static SyncOutcome complete() {

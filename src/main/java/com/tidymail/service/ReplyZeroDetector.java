@@ -17,6 +17,14 @@ import java.util.Map;
 import java.util.Set;
 import org.springframework.stereotype.Service;
 
+/**
+ * Detects personal messages that may be awaiting a reply (the "Reply Zero"
+ * queue) by filtering out bulk/automated senders and confirming, via a provider
+ * thread lookup, that the user has not yet participated in the thread.
+ *
+ * <p>Product functionality supported: the <em>Reply Zero</em> queue, which
+ * surfaces personal emails awaiting the user's reply.
+ */
 @Service
 public class ReplyZeroDetector {
 
@@ -27,6 +35,7 @@ public class ReplyZeroDetector {
             "sparkpostmail.com", "mailjet.com", "sendgrid.com", "yahoo-mail.com"
     );
 
+    /** Analyzes messages and returns the reply-required candidates. */
     public List<ReplyZeroItem> analyze(
             List<MailMessage> messages,
             Map<String, SenderAggregator.SenderAccumulator> senderAggregations,
@@ -135,6 +144,7 @@ public class ReplyZeroDetector {
         return List.copyOf(result);
     }
 
+    /** Extracts the second-level domain from a domain. */
     private static String sld(String domain) {
         if (domain == null) return null;
         String[] parts = domain.split("\\.");

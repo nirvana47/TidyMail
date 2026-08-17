@@ -11,6 +11,14 @@ import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
+/**
+ * Builds the email-stats modal for a review action, listing the affected emails
+ * (or sender history for unsubscribes), their time distribution, and the actions
+ * available for that action.
+ *
+ * <p>Product functionality supported: the <em>Review</em> flow's email-stats
+ * modal and its execute/undo entry points.
+ */
 @Service
 public class EmailStatsModalService {
     private static final int MAX_BUCKETS = 6;
@@ -20,6 +28,7 @@ public class EmailStatsModalService {
         this.repository = repository;
     }
 
+    /** Builds the email-stats modal for the given review action. */
     public EmailStatsModal review(
             List<Long> accountIds, String accountQuery, UUID actionPublicId) {
         var source = repository.emailStatsSource(accountIds, actionPublicId);
@@ -43,6 +52,7 @@ public class EmailStatsModalService {
             emails);
     }
 
+    /** Determines the available top actions for the action's state. */
     private static List<EmailStatsModal.TopAction> actions(
             ReviewActionQueryRepository.EmailStatsSource source,
             String accountQuery) {
@@ -66,6 +76,7 @@ public class EmailStatsModalService {
         return List.copyOf(result);
     }
 
+    /** Groups the emails' received times into a bounded time distribution. */
     static List<EmailStatsModal.DistributionBucket> buckets(
             List<EmailStatsModal.EmailRow> emails) {
         List<Instant> received = emails.stream()

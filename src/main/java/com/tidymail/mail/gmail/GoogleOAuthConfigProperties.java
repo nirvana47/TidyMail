@@ -18,6 +18,12 @@ import org.springframework.stereotype.Component;
  * Spring's relaxed-binding rules, which is a different shape and would force
  * users to declare the same credential twice.
  */
+/**
+ * Reads the Google OAuth developer credentials (client ID / secret) from the
+ * environment and reports whether they are configured.
+ *
+ * <p>Product functionality supported: Gmail provider OAuth configuration.
+ */
 @Component
 public class GoogleOAuthConfigProperties {
 

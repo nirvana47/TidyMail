@@ -7,6 +7,14 @@ import com.tidymail.service.DecisionRuleSet.UnreadRecommendation;
 import java.time.Instant;
 import java.util.List;
 
+/**
+ * A single unread-message decision row in the Unread page, with the sender,
+ * subject, received time, inferred category/thread state, waiting-on-me flag,
+ * recommendation, and the reasons behind it.
+ *
+ * <p>Product functionality supported: the <em>Unread</em> flow's decision list,
+ * which drives reply-required and cleanup recommendations.
+ */
 public record UnreadDecisionRow(
     String rowKey,
     long accountId,

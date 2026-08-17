@@ -15,6 +15,12 @@ import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.core.OAuth2AccessToken;
 import org.springframework.stereotype.Component;
 
+/**
+ * Builds authenticated Gmail API clients for Google user accounts, wiring an
+ * end-user's OAuth token into a configured HTTP transport.
+ *
+ * <p>Product functionality supported: Gmail provider OAuth client creation.
+ */
 @Component
 public class GmailClientFactory {
 

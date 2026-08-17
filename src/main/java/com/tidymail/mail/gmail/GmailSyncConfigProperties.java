@@ -20,6 +20,12 @@ import org.springframework.stereotype.Component;
  * {@code @ConfigurationProperties(prefix = "app.sync.gmail")} would require.
  * Using the same variable names everywhere eliminates double-declaration.
  */
+/**
+ * Holds the Gmail sync tuning parameters read from the environment, and
+ * validates them on startup so misconfiguration fails fast.
+ *
+ * <p>Product functionality supported: Gmail provider sync configuration.
+ */
 @Component
 public class GmailSyncConfigProperties {
 

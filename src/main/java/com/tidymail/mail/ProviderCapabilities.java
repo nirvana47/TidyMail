@@ -2,6 +2,12 @@ package com.tidymail.mail;
 
 import java.util.Objects;
 
+/**
+ * Describes a provider's data and reliability capabilities.
+ * <p>
+ * Product functionality supported: metadata-only sync, deciding whether a
+ * total count is a reliable denominator for progress reporting.
+ */
 public class ProviderCapabilities {
 
     private final DenominatorReliability mailboxTotal;
@@ -25,12 +31,18 @@ public class ProviderCapabilities {
         return arbitraryFilteredTotal;
     }
 
+    /**
+     * Returns capabilities where no totals are available.
+     */
     public static ProviderCapabilities unknown() {
         return new ProviderCapabilities(
             DenominatorReliability.UNAVAILABLE,
             DenominatorReliability.UNAVAILABLE);
     }
 
+    /**
+     * Returns how reliable the total is for the given load scope.
+     */
     public DenominatorReliability loadedDenominator(LoadedMessageScope scope) {
         return switch (scope) {
             case MAILBOX -> mailboxTotal;
@@ -38,6 +50,9 @@ public class ProviderCapabilities {
         };
     }
 
+    /**
+     * Builds progress for a load, using the provider total only when reliable.
+     */
     public LoadedMessageProgress loadedProgress(
             LoadedMessageScope scope, long loadedCount, Long providerTotal) {
         boolean reliable = loadedDenominator(scope) == DenominatorReliability.RELIABLE;

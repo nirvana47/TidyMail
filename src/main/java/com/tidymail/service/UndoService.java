@@ -40,6 +40,14 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
+/**
+ * Implements the undo capability: prepares and executes the inverse of an applied
+ * archive/trash/mark-read action against the exact applied targets, guarded by a
+ * short-lived intent token, an undo window, and lease-based idempotency.
+ *
+ * <p>Product functionality supported: the <em>Undo</em> flow, which reverses
+ * recently applied cleanup actions.
+ */
 public class UndoService {
     private static final Duration INTENT_TTL = Duration.ofMinutes(5);
     private static final Duration LEASE = Duration.ofMinutes(2);
@@ -90,6 +98,7 @@ public class UndoService {
         this(actions, null, scopes, null, null, null, null, null, null, Map.of(), null);
     }
 
+    /** Prepares an undo intent token for an eligible action. */
     public UndoConfirmation prepare(
             String ownerKey, long accountId, UUID actionPublicId) {
         return transactions.execute(status -> {
@@ -117,6 +126,7 @@ public class UndoService {
         });
     }
 
+    /** Executes the undo, reserving, dispatching the inverse, and completing. */
     public UndoResult execute(
             String ownerKey, long accountId, UUID actionPublicId, String rawIntent) {
         UndoAttempt attempt = transactions.execute(status ->
@@ -137,6 +147,7 @@ public class UndoService {
         return transactions.execute(status -> complete(reserved, completedResult));
     }
 
+    /** Reserves an undo execution or replays an existing one. */
     private UndoAttempt reserveOrRecover(
             String ownerKey, long accountId, UUID actionPublicId, String rawIntent) {
         Instant now = clock.instant();
@@ -201,6 +212,7 @@ public class UndoService {
             action, account, execution.getId(), lease, ids, ordinals), null);
     }
 
+    /** Builds the undo result from an existing execution. */
     private UndoResult result(
             long accountId, UUID actionPublicId, long executionId) {
         UserAction action = actions.findByPublicIdAndAccountId(
@@ -217,6 +229,7 @@ public class UndoService {
                 ? "IN_PROGRESS" : action.getStatus());
     }
 
+    /** Completes the undo execution and updates the action status. */
     private UndoResult complete(ReservedUndo reserved, BulkActionResult rawResult) {
         Instant now = clock.instant();
         ActionExecution execution = executions.findForUpdate(
@@ -267,6 +280,7 @@ public class UndoService {
             facts.failed(), facts.verificationPending(), action.getStatus());
     }
 
+    /** Loads and validates an action eligible for undo. */
     private UserAction eligibleAction(
             long accountId, UUID actionPublicId, Instant now) {
         UserAction action = actions.findForUpdateByPublicIdAndAccountId(
@@ -277,6 +291,7 @@ public class UndoService {
         return action;
     }
 
+    /** Requires the action to be within its undo window and not already undone. */
     private void assertEligible(
             UserAction action, List<ActionExecutionTarget> applied, Instant now) {
         if (action.getActionScopeId() == null || !TYPES.contains(action.getActionType())
@@ -290,6 +305,7 @@ public class UndoService {
         }
     }
 
+    /** Verifies the applied target ordinals match the scope. */
     private ActionScope verifyOrdinals(UserAction action, List<Integer> ordinals) {
         ActionScope scope = scopes.requireScope(
             action.getAccountId(), action.getActionScopeId());
@@ -309,6 +325,7 @@ public class UndoService {
         return scope;
     }
 
+    /** Computes the undo-intent subject fingerprint. */
     private static String subject(
             UserAction action, List<ActionExecutionTarget> applied) {
         return ActionFingerprints.bind(
@@ -317,6 +334,7 @@ public class UndoService {
                 row.getScopeOrdinal() + ":" + row.getTargetFingerprint()).toList());
     }
 
+    /** Computes the inverse provider operation for the action type. */
     private BulkActionResult inverse(MailProvider provider, ReservedUndo reserved) {
         return switch (reserved.action().getActionType()) {
             case "ARCHIVE" -> provider.applyLabel(
@@ -331,6 +349,7 @@ public class UndoService {
         };
     }
 
+    /** Resolves the mail provider bean for the account. */
     private MailProvider provider(UserAccount account) {
         String bean = switch (account.getProvider()) {
             case "google" -> "gmailMailService";
@@ -346,17 +365,21 @@ public class UndoService {
         return provider;
     }
 
+    /** The bulk actions that support undo. */
     public enum BulkAction { ARCHIVE, TRASH, MARK_READ }
 
+    /** Returns the capped size of an ID list (max 1000). */
     public static int cap1000Size(List<?> ids) {
         return Math.min(1000, ids.size());
     }
 
+    /** Caps an ID list to 1000, reporting the original size. */
     public static CapResult cap1000(List<String> ids) {
         int cap = cap1000Size(ids);
         return new CapResult(ids.stream().limit(cap).toList(), ids.size(), cap);
     }
 
+    /** Builds the inverse-action metadata for an action row. */
     public static Map<String, Object> buildInverseActionData(
             BulkAction forward, List<String> messageIds) {
         Map<String, Object> data = new LinkedHashMap<>();
@@ -371,6 +394,7 @@ public class UndoService {
         return data;
     }
 
+    /** Creates a queued action row with inverse data (legacy helper). */
     public UserAction createActionRow(
             Long accountId, BulkAction action, String fromAddress,
             List<String> messageIds) {
@@ -388,6 +412,7 @@ public class UndoService {
         return actions.save(row);
     }
 
+    /** Returns true if the action is currently undoable. */
     public static boolean isUndoable(UserAction row, Instant now) {
         return row != null && row.getActionScopeId() != null
             && row.getUndoEligibleUntil() != null
@@ -395,12 +420,14 @@ public class UndoService {
             && TYPES.contains(row.getActionType());
     }
 
+    /** Legacy undo entry point; reports that applied detail was not recorded. */
     public void executeUndo(UserAccount account, MailProvider provider, UserAction row) {
         throw new ResponseStatusException(
             HttpStatus.GONE,
             "Undo unavailable - applied target detail was not recorded.");
     }
 
+    /** Returns the human-readable label for an inverse action. */
     private static String inverseLabel(String actionType) {
         return switch (actionType) {
             case "ARCHIVE" -> "Restore to Inbox";
@@ -410,11 +437,13 @@ public class UndoService {
         };
     }
 
+    /** Formats an enum-style value as a human-readable label. */
     private static String visible(String value) {
         String normalized = value.toLowerCase().replace('_', ' ');
         return Character.toUpperCase(normalized.charAt(0)) + normalized.substring(1);
     }
 
+    /** Formats an account label with its provider name. */
     private static String accountLabel(UserAccount account) {
         String provider = switch (account.getProvider()) {
             case "google" -> "Google";
@@ -424,30 +453,36 @@ public class UndoService {
         return account.getEmail() + " (" + provider + ")";
     }
 
+    /** Throws a conflict when the undo intent is stale. */
     private static ResponseStatusException stale() {
         return new ResponseStatusException(HttpStatus.CONFLICT, "undo_intent_stale");
     }
 
+    /** Returns a not-found exception for a missing action. */
     private static ResponseStatusException notFound() {
         return new ResponseStatusException(HttpStatus.NOT_FOUND, "action_not_found");
     }
 
+    /** A reserved undo execution and its dispatch facts. */
     private record ReservedUndo(
         UserAction action, UserAccount account, long executionId, String lease,
         List<String> ids, List<Integer> ordinals
     ) {
     }
 
+    /** A reserved undo or an existing execution to replay. */
     private record UndoAttempt(
         ReservedUndo reserved, Long existingExecutionId
     ) {
     }
 
+    /** The result of capping an ID list. */
     public record CapResult(
         List<String> messageIds, int cappedOriginal, int actualApplied
     ) {
     }
 
+    /** The result of executing an undo. */
     public record UndoResult(
         UUID actionPublicId, int requested, int reverted, int failed,
         int verificationPending, String status

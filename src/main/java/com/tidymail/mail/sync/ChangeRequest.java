@@ -1,5 +1,10 @@
 package com.tidymail.mail.sync;
 
+/**
+ * A paging request for pulling changes from a provider's change feed.
+ *
+ * <p>Product functionality supported: provider-agnostic change-feed sync.
+ */
 public record ChangeRequest(
     String cursor,
     SyncCapabilities.ChangeFeedKind cursorKind,

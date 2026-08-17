@@ -14,6 +14,12 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import org.hibernate.annotations.Immutable;
 
+/**
+ * Immutable event recording each outcome transition of an unsubscribe attempt, including
+ * the status, reason, HTTP status class, and confirmation source.
+ * <p>Product functionality: truncate flow — the event stream/history behind
+ * unsubscribe attempt monitoring and diagnostics.
+ */
 @Entity
 @Immutable
 @Table(name = "unsubscribe_outcome_events")
@@ -49,6 +55,9 @@ public class UnsubscribeOutcomeEvent {
     protected UnsubscribeOutcomeEvent() {
     }
 
+    /**
+     * Records an unsubscribe outcome event from validated facts about the attempt.
+     */
     public static UnsubscribeOutcomeEvent create(
             long accountId,
             long attemptId,

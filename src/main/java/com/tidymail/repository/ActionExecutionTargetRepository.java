@@ -6,11 +6,18 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+/**
+ * Queries and persists the per-target outcomes of action executions.
+ * <p>Product functionality: the exact <em>action execution engine</em> (execution targets).
+ */
 public interface ActionExecutionTargetRepository
         extends JpaRepository<ActionExecutionTarget, Long> {
     List<ActionExecutionTarget> findByExecutionIdAndAccountIdOrderByScopeOrdinal(
         Long executionId, Long accountId);
 
+    /**
+     * Returns the successfully forwarded targets for an action, ordered by scope ordinal.
+     */
     @Query("""
         select target from ActionExecutionTarget target, ActionExecution execution
         where target.executionId = execution.id

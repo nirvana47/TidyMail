@@ -167,12 +167,19 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
         this.syncConfig = syncConfig;
     }
 
+    /**
+     * Returns the sync capabilities this Gmail implementation supports.
+     */
     @Override
     public SyncCapabilities capabilities() {
         return new SyncCapabilities(
             SyncCapabilities.ChangeFeedKind.HISTORY, true, true);
     }
 
+    /**
+     * Profiles the account, returning a snapshot with the current history
+     * cursor and total message count.
+     */
     @Override
     public MailboxSnapshot profile(UserAccount account) {
         Gmail gmail = clientFactory.buildFor(account);
@@ -190,6 +197,10 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
         });
     }
 
+    /**
+     * Lists the most recent messages for an initial bootstrap, fetching
+     * metadata for each.
+     */
     @Override
     public List<MailMessage> listRecentBootstrap(UserAccount account, int maxResults) {
         if (maxResults < 100 || maxResults > 250) {
@@ -210,6 +221,9 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
         });
     }
 
+    /**
+     * Backfills a page of messages (including spam/trash) for the account.
+     */
     @Override
     public PageResult<MailMessage> listBackfill(
             UserAccount account, BackfillRequest request) {
@@ -236,6 +250,10 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
         });
     }
 
+    /**
+     * Pulls a page of changes from the Gmail history feed since the given
+     * cursor, returning changed/deleted IDs and the next cursor.
+     */
     @Override
     public ChangePage listChanges(UserAccount account, ChangeRequest request) {
         if (request.cursorKind() != SyncCapabilities.ChangeFeedKind.HISTORY) {
@@ -300,6 +318,9 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
         });
     }
 
+    /**
+     * Fetches current metadata for the given message IDs.
+     */
     @Override
     public List<MailMessage> getCurrentMetadata(
             UserAccount account, List<String> messageIds) {
@@ -316,6 +337,9 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
         });
     }
 
+    /**
+     * Lists a page of message IDs that have attachments.
+     */
     @Override
     public AttachmentMembershipPage listAttachmentMembership(
             UserAccount account, String pageToken) {
@@ -340,6 +364,10 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
     // listMessages (Pitfall G2, G3, D-4.1, D-4.2)
     // ---------------------------------------------------------------------
     @Override
+    /**
+     * Lists a page of messages with metadata, batching the per-message
+     * metadata fetches to limit concurrent Gmail requests.
+     */
     public PageResult<MailMessage> listMessages(UserAccount account, String pageToken, int maxResults) {
         Gmail gmail = clientFactory.buildFor(account);
         return rateLimiter.supplyWithPermit(() -> {
@@ -408,6 +436,9 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
     // ---------------------------------------------------------------------
     // listFoldersOrLabels
     // ---------------------------------------------------------------------
+    /**
+     * Lists the account's folders/labels.
+     */
     @Override
     public List<MailFolderOrLabel> listFoldersOrLabels(UserAccount account) {
         Gmail gmail = clientFactory.buildFor(account);
@@ -446,6 +477,10 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
     // ---------------------------------------------------------------------
     // batchModify (GML-4, D-4.4, D-4.6 partial-failure)
     // ---------------------------------------------------------------------
+    /**
+     * Applies a bulk label add/remove action to the given messages, reporting
+     * partial failures per message.
+     */
     @Override
     public BulkActionResult batchModify(UserAccount account, BulkActionRequest request) {
         LabelDelta delta = BULK_ACTION_LABELS.get(request.actionType());
@@ -490,6 +525,9 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
     // ---------------------------------------------------------------------
     // applyLabel
     // ---------------------------------------------------------------------
+    /**
+     * Adds or removes a single label on the given messages.
+     */
     @Override
     public BulkActionResult applyLabel(UserAccount account, List<String> messageIds, String labelId, boolean add) {
         if (labelId == null || labelId.isBlank()) {
@@ -522,6 +560,10 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
     // ---------------------------------------------------------------------
     // getThreadMetadata
     // ---------------------------------------------------------------------
+    /**
+     * Fetches metadata for a thread and summarizes its participants, domains,
+     * and message count.
+     */
     @Override
     public MailThreadSummary getThreadMetadata(UserAccount account, String threadId) {
         Gmail gmail = clientFactory.buildFor(account);

@@ -4,6 +4,13 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * A single staged cleanup action shown in the Review queue, describing the target
+ * (sender or unread message), its account/source, eligibility, and any conflicts.
+ *
+ * <p>Product functionality supported: the <em>Review</em> flow, which lists queued
+ * exact-scope actions and lets the user approve or cancel them.
+ */
 public record ReviewActionRow(
     UUID actionPublicId,
     UUID conflictPublicId,
@@ -33,6 +40,7 @@ public record ReviewActionRow(
         }
     }
 
+    /** Returns a copy of this row carrying the user's cancellation intent. */
     public ReviewActionRow withCancellationIntent(String intent) {
         return new ReviewActionRow(
             actionPublicId, conflictPublicId, group, actionLabel, accountLabel,

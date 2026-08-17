@@ -40,6 +40,15 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @Transactional(readOnly = true)
+/**
+ * Classifies unsubscribe candidates from indexed headers: parses List-Unsubscribe
+ * metadata, validates destinations, determines RFC 8058/legacy/mailto/manual
+ * eligibility, and builds the candidate list, inspections, and execution
+ * candidates.
+ *
+ * <p>Product functionality supported: the <em>Unsubscribe</em> flow's candidate
+ * list, inspection, and method selection.
+ */
 public class UnsubscribeCandidateService {
     private static final int CLASSIFICATION_BATCH_SIZE = 200;
     private static final int SENDER_BATCH_SIZE = 200;
@@ -70,6 +79,7 @@ public class UnsubscribeCandidateService {
         this.clock = clock;
     }
 
+    /** Returns the paged unsubscribe candidate list. */
     public DecisionPage<UnsubscribeCandidateRow> query(
             Collection<Long> authorizedAccountIds, UnsubscribeQuery query) {
         Instant now = clock.instant();
@@ -111,6 +121,7 @@ public class UnsubscribeCandidateService {
                 : query.withPage(query.page() + 1).canonicalParameters());
     }
 
+    /** Returns the candidate list sorted by classification (requires full scan). */
     private DecisionPage<UnsubscribeCandidateRow> queryWithClassificationSort(
             List<Long> scope, UnsubscribeQuery query, Instant now) {
         Map<SenderIdentity, ClassifiedCandidate> candidates = candidatesBySender(scope, now);
@@ -174,6 +185,7 @@ public class UnsubscribeCandidateService {
                 : query.withPage(query.page() + 1).canonicalParameters());
     }
 
+    /** Returns a comparator for exporting candidates. */
     public Comparator<UnsubscribeCandidateRow> exportOrder(UnsubscribeQuery query) {
         Comparator<UnsubscribeCandidateRow> selected = switch (query.sort()) {
             case VOLUME_DESC -> Comparator.comparingLong(
@@ -205,6 +217,7 @@ public class UnsubscribeCandidateService {
                 Comparator.comparingLong(UnsubscribeCandidateRow::sourceMetadataId).reversed());
     }
 
+    /** Loads all classified candidates keyed by sender. */
     private Map<SenderIdentity, ClassifiedCandidate> candidatesBySender(
             List<Long> scope, Instant now) {
         LinkedHashMap<SenderIdentity, ClassifiedCandidate> result = new LinkedHashMap<>();
@@ -222,6 +235,7 @@ public class UnsubscribeCandidateService {
         return result;
     }
 
+    /** Loads classified candidates for the given senders, keyed by sender. */
     private Map<SenderIdentity, ClassifiedCandidate> candidatesBySender(
             List<Long> scope, Instant now, Collection<SenderIdentity> identities) {
         LinkedHashMap<SenderIdentity, ClassifiedCandidate> result = new LinkedHashMap<>();
@@ -233,12 +247,14 @@ public class UnsubscribeCandidateService {
         return result;
     }
 
+    /** Returns true if the sort requires full classification. */
     private static boolean requiresClassificationFallback(UnsubscribeQuery.Sort sort) {
         return sort == UnsubscribeQuery.Sort.CONFIDENCE_DESC
             || sort == UnsubscribeQuery.Sort.METHOD
             || sort == UnsubscribeQuery.Sort.REVIEW;
     }
 
+    /** Builds a candidate row from a sender summary and classification. */
     private static UnsubscribeCandidateRow senderRow(
             SenderSummary sender,
             ClassifiedCandidate candidate,
@@ -283,6 +299,7 @@ public class UnsubscribeCandidateService {
             primary);
     }
 
+    /** Returns true if a candidate row matches the query filters. */
     private static boolean matches(UnsubscribeCandidateRow row, UnsubscribeQuery query) {
         if (query.category() != UnsubscribeQuery.Category.ALL
                 && !row.lifecycleCategory().equals(query.category().name())) {
@@ -294,6 +311,7 @@ public class UnsubscribeCandidateService {
             .toLowerCase(Locale.ROOT).contains(search);
     }
 
+    /** Builds a detailed inspection for a candidate. */
     public UnsubscribeInspection inspect(
             Collection<Long> authorizedAccountIds, String candidateKey) {
         if (!UnsubscribeCandidateKey.isCanonical(candidateKey)) throw notFound();
@@ -322,6 +340,7 @@ public class UnsubscribeCandidateService {
             candidate.methods());
     }
 
+    /** Returns the candidate row for a Senders-page sender, if any. */
     public java.util.Optional<UnsubscribeCandidateRow> candidateForSender(
             Collection<Long> authorizedAccountIds, String senderRowKey) {
         DecisionRowKey.Locator locator =
@@ -338,6 +357,7 @@ public class UnsubscribeCandidateService {
         return java.util.Optional.of(candidate.withOutcome(outcome).row());
     }
 
+    /** Builds a manual navigation target (mailto or provider) for a candidate. */
     public ManualNavigation manualNavigation(
             Collection<Long> authorizedAccountIds,
             String candidateKey,
@@ -362,6 +382,7 @@ public class UnsubscribeCandidateService {
         return new ManualNavigation(mailto.get(methodIndex).canonicalUri().toASCIIString(), false);
     }
 
+    /** Builds the execution candidate for a chosen method. */
     public ExecutionCandidate executionCandidate(
             Collection<Long> authorizedAccountIds,
             String candidateKey,
@@ -416,6 +437,7 @@ public class UnsubscribeCandidateService {
             displayListIdentity(source));
     }
 
+    /** Finds an execution candidate by its fingerprint. */
     public ExecutionCandidate executionCandidateByFingerprint(
             long accountId,
             String candidateFingerprint,
@@ -441,6 +463,7 @@ public class UnsubscribeCandidateService {
         }
     }
 
+    /** Finds a classified candidate by its candidate key. */
     private ClassifiedCandidate find(
             Collection<Long> authorizedAccountIds, String candidateKey) {
         if (!UnsubscribeCandidateKey.isCanonical(candidateKey)) throw notFound();
@@ -458,6 +481,7 @@ public class UnsubscribeCandidateService {
         }
     }
 
+    /** Classifies a source candidate into methods, confidence, and a row. */
     private ClassifiedCandidate classify(SourceCandidate source) {
         Rfc2369Parser.ParseResult parsed = parser.parse(source.listUnsubscribeValues());
         Rfc8058Eligibility.Result post = eligibility.classify(
@@ -628,6 +652,7 @@ public class UnsubscribeCandidateService {
             primaryMethod, fingerprint);
     }
 
+    /** Builds a method fact for display. */
     private static UnsubscribeInspection.MethodFact method(
             UnsubscribeMethod method,
             String label,
@@ -657,6 +682,7 @@ public class UnsubscribeCandidateService {
             null);
     }
 
+    /** Ranks confidence for sorting. */
     private static int confidenceRank(String confidence) {
         return switch (confidence) {
             case "HIGH" -> 0;
@@ -665,6 +691,7 @@ public class UnsubscribeCandidateService {
         };
     }
 
+    /** Ranks methods for sorting. */
     private static int methodRank(String method) {
         return switch (method) {
             case "RFC 8058 POST" -> UnsubscribeQuery.Method.RFC8058.ordinal();
@@ -674,6 +701,7 @@ public class UnsubscribeCandidateService {
         };
     }
 
+    /** Validates the authorized account scope matches the query. */
     private static List<Long> requireScope(
             Collection<Long> accountIds, String accountSelector) {
         if (accountIds == null || accountIds.isEmpty()
@@ -690,6 +718,7 @@ public class UnsubscribeCandidateService {
         return scope;
     }
 
+    /** Computes the candidate fingerprint for an account/sender/identity. */
     public static String candidateFingerprint(
             long accountId, String senderKey, String listIdentity) {
         String value = accountId + ":" + senderKey.length() + ":" + senderKey
@@ -702,6 +731,7 @@ public class UnsubscribeCandidateService {
         }
     }
 
+    /** Returns the lowercase hex SHA-256 of a value. */
     private static String sha256(String value) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
@@ -711,20 +741,24 @@ public class UnsubscribeCandidateService {
         }
     }
 
+    /** Returns a blocked reason for protected senders, else the available reason. */
     private static String blockedOr(SourceCandidate source, String availableReason) {
         return source.protectedSender()
             ? "Protected sender; unsubscribe is blocked." : availableReason;
     }
 
+    /** Adds a value to a list if not already present. */
     private static void addOnce(List<String> values, String value) {
         if (!values.contains(value)) values.add(value);
     }
 
+    /** Computes the total page count for a result count. */
     private static int totalPages(long count) {
         return Math.toIntExact((count + UnsubscribeQuery.PAGE_SIZE - 1)
             / UnsubscribeQuery.PAGE_SIZE);
     }
 
+    /** Returns the display label for an unsubscribe method. */
     private static String methodLabel(UnsubscribeQuery.Method method) {
         return switch (method) {
             case RFC8058 -> "RFC 8058 POST";
@@ -734,6 +768,7 @@ public class UnsubscribeCandidateService {
         };
     }
 
+    /** Returns the recommendation copy for a method. */
     private static String recommendation(
             UnsubscribeQuery.Method method, boolean protectedSender) {
         if (protectedSender) return "Protected - keep";
@@ -745,6 +780,7 @@ public class UnsubscribeCandidateService {
         };
     }
 
+    /** Returns the list identity, falling back to the sender key. */
     private static String keyListIdentity(SourceCandidate source) {
         String identity = source.listIdentity();
         if (identity == null || identity.isBlank() || identity.length() > 512
@@ -754,35 +790,43 @@ public class UnsubscribeCandidateService {
         return identity;
     }
 
+    /** Returns true if the list identity falls back to the sender. */
     private static boolean isSenderFallback(SourceCandidate source) {
         return keyListIdentity(source).equals(source.senderKey());
     }
 
+    /** Returns the display list identity. */
     private static String displayListIdentity(SourceCandidate source) {
         return isSenderFallback(source)
             ? "Sender fallback" : safe(keyListIdentity(source), 200, "List identity unavailable");
     }
 
+    /** Returns a bounded, control-free value or a fallback. */
     private static String safe(String value, int maximum, String fallback) {
         if (value == null || value.isBlank()
                 || value.chars().anyMatch(Character::isISOControl)) return fallback;
         return value.length() <= maximum ? value : value.substring(0, maximum);
     }
 
+    /** Returns a not-found exception for a missing candidate. */
     private static ResponseStatusException notFound() {
         return new ResponseStatusException(HttpStatus.NOT_FOUND, "Candidate not found");
     }
 
+    /** Returns an unavailable exception for an unsupported method. */
     private static ResponseStatusException unavailable() {
         return new ResponseStatusException(
             HttpStatus.UNPROCESSABLE_ENTITY, "Unsubscribe method is unavailable");
     }
 
+    /** The kinds of manual navigation targets. */
     public enum NavigationKind { MAILTO, PROVIDER }
 
+    /** A manual navigation target and whether it opens a new tab. */
     public record ManualNavigation(String target, boolean browserTab) {
     }
 
+    /** A validated candidate ready for unsubscribe execution. */
     public record ExecutionCandidate(
         String candidateKey,
         long accountId,
@@ -815,6 +859,7 @@ public class UnsubscribeCandidateService {
         }
     }
 
+    /** A classified candidate with its methods and eligibility. */
     private record ClassifiedCandidate(
         SourceCandidate source,
         UnsubscribeCandidateRow row,

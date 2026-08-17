@@ -7,6 +7,14 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
+/**
+ * Configuration that wires the thread-pool executors and lane-lease tuning used
+ * by the mailbox synchronization job.
+ *
+ * <p>Product functionality supported: incremental mailbox sync — provides the
+ * freshness and backfill/rescan executors, validates their sizing, and exposes
+ * the lane lease duration that governs lease expiry during sync work.
+ */
 @Configuration
 public class MailboxSyncExecutorConfig {
 
@@ -28,6 +36,7 @@ public class MailboxSyncExecutorConfig {
     @Value("${app.sync.lane-lease-seconds:60}")
     private long laneLeaseSeconds;
 
+    /** Validates sync tuning bounds, failing fast on invalid configuration values. */
     @PostConstruct
     void validate() {
         if (freshnessCycleMs < 1000) {
@@ -43,22 +52,26 @@ public class MailboxSyncExecutorConfig {
         }
     }
 
+    /** Builds the thread-pool executor used for freshness (incremental) sync lanes. */
     @Bean(name = "freshnessTaskExecutor")
     public ThreadPoolTaskExecutor freshnessTaskExecutor() {
         return executor(
             freshnessThreads, freshnessQueueCapacity, "mailbox-freshness-");
     }
 
+    /** Builds the thread-pool executor used for backfill and rescan sync lanes. */
     @Bean(name = "backfillRescanTaskExecutor")
     public ThreadPoolTaskExecutor backfillRescanTaskExecutor() {
         return executor(
             backfillThreads, backfillQueueCapacity, "mailbox-backfill-");
     }
 
+    /** Returns the configured lane lease duration for mailbox sync work. */
     public Duration laneLeaseDuration() {
         return Duration.ofSeconds(laneLeaseSeconds);
     }
 
+    /** Returns the configured freshness cycle interval in milliseconds. */
     public long freshnessCycleMs() {
         return freshnessCycleMs;
     }

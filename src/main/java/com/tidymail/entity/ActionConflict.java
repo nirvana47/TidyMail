@@ -9,6 +9,13 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
 
+/**
+ * Represents an overlap conflict detected between two actions so the engine can
+ * guard against unsafe inbox changes.
+ *
+ * <p>Product functionality supported: exact-scope action-execution engine
+ * conflict detection and resolution.
+ */
 @Entity
 @Table(name = "action_conflicts")
 public class ActionConflict {
@@ -39,6 +46,9 @@ public class ActionConflict {
     protected ActionConflict() {
     }
 
+    /**
+     * Opens a new conflict between a lower- and higher-ordered action.
+     */
     public static ActionConflict open(
             long accountId, long lowerActionId, long higherActionId,
             String reasonCode, int overlapCount, Instant now) {
@@ -58,6 +68,9 @@ public class ActionConflict {
         return conflict;
     }
 
+    /**
+     * Updates an open conflict with the latest overlap reason and count.
+     */
     public void refresh(String reason, int overlap) {
         if (!"OPEN".equals(status) || reason == null || overlap <= 0) {
             throw new IllegalStateException("Conflict cannot be refreshed");
@@ -66,6 +79,9 @@ public class ActionConflict {
         overlapCount = overlap;
     }
 
+    /**
+     * Resolves an open conflict, recording the chosen resolution.
+     */
     public void resolve(String resolution, Instant now) {
         if (!"OPEN".equals(status) || resolution == null || now == null) {
             throw new IllegalStateException("Conflict cannot be resolved");

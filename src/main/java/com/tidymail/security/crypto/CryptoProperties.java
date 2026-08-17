@@ -38,6 +38,10 @@ import com.tidymail.security.crypto.CryptoUtil.CryptoException;
  * This provides domain separation so the same master material can never be
  * accidentally reused for a different purpose (it derives a different 32-byte
  * subkey for each unique {@code info} label).
+ *
+ * <p>Product functionality supported: derivation of the AES-256 key that
+ * encrypts OAuth access/refresh tokens at rest for linked Gmail/Outlook
+ * accounts.
  */
 @Component
 public class CryptoProperties {

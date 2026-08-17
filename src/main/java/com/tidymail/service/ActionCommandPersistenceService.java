@@ -30,6 +30,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * Persists confirmed action commands: creates queued {@link UserAction} records
+ * (and their intents/events) from a verified confirmation token, and handles
+ * cancellation and unsubscribe-approval consumption.
+ *
+ * <p>Product functionality supported: the <em>Bulk Action</em> and <em>Review</em>
+ * flows, which turn verified confirmations into durable, queued actions.
+ */
 @Service
 public class ActionCommandPersistenceService {
     private final ActionScopeRepository scopes;
@@ -77,6 +85,7 @@ public class ActionCommandPersistenceService {
         this.clock = clock;
     }
 
+    /** Creates queued actions for each scope in the payload, consuming the token. */
     @Transactional
     public List<UserAction> create(
             Payload payload, String rawToken, ExecutionMode mode) {
@@ -157,6 +166,7 @@ public class ActionCommandPersistenceService {
         return List.copyOf(created);
     }
 
+    /** Builds the action intent appropriate to the action type. */
     private ActionIntent intent(
             UserAction action,
             ActionScope scope,
@@ -182,6 +192,7 @@ public class ActionCommandPersistenceService {
         };
     }
 
+    /** Resolves the single normalized sender of a protect scope, or fails if ambiguous. */
     private String oneNormalizedSender(ActionScope scope) {
         var rows = metadata.findByAccountIdAndProviderMessageIdIn(
             scope.getAccountId(), scope.getMessageIds());
@@ -197,6 +208,7 @@ public class ActionCommandPersistenceService {
         return senders.getFirst();
     }
 
+    /** Cancels a queued action, recording a cancellation event. */
     @Transactional
     public void cancel(long accountId, UUID actionPublicId) {
         UserAction action = actions.findForUpdateByPublicIdAndAccountId(
@@ -214,6 +226,7 @@ public class ActionCommandPersistenceService {
             action, null, "ACTION_CANCELLED", null, clock.instant()));
     }
 
+    /** Consumes an unsubscribe approval token and returns the queued action. */
     @Transactional
     public UserAction consumeUnsubscribeApproval(
             Payload payload, String rawToken, UUID actionPublicId) {
@@ -273,11 +286,13 @@ public class ActionCommandPersistenceService {
         return action;
     }
 
+    /** Throws a conflict when the confirmation token is stale or mismatched. */
     private static ResponseStatusException stale() {
         return new ResponseStatusException(
             HttpStatus.CONFLICT, "action_confirmation_stale");
     }
 
+    /** Returns a not-found exception for a missing action. */
     private static ResponseStatusException notFound() {
         return new ResponseStatusException(HttpStatus.NOT_FOUND, "action_not_found");
     }

@@ -4,6 +4,13 @@ import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
+/**
+ * Configuration for the unsubscribe transport, bounded to safe timeouts, DNS,
+ * and response limits, with no redirects or automatic retries.
+ * <p>
+ * Product functionality supported: safety bounds for TidyMail's automated
+ * unsubscribe transport.
+ */
 @ConfigurationProperties("app.unsubscribe.transport")
 public record UnsubscribeTransportProperties(
         @DefaultValue("2s") Duration dnsTimeout,

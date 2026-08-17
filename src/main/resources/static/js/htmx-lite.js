@@ -1,3 +1,16 @@
+/**
+ * A lightweight, self-contained HTMX-style AJAX helper for the server-rendered
+ * TidyMail pages.
+ *
+ * Product functionality supported: powers partial page updates that keep the app
+ * feeling responsive. It issues declarative requests from elements carrying
+ * hx-get / hx-post / hx-target / hx-swap / hx-trigger attributes, swaps the
+ * returned HTML into the DOM, provides polling for live views (e.g. the Inbox
+ * activity / Reply Zero queues refreshing while background sync runs), formats
+ * server-rendered dates into the visitor's local timezone, and honors CSRF
+ * tokens so state-changing requests stay secure. It also exposes window.htmx.ajax
+ * for programmatic cases like the Cleanup category lazy-loading.
+ */
 (function () {
     "use strict";
 
@@ -6,10 +19,18 @@
     const temporaryWarning =
         "Activity updates are temporarily unavailable. This does not stop background sync.";
 
+    /**
+     * Builds the htmx event name from a suffix (e.g. afterRequest).
+     * Product functionality: consistent event naming for the htmx lifecycle hooks.
+     */
     function eventName(name) {
         return "htmx:" + name;
     }
 
+    /**
+     * Dispatches a bubbling, cancelable htmx: event.
+     * Product functionality: lets page scripts hook into request lifecycle events.
+     */
     function trigger(element, name, detail) {
         const event = new CustomEvent(eventName(name), {
             bubbles: true,
@@ -20,6 +41,11 @@
         return !event.defaultPrevented;
     }
 
+    /**
+     * Resolves the default swap target for an element based on its hx-target
+     * attribute (supports "closest <selector>" and plain CSS selectors).
+     * Product functionality: decides where swapped HTML is inserted.
+     */
     function targetFor(element) {
         const selector = element.getAttribute("hx-target");
         if (!selector) return element;
@@ -29,12 +55,20 @@
         return document.querySelector(selector) || element;
     }
 
+    /**
+     * Resolves a target option (selector string or Element) into a DOM node.
+     * Product functionality: used by programmatic window.htmx.ajax() calls.
+     */
     function resolveTarget(target) {
         if (!target) return null;
         if (typeof target === "string") return document.querySelector(target);
         return target instanceof Element ? target : null;
     }
 
+    /**
+     * Parses an "every Ns" polling trigger, capping it between 1 and 300 seconds.
+     * Product functionality: the auto-refresh cadence for live activity views.
+     */
     function parsePollingTrigger(value) {
         const match = /^every ([1-9][0-9]{0,2})s$/.exec(value || "");
         if (!match) return null;
@@ -42,6 +76,10 @@
         return seconds >= 1 && seconds <= 300 ? seconds : null;
     }
 
+    /**
+     * Parses an hx-swap spec (innerHTML/outerHTML/none plus optional settle delay).
+     * Product functionality: governs how returned HTML replaces the page region.
+     */
     function parseSwapSpec(value) {
         const match = /^(innerHTML|outerHTML|none)(?: settle:([0-9]+)(ms|s))?$/
             .exec((value || "innerHTML").trim());
@@ -53,6 +91,11 @@
         return { mode: match[1], settle };
     }
 
+    /**
+     * Reformats <time> elements carrying a data-local-date attribute into the
+     * visitor's local timezone.
+     * Product functionality: renders server-generated timestamps in local time.
+     */
     function formatLocalDates(root) {
         const scope = root instanceof Element || root instanceof Document
             ? root : document;
@@ -70,18 +113,30 @@
         });
     }
 
+    /**
+     * Extracts the CSRF token from the element's parent form, if present.
+     * Product functionality: ensures state-changing AJAX requests honor Spring CSRF.
+     */
     function csrfFor(element) {
         const form = element.closest("form");
         const field = form && form.querySelector("input[name='_csrf']");
         return field ? field.value : null;
     }
 
+    /**
+     * Serializes an element's parent form into URL-encoded body data.
+     * Product functionality: sends form-based submissions for POST actions.
+     */
     function bodyFor(element) {
         const form = element.closest("form");
         if (!form) return null;
         return new URLSearchParams(new FormData(form));
     }
 
+    /**
+     * Finds an element by id within a root subtree.
+     * Product functionality: used to restore focus after an outerHTML swap.
+     */
     function findById(root, id) {
         if (!id || !(root instanceof Element)) return null;
         if (root.id === id) return root;
@@ -89,12 +144,20 @@
             .find((element) => element.id === id) || null;
     }
 
+    /**
+     * Parses an HTML string into a response root element.
+     * Product functionality: builds the swap root for outerHTML replacements.
+     */
     function responseRoot(html) {
         const template = document.createElement("template");
         template.innerHTML = html.trim();
         return template.content.firstElementChild;
     }
 
+    /**
+     * Stops polling for an element, clearing its timer and focus handler.
+     * Product functionality: cleanly disposes a polling activity view.
+     */
     function clearPolling(element) {
         const state = pollingStates.get(element);
         if (!state) return;
@@ -106,6 +169,10 @@
         pollingElements.delete(element);
     }
 
+    /**
+     * Stops polling for any element that has been disconnected or no longer polls.
+     * Product functionality: prevents stale timers for removed views.
+     */
     function disposeDisconnectedPolling() {
         pollingElements.forEach((element) => {
             if (!element.isConnected
@@ -115,6 +182,11 @@
         });
     }
 
+    /**
+     * Completes a swap: reformats dates, restores focus and scroll, emits
+     * afterSwap, and re-establishes polling for the inserted view.
+     * Product functionality: post-swap bookkeeping for a live-updating view.
+     */
     function finishSwap(element, target, inserted, focusedId, scrollPosition) {
         formatLocalDates(inserted || target);
         if (focusedId) {
@@ -135,6 +207,11 @@
         return eventTarget;
     }
 
+    /**
+     * Applies the swap after the configured settle delay, restoring input focus
+     * across outerHTML replacements when possible.
+     * Product functionality: replaces the page region with the server's response.
+     */
     function replaceAfterSettle(element, target, html, swapSpec, polling) {
         if (swapSpec.mode === "none") {
             return Promise.resolve(finishSwap(
@@ -184,11 +261,20 @@
         });
     }
 
+    /**
+     * Removes the temporary "activity updates unavailable" warning element.
+     * Product functionality: clears the degraded-mode notice once polling recovers.
+     */
     function removePollingWarning(element) {
         const warning = element.querySelector(":scope > .activity-update-warning");
         if (warning) warning.remove();
     }
 
+    /**
+     * Records a polling failure, showing a temporary warning after repeated
+     * failures and backing off the refresh interval.
+     * Product functionality: degrades gracefully when live updates are unavailable.
+     */
     function recordPollingFailure(element) {
         const state = pollingStates.get(element);
         if (!state || !element.isConnected) return;
@@ -205,6 +291,11 @@
         schedulePolling(element, state.failures >= 2 ? 30 : state.baseInterval);
     }
 
+    /**
+     * Performs an AJAX request for an element, dispatching the htmx lifecycle
+     * events, attaching the CSRF header, applying the swap, and handling errors.
+     * Product functionality: the core engine behind every declarative hx- request.
+     */
     function request(element, method, url, options) {
         const target = options && options.target
             ? resolveTarget(options.target)
@@ -278,6 +369,10 @@
             });
     }
 
+    /**
+     * Schedules the next polling request for an element after the given seconds.
+     * Product functionality: keeps live views (e.g. Inbox activity) refreshing.
+     */
     function schedulePolling(element, seconds) {
         const state = pollingStates.get(element);
         if (!state || !element.isConnected) {
@@ -301,6 +396,11 @@
         }, seconds * 1000);
     }
 
+    /**
+     * Scans a root for elements with an hx-trigger polling attribute and starts
+     * their refresh loops, disposing any that are no longer connected.
+     * Product functionality: bootstraps auto-refreshing views on load and after swaps.
+     */
     function initializePolling(root) {
         const candidates = [];
         if (root instanceof Element && root.hasAttribute("hx-trigger")) {
@@ -327,6 +427,10 @@
         disposeDisconnectedPolling();
     }
 
+    /**
+     * Submits a form via AJAX based on its hx-post / hx-get attributes.
+     * Product functionality: intercepts marked forms so they update in place.
+     */
     function submitForm(form) {
         const method = form.getAttribute("hx-post") ? "POST" : "GET";
         const url = form.getAttribute("hx-post") || form.getAttribute("hx-get");
@@ -360,6 +464,11 @@
         initializePolling(document);
     });
 
+    /**
+     * Public API: performs an AJAX request for a target element.
+     * Product functionality: used by page scripts (e.g. Cleanup category loading)
+     * to fetch and swap content programmatically.
+     */
     window.htmx = {
         ajax(method, url, options) {
             const target = options && options.target

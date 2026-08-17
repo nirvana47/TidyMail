@@ -7,6 +7,13 @@ import java.util.EnumSet;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * Defines the allowed state transitions for actions, executions, and execution
+ * targets, so the execution engine can reject invalid lifecycle changes.
+ *
+ * <p>Product functionality supported: the action execution engine's state machine
+ * and integrity enforcement.
+ */
 public final class ActionStateRules {
     private static final Map<ActionStatus, Set<ActionStatus>> ACTION = Map.ofEntries(
         Map.entry(ActionStatus.QUEUED, EnumSet.of(
@@ -57,14 +64,17 @@ public final class ActionStateRules {
     private ActionStateRules() {
     }
 
+    /** Returns true if an action may transition between the given statuses. */
     public static boolean canTransition(ActionStatus from, ActionStatus to) {
         return ACTION.get(from).contains(to);
     }
 
+    /** Returns true if an execution may transition between the given statuses. */
     public static boolean canTransition(ExecutionStatus from, ExecutionStatus to) {
         return EXECUTION.get(from).contains(to);
     }
 
+    /** Returns true if an execution target may transition between the given statuses. */
     public static boolean canTransition(
             ExecutionTargetStatus from, ExecutionTargetStatus to) {
         return TARGET.get(from).contains(to);

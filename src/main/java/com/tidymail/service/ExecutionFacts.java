@@ -3,6 +3,13 @@ package com.tidymail.service;
 import com.tidymail.action.ActionReasonCode;
 import com.tidymail.action.ExecutionStatus;
 
+/**
+ * The count partition of an execution's outcome (requested, accepted, succeeded,
+ * failed, verification-pending, not-dispatched) with a derived overall status.
+ *
+ * <p>Product functionality supported: the action execution engine's outcome
+ * accounting and status derivation.
+ */
 public record ExecutionFacts(
     int requested,
     int accepted,
@@ -22,6 +29,7 @@ public record ExecutionFacts(
         }
     }
 
+    /** Derives the overall execution status from the count partition. */
     public ExecutionStatus status() {
         if (succeeded == requested) return ExecutionStatus.APPLIED;
         if (succeeded > 0 || (failed > 0 && verificationPending > 0)) {

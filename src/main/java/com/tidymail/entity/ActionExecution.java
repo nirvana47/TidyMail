@@ -12,6 +12,13 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
 
+/**
+ * Tracks a single dispatched action execution: its operation, lease, and
+ * accepted/succeeded/failed outcome counts.
+ *
+ * <p>Product functionality supported: the EXACT-scope action-execution engine
+ * (archive/trash/mark-read/protect/review/unsubscribe/undo/compensation).
+ */
 @Entity
 @Table(name = "action_executions")
 public class ActionExecution {
@@ -58,6 +65,9 @@ public class ActionExecution {
     protected ActionExecution() {
     }
 
+    /**
+     * Reserves a new execution with an idempotency fingerprint and dispatch lease.
+     */
     public static ActionExecution reserve(
             long accountId, long actionId, OperationKind operation,
             String idempotencyFingerprint, String leaseFingerprint,
@@ -88,6 +98,9 @@ public class ActionExecution {
         return execution;
     }
 
+    /**
+     * Starts the execution, moving it from RESERVED to RUNNING.
+     */
     public void start(Instant now) {
         if (executionStatus() != ExecutionStatus.RESERVED
                 || leaseExpiresAt == null || !now.isBefore(leaseExpiresAt)) {
@@ -97,6 +110,9 @@ public class ActionExecution {
         startedAt = now;
     }
 
+    /**
+     * Replaces the reservation lease holder before it expires.
+     */
     public void renewReservationLease(
             String replacementFingerprint, Instant now, Instant replacementExpiry) {
         if (executionStatus() != ExecutionStatus.RESERVED
@@ -110,6 +126,9 @@ public class ActionExecution {
         leaseExpiresAt = replacementExpiry;
     }
 
+    /**
+     * Replaces the running-execution lease holder before it expires.
+     */
     public void renewRunningLease(
             String replacementFingerprint, Instant now, Instant replacementExpiry) {
         if (executionStatus() != ExecutionStatus.RUNNING
@@ -123,6 +142,9 @@ public class ActionExecution {
         leaseExpiresAt = replacementExpiry;
     }
 
+    /**
+     * Terminates the execution with validated outcome counts and reason.
+     */
     public void complete(
             ExecutionStatus status, int accepted, int succeeded, int failed,
             int pending, int notDispatched, ActionReasonCode reason, Instant now) {

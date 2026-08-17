@@ -32,6 +32,14 @@ import org.apache.hc.core5.util.Timeout;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+/**
+ * Creates Apache HttpClient clients pinned to a pre-validated destination so
+ * connections only ever reach approved hosts, with TLS validated against the
+ * pinned hostname.
+ * <p>
+ * Product functionality supported: the pinned, no-redirect transport behind
+ * TidyMail's automated unsubscribe requests.
+ */
 @Component
 public final class PinnedTransportFactory {
     private final UnsubscribeTransportProperties properties;
@@ -55,6 +63,10 @@ public final class PinnedTransportFactory {
         this.testConnectionTargetOverride = testConnectionTargetOverride;
     }
 
+    /**
+     * Builds a client bound to the resolved destination with bounded timeouts,
+     * no redirects, and no automatic retries.
+     */
     public ClientHandle create(ResolvedDestination destination) {
         PinnedDnsResolver resolver = new PinnedDnsResolver(destination);
         ConnectionConfig connectionConfig = ConnectionConfig.custom()

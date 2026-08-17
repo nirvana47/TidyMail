@@ -25,6 +25,17 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * Serves the htmx fragments that power the Senders dashboard, Reply Zero
+ * queue, and sync-progress widgets without full page reloads.
+ *
+ * <p>Product functionality supported: the <em>Senders</em> dashboard (sender
+ * rows and domain rollups), the <em>Reply Zero</em> queue, and the
+ * <em>sync progress</em> indicator. These fragments read from the persisted
+ * sync snapshot (never hitting the mail provider on page load) so the
+ * dashboard stays fast, except the Reply Zero fragment which re-queries the
+ * provider for the latest inbox messages.</p>
+ */
 @Controller
 public class FragmentController {
 
@@ -50,6 +61,10 @@ public class FragmentController {
         this.syncProgressRepository = syncProgressRepository;
     }
 
+    /**
+     * Maps a stored account's provider string to the Spring bean that talks to
+     * that mail provider (Gmail or Outlook).
+     */
     private MailProvider resolveProvider(UserAccount account) {
         String beanName = switch (account.getProvider()) {
             case "google" -> "gmailMailService";
@@ -61,6 +76,10 @@ public class FragmentController {
         return p;
     }
 
+    /**
+     * Resolves the authenticated user's mailbox account row from the OAuth
+     * principal (email + provider).
+     */
     private UserAccount currentAccount(OAuth2AuthenticationToken token) {
         OAuth2AuthenticatedPrincipal principal = token.getPrincipal();
         String email = principal.getAttribute("email");
@@ -70,6 +89,10 @@ public class FragmentController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "no account row"));
     }
 
+    /**
+     * Renders the Senders dashboard fragment (sender rows sorted by the given
+     * sort key) from the persisted sync snapshot.
+     */
     @GetMapping(value = "/senders-frag", produces = "text/html;charset=UTF-8")
     public String sendersFragment(
             @RequestParam(defaultValue = "countDesc") String sort,
@@ -83,6 +106,10 @@ public class FragmentController {
         return "fragments/senders-frag";
     }
 
+    /**
+     * Renders the domain rollups fragment (per-domain message counts) from the
+     * persisted sync snapshot.
+     */
     @GetMapping(value = "/domain-rollups-frag", produces = "text/html;charset=UTF-8")
     public String domainRollupsFragment(
             Model model,
@@ -93,6 +120,12 @@ public class FragmentController {
         return "fragments/domain-rollups-frag";
     }
 
+    /**
+     * Renders the Reply Zero queue fragment: fetches the latest inbox messages
+     * from the provider, aggregates them by sender, and runs the Reply Zero
+     * detector to surface personal-looking messages awaiting a reply (capped at
+     * 20 items).
+     */
     @GetMapping(value = "/reply-zero-frag", produces = "text/html;charset=UTF-8")
     public String replyZeroFragment(
             @RequestParam(defaultValue = "3") int olderThanDays,
@@ -110,6 +143,10 @@ public class FragmentController {
         return "fragments/reply-zero-frag";
     }
 
+    /**
+     * Renders the sync progress fragment showing the latest incremental sync
+     * progress for the account.
+     */
     @GetMapping(value = "/sync-progress-frag", produces = "text/html;charset=UTF-8")
     public String syncProgressFragment(OAuth2AuthenticationToken principal, Model model) {
         UserAccount account = currentAccount(principal);

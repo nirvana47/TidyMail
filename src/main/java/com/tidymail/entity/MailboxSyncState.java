@@ -8,6 +8,12 @@ import jakarta.persistence.Version;
 import java.time.Instant;
 import java.util.UUID;
 
+/**
+ * Per-account cursor and lifecycle state for crawling a mail provider while
+ * syncing metadata only (no message bodies).
+ *
+ * <p>Product functionality supported: metadata-only mailbox sync and rescan.
+ */
 @Entity
 @Table(name = "mailbox_sync_state")
 public class MailboxSyncState {

@@ -29,6 +29,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * Issues and consumes short-lived, signed unsubscribe intent tokens bound to a
+ * specific candidate, destination, and method for verification at redemption.
+ * <p>
+ * Product functionality supported: the signed intent/callback flow in
+ * TidyMail's unsubscribe cleanup.
+ */
 @Service
 public class UnsubscribeIntentService {
     private static final int VERSION = 2;
@@ -73,6 +80,10 @@ public class UnsubscribeIntentService {
         this.random = random;
     }
 
+    /**
+     * Issues a signed intent token for the candidate and method, persisting a
+     * single-use nonce for later verification.
+     */
     @Transactional
     public String issue(
             Collection<Long> authorizedAccountIds,
@@ -96,6 +107,10 @@ public class UnsubscribeIntentService {
         return base64(encoded) + "." + base64(sign(encoded));
     }
 
+    /**
+     * Verifies and redeems an intent token, returning the matched execution
+     * candidate or a rejection reason.
+     */
     public Consumption consume(
             Collection<Long> authorizedAccountIds,
             String candidateKey,

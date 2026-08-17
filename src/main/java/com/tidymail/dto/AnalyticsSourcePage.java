@@ -4,6 +4,13 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 
+/**
+ * View model for the Analytics per-sender source drill-down page.
+ *
+ * <p>Product functionality supported: the <em>Analytics</em> source page,
+ * which lists the individual rows (received / action facts) behind a sender
+ * series, paginated, with sanitized display values and navigation URLs.</p>
+ */
 public record AnalyticsSourcePage(
     AnalyticsSourceQuery query,
     AnalyticsAvailability availability,

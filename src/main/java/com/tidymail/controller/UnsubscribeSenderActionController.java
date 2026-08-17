@@ -18,6 +18,15 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
+/**
+ * Computes the bulk-action preview for the Unsubscribe page's sender rows.
+ *
+ * <p>Product functionality supported: the <em>Unsubscribe</em> workspace tab's
+ * bulk action (archive/delete) on a sender. It validates the submitted query
+ * and row, resolves the user's accounts, and materializes a preview of the
+ * exact messages that would be affected, returning it as an htmx fragment with
+ * a status reflecting the preview state.</p>
+ */
 @Controller
 public class UnsubscribeSenderActionController {
     private static final Set<String> QUERY_FIELDS = Set.of(
@@ -34,6 +43,9 @@ public class UnsubscribeSenderActionController {
         this.actions = actions;
     }
 
+    /**
+     * Builds the bulk-action preview for a sender row on the Unsubscribe page.
+     */
     @PostMapping("/unsubscribe/sender-action-preview")
     public String preview(
             @RequestParam MultiValueMap<String, String> parameters,
@@ -59,6 +71,9 @@ public class UnsubscribeSenderActionController {
         return "fragments/selection-preview-frag :: preview";
     }
 
+    /**
+     * Extracts the recognized query fields from the submitted parameters.
+     */
     private static Map<String, List<String>> queryParameters(
             MultiValueMap<String, String> parameters) {
         LinkedHashMap<String, List<String>> result = new LinkedHashMap<>();
@@ -68,6 +83,10 @@ public class UnsubscribeSenderActionController {
         return result;
     }
 
+    /**
+     * Reads a single required field value, rejecting missing/blank/duplicate
+     * values.
+     */
     private static String one(MultiValueMap<String, String> parameters, String name) {
         List<String> values = parameters.get(name);
         if (values == null || values.size() != 1 || values.getFirst() == null
@@ -77,6 +96,10 @@ public class UnsubscribeSenderActionController {
         return values.getFirst();
     }
 
+    /**
+     * Maps the submitted action string to a {@link PreviewAction}, allowing
+     * only ARCHIVE and TRASH.
+     */
     private static PreviewAction action(String value) {
         return switch (value) {
             case "ARCHIVE" -> PreviewAction.ARCHIVE;
@@ -85,6 +108,9 @@ public class UnsubscribeSenderActionController {
         };
     }
 
+    /**
+     * Maps a preview state to the HTTP status the response should carry.
+     */
     private static HttpStatus status(SelectionScopePreview preview) {
         return switch (preview.state()) {
             case READY, EMPTY -> HttpStatus.OK;

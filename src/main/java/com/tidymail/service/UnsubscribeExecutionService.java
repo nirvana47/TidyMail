@@ -12,6 +12,14 @@ import java.util.Collection;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
+/**
+ * Executes automated unsubscribe requests (RFC 8058 POST or legacy HTTPS GET):
+ * prepares the attempt, resolves and validates the destination, dispatches via
+ * the transport, and records the outcome.
+ *
+ * <p>Product functionality supported: the <em>Unsubscribe</em> flow's automated
+ * execution and manual completion.
+ */
 @Service
 public class UnsubscribeExecutionService {
     private final UnsubscribeExecutionPreparationService preparation;
@@ -30,6 +38,7 @@ public class UnsubscribeExecutionService {
         this.transport = transport;
     }
 
+    /** Executes an automated unsubscribe request and records its outcome. */
     public ExecutionResult execute(
             Collection<Long> authorizedAccountIds,
             String candidateKey,
@@ -81,6 +90,7 @@ public class UnsubscribeExecutionService {
             responseStatus);
     }
 
+    /** Records a manual completion for a manual unsubscribe method. */
     public ExecutionResult completeManual(
             Collection<Long> authorizedAccountIds,
             String candidateKey,
@@ -97,6 +107,7 @@ public class UnsubscribeExecutionService {
             HttpStatus.OK);
     }
 
+    /** Maps a transport failure reason to an unsubscribe reason code. */
     private static UnsubscribeReasonCode map(FailureReason reason) {
         return switch (reason) {
             case REDIRECT_BLOCKED -> UnsubscribeReasonCode.REDIRECT_BLOCKED;
@@ -109,12 +120,14 @@ public class UnsubscribeExecutionService {
         };
     }
 
+    /** The outcome and HTTP status of an unsubscribe execution. */
     public record ExecutionResult(
         UnsubscribeOutcomeService.OutcomeView outcome,
         HttpStatus status
     ) {
     }
 
+    /** Thrown when an unsubscribe request is blocked. */
     public static final class ExecutionException extends RuntimeException {
         private final HttpStatus status;
         private final UnsubscribeReasonCode reason;

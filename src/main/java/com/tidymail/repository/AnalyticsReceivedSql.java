@@ -7,6 +7,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Holds shared raw-SQL fragments and predicates for received-message
+ * analytics queries.
+ * <p>
+ * Product functionality: analytics dashboards and drilldowns over received
+ * messages.
+ */
 public final class AnalyticsReceivedSql {
     static final String BASE_FROM = """
         FROM message_metadata m

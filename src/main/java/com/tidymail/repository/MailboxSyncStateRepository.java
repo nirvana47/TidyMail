@@ -9,6 +9,10 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Reads and updates the persisted sync state and lane leases for each mailbox.
+ * <p>Product functionality: the metadata-only <em>mailbox sync</em> (sync state).
+ */
 @Repository
 public class MailboxSyncStateRepository {
     private final NamedParameterJdbcTemplate jdbc;

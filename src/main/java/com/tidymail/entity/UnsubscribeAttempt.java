@@ -14,6 +14,12 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
 
+/**
+ * Tracks an unsubscribe attempt for a sender candidate, including the method,
+ * destination, outcome status, and reason over the course of the unsubscribe flow.
+ * <p>Product functionality: truncate unsubscribe flow — records that an attempt was
+ * made and the outcome of the remote unsubscribe request.
+ */
 @Entity
 @Table(name = "unsubscribe_attempts")
 public class UnsubscribeAttempt {
@@ -64,6 +70,9 @@ public class UnsubscribeAttempt {
     protected UnsubscribeAttempt() {
     }
 
+    /**
+     * Creates a pending unsubscribe attempt from validated sender/destination facts.
+     */
     public static UnsubscribeAttempt pending(
             long accountId,
             String candidateFingerprint,

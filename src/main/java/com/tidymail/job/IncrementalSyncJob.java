@@ -22,6 +22,14 @@ import org.springframework.core.task.TaskExecutor;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+/**
+ * Scheduled job that keeps user mailboxes in sync with their mail provider.
+ *
+ * <p>Product functionality supported: incremental mailbox cleanup sync —
+ * periodically pulls new/changed messages from connected providers and drives
+ * the backfill, freshness, and rescan lanes, coordinating work via leased
+ * per-account lanes so multiple instances do not duplicate effort.
+ */
 @Component
 public class IncrementalSyncJob {
     public static final String JOB_TYPE = "MAILBOX_SYNC";
@@ -57,6 +65,10 @@ public class IncrementalSyncJob {
         this.config = config;
     }
 
+    /**
+     * Scheduled entry point that requests a sync for every active, token-bearing
+     * Google account on a fixed freshness cycle.
+     */
     @Scheduled(
         fixedRateString = "${app.sync.freshness-cycle-ms:300000}",
         initialDelayString = "${app.sync.freshness-cycle-ms:300000}")
@@ -68,6 +80,10 @@ public class IncrementalSyncJob {
             .forEach(account -> requestSync(account.getId()));
     }
 
+    /**
+     * Requests a sync for an account, choosing the backfill lane when no
+     * incremental cursor or initial batch exists, otherwise the freshness lane.
+     */
     public SyncProgress requestSync(Long accountId) {
         UserAccount account = accounts.findById(accountId)
             .orElseThrow(() -> new IllegalArgumentException("Account does not exist"));
@@ -81,14 +97,17 @@ public class IncrementalSyncJob {
         return requestLane(accountId, lane);
     }
 
+    /** Requests a full backfill sync for an account. */
     public SyncProgress requestBackfill(Long accountId) {
         return requestLane(accountId, Lane.BACKFILL);
     }
 
+    /** Requests an initial backfill sync to bootstrap an account's data. */
     public SyncProgress requestBootstrap(Long accountId) {
         return requestLane(accountId, Lane.BACKFILL);
     }
 
+    /** Requests a rescan lane sync for an account. */
     public SyncProgress requestRescan(Long accountId) {
         return requestLane(accountId, Lane.RESCAN);
     }
@@ -105,6 +124,11 @@ public class IncrementalSyncJob {
             .orElseThrow(() -> new IllegalStateException("Queued sync work disappeared"));
     }
 
+    /**
+     * Runs a single bounded sync unit: acquires the lane lease, performs the
+     * provider sync, marks progress, and releases the lease, then continues
+     * queued work or schedules follow-up lanes as needed.
+     */
     public void dispatchBoundedUnit(Long accountId, Long progressId, Lane lane) {
         String leaseOwner = instanceOwner + ":" + UUID.randomUUID();
         StateSnapshot leased = takeOverStaleLease(accountId, lane, leaseOwner);
@@ -159,6 +183,11 @@ public class IncrementalSyncJob {
         }
     }
 
+    /**
+     * Acquires the lease for a lane, retrying on contention and only grabbing
+     * lanes whose previous lease is stale or unowned; returns null if the lane
+     * is already live or could not be taken over.
+     */
     public StateSnapshot takeOverStaleLease(
             Long accountId, Lane lane, String leaseOwner) {
         for (int attempt = 0; attempt < 4; attempt++) {
@@ -180,10 +209,15 @@ public class IncrementalSyncJob {
         return null;
     }
 
+    /** Re-queues a lane for an account so its pending work is rescheduled. */
     public void requeueLane(Long accountId, Lane lane) {
         requestLane(accountId, lane);
     }
 
+    /**
+     * Marks a still-queued sync submission as failed when the worker executor
+     * rejected scheduling it.
+     */
     public void recordRejectedSubmission(Long progressId) {
         progress.findById(progressId).ifPresent(row -> {
             if ("QUEUED".equals(row.getStatus())) {

@@ -17,6 +17,13 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+/**
+ * Provides mailbox-level analytics: per-bucket received/sent/read counts,
+ * top senders/domains/recipients, size metrics, and unread scope counts.
+ * <p>
+ * Product functionality: analytics dashboards and drilldowns for mailbox
+ * volume, rankings, and storage size.
+ */
 @Repository
 public class AnalyticsMailboxRepository {
     private final NamedParameterJdbcTemplate jdbc;

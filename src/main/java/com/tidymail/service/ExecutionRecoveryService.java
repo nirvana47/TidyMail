@@ -24,6 +24,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * Recovers executions whose lease expired before completion: renews the lease for
+ * undelivered work, or marks dispatched targets as verification-pending so the
+ * outcome can be resolved later.
+ *
+ * <p>Product functionality supported: the action execution engine's crash/lease
+ * recovery and verification-pending handling.
+ */
 @Service
 public class ExecutionRecoveryService {
     private static final Duration LEASE = Duration.ofMinutes(2);
@@ -56,6 +64,7 @@ public class ExecutionRecoveryService {
         this.clock = clock;
     }
 
+    /** Recovers an execution with an expired lease, returning its state. */
     @Transactional
     public Recovery recover(long accountId, long executionId) {
         ActionExecution execution = executions.findForUpdate(executionId, accountId)
@@ -135,6 +144,7 @@ public class ExecutionRecoveryService {
         return result(execution, action, false);
     }
 
+    /** Builds the recovery result for an execution. */
     private static Recovery result(
             ActionExecution execution, UserAction action, boolean resume) {
         return new Recovery(
@@ -144,21 +154,25 @@ public class ExecutionRecoveryService {
             execution.executionStatus().name());
     }
 
+    /** Generates a fresh lease fingerprint. */
     private static String lease(long accountId, long actionId, Instant now) {
         return ActionFingerprints.bind(
             "execution-lease-v1", UUID.randomUUID(), accountId, actionId, now);
     }
 
+    /** Throws a conflict when the execution targets are incompatible. */
     private static ResponseStatusException incompatible() {
         return new ResponseStatusException(
             HttpStatus.CONFLICT, "execution_target_incompatible");
     }
 
+    /** Returns a not-found exception for a missing execution. */
     private static ResponseStatusException notFound() {
         return new ResponseStatusException(
             HttpStatus.NOT_FOUND, "execution_not_found");
     }
 
+    /** The recovered execution state and whether dispatch is required. */
     public record Recovery(
         long executionId,
         UUID executionPublicId,

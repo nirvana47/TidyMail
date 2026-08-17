@@ -10,6 +10,12 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.Instant;
 
+/**
+ * Per-sender aggregate statistics for an account (message counts, unread/reply counts,
+ * list-unsubscribe flags, and message date range), refreshed during mailbox sync.
+ * <p>Product functionality: sender stats — powers the sender list UI and cleanup
+ * decisioning with per-sender volume and engagement data.
+ */
 @Entity
 @Table(
     name = "sender_stats",

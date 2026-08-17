@@ -10,6 +10,10 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.support.SqlArrayValue;
 import org.springframework.stereotype.Repository;
 
+/**
+ * Bulk upserts and sweeps message metadata rows during mailbox sync.
+ * <p>Product functionality: the metadata-only <em>mailbox sync</em> (message metadata).
+ */
 @Repository
 public class MessageMetadataSyncRepository {
     private final NamedParameterJdbcTemplate jdbc;

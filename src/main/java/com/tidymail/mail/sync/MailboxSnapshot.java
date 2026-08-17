@@ -1,5 +1,11 @@
 package com.tidymail.mail.sync;
 
+/**
+ * A point-in-time look at a mailbox: the change-feed cursor to resume from
+ * and an optional reliable total message count.
+ *
+ * <p>Product functionality supported: provider-agnostic sync profiling.
+ */
 public record MailboxSnapshot(
     String cursor,
     SyncCapabilities.ChangeFeedKind cursorKind,

@@ -4,6 +4,12 @@ import com.tidymail.repository.UserAccountRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Deletes all owned accounts' data for a user (owner key), used for account
+ * deletion and data-privacy requests.
+ *
+ * <p>Product functionality supported: user account/data deletion.
+ */
 @Service
 public class UserDataDeletionService {
 
@@ -13,6 +19,7 @@ public class UserDataDeletionService {
         this.accounts = accounts;
     }
 
+    /** Deletes all accounts owned by the key and verifies removal. */
     @Transactional
     public long deleteOwnerData(String ownerKey) {
         long deleted = accounts.deleteByOwnerKey(ownerKey);

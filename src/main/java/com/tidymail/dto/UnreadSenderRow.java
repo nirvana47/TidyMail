@@ -6,6 +6,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * A sender aggregated within the Unread page, with its unread count, inferred
+ * type, protection flag, and the query/row keys needed to act on it.
+ *
+ * <p>Product functionality supported: the <em>Unread</em> flow's sender grouping
+ * and bulk action targeting.
+ */
 public record UnreadSenderRow(
     long accountId,
     String senderAddress,
@@ -30,6 +37,7 @@ public record UnreadSenderRow(
         actionQuery = Collections.unmodifiableMap(new LinkedHashMap<>(actionQuery));
     }
 
+    /** Returns a human-readable label for the sender's estimated size. */
     public String estimatedSizeLabel() {
         return EstimatedSizeLabel.format(estimatedSize);
     }

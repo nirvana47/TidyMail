@@ -21,6 +21,14 @@ import org.springframework.security.oauth2.core.OAuth2RefreshToken;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.stereotype.Service;
 
+/**
+ * Persists OAuth2 authorized clients (access and refresh tokens) to the
+ * database, encrypting tokens at rest and mapping them to per-owner linked
+ * accounts for Gmail and Outlook.
+ * <p>
+ * Product functionality supported: per-owner account linking and later
+ * restoration of authorized clients for background sync.
+ */
 @Service
 public class JpaOAuth2AuthorizedClientService implements OAuth2AuthorizedClientService {
 
@@ -39,6 +47,11 @@ public class JpaOAuth2AuthorizedClientService implements OAuth2AuthorizedClientS
         this.clientRegistrationRepository = clientRegistrationRepository;
     }
 
+    /**
+     * Reconstructs an OAuth2AuthorizedClient for the given registration and
+     * principal by decrypting the stored tokens, or {@code null} when no linked
+     * account exists.
+     */
     @Override
     @SuppressWarnings("unchecked")
     public <T extends OAuth2AuthorizedClient> T loadAuthorizedClient(String clientRegistrationId,
@@ -95,6 +108,10 @@ public class JpaOAuth2AuthorizedClientService implements OAuth2AuthorizedClientS
         return (T) authorizedClient;
     }
 
+    /**
+     * Persists the authorized client (encrypting its tokens and capturing
+     * profile claims) for the authenticated principal.
+     */
     @Override
     public void saveAuthorizedClient(OAuth2AuthorizedClient authorizedClient,
                                      Authentication principal) {
@@ -106,6 +123,10 @@ public class JpaOAuth2AuthorizedClientService implements OAuth2AuthorizedClientS
         save(authorizedClient, attributes);
     }
 
+    /**
+     * Invalidates the stored OAuth credentials for the given registration and
+     * principal, marking the linked account as requiring re-authorization.
+     */
     @Override
     public void removeAuthorizedClient(String clientRegistrationId,
                                        String principalName) {
@@ -119,6 +140,10 @@ public class JpaOAuth2AuthorizedClientService implements OAuth2AuthorizedClientS
             Instant.now());
     }
 
+    /**
+     * Upserts the linked account for an authorized client, encrypting its
+     * tokens and refreshing profile metadata from the supplied user claims.
+     */
     public void save(OAuth2AuthorizedClient authorizedClient,
                      Map<String, Object> userInfoClaims) {
         ClientRegistration registration = authorizedClient.getClientRegistration();

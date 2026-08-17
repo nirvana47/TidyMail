@@ -9,6 +9,14 @@ import com.tidymail.unsubscribe.UnsubscribeReasonCode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+/**
+ * Handles UNSUBSCRIBE actions by verifying the candidate/destination facts, then
+ * dispatching the unsubscribe execution and translating its outcome into a
+ * classified handler result.
+ *
+ * <p>Product functionality supported: the action execution engine's unsubscribe
+ * handling and outcome classification.
+ */
 @Service
 public class UnsubscribeActionHandler implements ActionHandler {
     private final UnsubscribeCandidateService candidates;
@@ -24,11 +32,13 @@ public class UnsubscribeActionHandler implements ActionHandler {
         this.execution = execution;
     }
 
+    /** Returns true for UNSUBSCRIBE actions. */
     @Override
     public boolean supports(ActionType actionType) {
         return actionType == ActionType.UNSUBSCRIBE;
     }
 
+    /** Executes the unsubscribe and classifies its outcome. */
     @Override
     public HandlerResult execute(ExecutionContext context) {
         if (TransactionSynchronizationManager.isActualTransactionActive()) {
@@ -63,6 +73,7 @@ public class UnsubscribeActionHandler implements ActionHandler {
         }
     }
 
+    /** Translates an unsubscribe outcome into a classified handler result. */
     private static HandlerResult translate(
             ExecutionContext context,
             UnsubscribeOutcomeService.OutcomeView outcome) {

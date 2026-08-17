@@ -1,5 +1,12 @@
 package com.tidymail.unsubscribe;
 
+/**
+ * Categorized reasons for an unsubscribe attempt outcome, describing why a
+ * candidate was rejected, skipped, or could not complete.
+ * <p>
+ * Product functionality supported: outcome classification in TidyMail's
+ * unsubscribe lifecycle.
+ */
 public enum UnsubscribeReasonCode {
     NONE,
     NO_SAFE_METHOD,

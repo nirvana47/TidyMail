@@ -1,5 +1,10 @@
 package com.tidymail.mail.sync;
 
+/**
+ * A paging request for backfilling a mailbox's message history.
+ *
+ * <p>Product functionality supported: provider-agnostic backfill sync.
+ */
 public record BackfillRequest(String pageToken, int maxResults) {
     public BackfillRequest {
         if (pageToken != null && pageToken.isBlank()) {

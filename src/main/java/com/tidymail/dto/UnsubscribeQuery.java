@@ -9,6 +9,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * Validated query parameters for the Unsubscribe page, controlling which
+ * unsubscribe candidates are listed (account, category, date range, search,
+ * default action, sort, page, and protection).
+ *
+ * <p>Product functionality supported: the <em>Unsubscribe</em> flow's candidate
+ * list, filtering, sorting, and pagination.
+ */
 public record UnsubscribeQuery(
     String account,
     Category category,
@@ -63,6 +71,7 @@ public record UnsubscribeQuery(
         if (days < 1 || days > MAX_RANGE_DAYS) throw QueryParsing.bad("date range");
     }
 
+    /** Parses and validates raw HTTP parameters into an {@link UnsubscribeQuery}. */
     public static UnsubscribeQuery parse(Map<String, ? extends List<String>> parameters) {
         Map<String, String> values = QueryParsing.singleValues(parameters, PARAMETERS);
         LocalDate today = LocalDate.now(ZoneOffset.UTC);
@@ -92,6 +101,7 @@ public record UnsubscribeQuery(
                 Protection.class, "protected"));
     }
 
+    /** Validates legacy filter parameters that are accepted but no longer surfaced. */
     private static void validateLegacyFilters(Map<String, String> values) {
         QueryParsing.enumeration(values.get("method"), Method.ALL, Method.class, "method");
         QueryParsing.enumeration(values.get("volume"), Volume.ALL, Volume.class, "volume");
@@ -103,12 +113,14 @@ public record UnsubscribeQuery(
             values.get("state"), OutcomeState.ALL, OutcomeState.class, "state");
     }
 
+    /** Parses a canonical (single-value) parameter map into an {@link UnsubscribeQuery}. */
     public static UnsubscribeQuery parseCanonical(Map<String, String> parameters) {
         LinkedHashMap<String, List<String>> values = new LinkedHashMap<>();
         parameters.forEach((key, value) -> values.put(key, List.of(value)));
         return parse(values);
     }
 
+    /** Returns the canonical parameter set for this query. */
     public Map<String, String> canonicalParameters() {
         LinkedHashMap<String, String> values = new LinkedHashMap<>();
         values.put("account", account);
@@ -123,27 +135,33 @@ public record UnsubscribeQuery(
         return Collections.unmodifiableMap(values);
     }
 
+    /** Returns a copy of this query with the given page number. */
     public UnsubscribeQuery withPage(int value) {
         return new UnsubscribeQuery(
             account, category, from, to, range, search, defaultAction, sort, value, protection);
     }
 
+    /** Returns a copy of this query reset to the first page. */
     public UnsubscribeQuery resetPage() {
         return withPage(0);
     }
 
+    /** Returns the row offset for the current page. */
     public long offset() {
         return Math.multiplyExact((long) page, PAGE_SIZE);
     }
 
+    /** Returns the inclusive start instant of the query's date range. */
     public java.time.Instant startInclusive() {
         return from.atStartOfDay(ZoneOffset.UTC).toInstant();
     }
 
+    /** Returns the exclusive end instant of the query's date range. */
     public java.time.Instant endExclusive() {
         return to.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
     }
 
+    /** Parses a date parameter, falling back to the default when absent. */
     private static LocalDate date(String value, String field, LocalDate fallback) {
         if (value == null || value.isBlank()) return fallback;
         try {
@@ -153,6 +171,7 @@ public record UnsubscribeQuery(
         }
     }
 
+    /** Unsubscribe candidate category filter. */
     public enum Category implements QueryValue {
         UNHANDLED("unhandled"),
         UNSUBSCRIBED("unsubscribed"),
@@ -164,6 +183,7 @@ public record UnsubscribeQuery(
         public String value() { return value; }
     }
 
+    /** Preset date-range shortcuts for the unsubscribe query. */
     public enum QuickRange implements QueryValue {
         WEEK("week", 6),
         MONTH("month", 29),
@@ -182,6 +202,7 @@ public record UnsubscribeQuery(
         LocalDate from(LocalDate today) { return today.minusDays(daysBack); }
     }
 
+    /** Default cleanup action applied to unsubscribed senders' messages. */
     public enum DefaultAction implements QueryValue {
         ARCHIVE("archive", "Archive"),
         DELETE("delete", "Delete");
@@ -196,6 +217,7 @@ public record UnsubscribeQuery(
         public String label() { return label; }
     }
 
+    /** Sort order for the unsubscribe candidate list. */
     public enum Sort implements QueryValue {
         VOLUME_DESC("volume_desc"),
         READ_DESC("read_desc"),
@@ -212,11 +234,13 @@ public record UnsubscribeQuery(
         public String value() { return value; }
     }
 
+    /** Unsubscribe method filter (legacy). */
     public enum Method implements QueryValue {
         ALL, RFC8058, LEGACY_GET, MAILTO, MANUAL;
         public String value() { return name().toLowerCase(); }
     }
 
+    /** Minimum-volume filter for candidates (legacy). */
     public enum Volume implements QueryValue {
         ALL(0), V10(10), V20(20), V50(50), V100(100);
         private final int minimum;
@@ -227,14 +251,17 @@ public record UnsubscribeQuery(
         }
     }
 
+    /** Confidence filter for candidates (legacy). */
     public enum Confidence implements QueryValue {
         ALL, HIGH, MEDIUM, REVIEW;
         public String value() { return name().toLowerCase(); }
     }
+    /** Review-requirement filter for candidates (legacy). */
     public enum Review implements QueryValue {
         ALL, READY, NEEDS_REVIEW;
         public String value() { return name().toLowerCase(); }
     }
+    /** Candidate age filter (legacy). */
     public enum Age implements QueryValue {
         ALL, D7, D30, D90, OLDER_90D;
         public String value() {
@@ -246,10 +273,12 @@ public record UnsubscribeQuery(
             };
         }
     }
+    /** How protected senders are treated in the listing. */
     public enum Protection implements QueryValue {
         EXCLUDE, INCLUDE, ONLY;
         public String value() { return name().toLowerCase(); }
     }
+    /** Prior unsubscribe outcome-state filter (legacy). */
     public enum OutcomeState implements QueryValue {
         ALL, NOT_ATTEMPTED, PENDING, ACCEPTED, CONFIRMED, FAILED,
         MANUAL_REQUIRED, VERIFICATION_PENDING;

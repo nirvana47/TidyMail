@@ -2,11 +2,20 @@ package com.tidymail.util;
 
 import java.util.Locale;
 
+/**
+ * Utility for parsing RFC 5322 formatted email addresses.
+ *
+ * <p>Product functionality supported: sender identification for cleanup — extracts
+ * a normalized, lower-cased addr-spec and domain from raw message headers so
+ * sender stats and cleanup rules key on a canonical address regardless of
+ * display-name and comment formatting.
+ */
 public final class Rfc5322Util {
 
     private Rfc5322Util() {
     }
 
+    /** Extracts the lower-cased, comment-stripped addr-spec, or null if invalid. */
     public static String extractAddrSpec(CharSequence rfc5322Address) {
         if (rfc5322Address == null) return null;
         String s = rfc5322Address.toString();
@@ -41,6 +50,7 @@ public final class Rfc5322Util {
         return inner.toLowerCase(Locale.ROOT);
     }
 
+    /** Extracts the lower-cased domain portion of the address, or null if invalid. */
     public static String extractDomain(CharSequence rfc5322Address) {
         if (rfc5322Address == null) return null;
         String s = rfc5322Address.toString();

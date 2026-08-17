@@ -15,6 +15,13 @@ import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+/**
+ * Records an audit entry whenever a user overrides protected-sender protection
+ * for a bulk action, fingerprinting the selection query for traceability.
+ *
+ * <p>Product functionality supported: the <em>Bulk Action Preview</em> flow's
+ * protected-sender override auditing.
+ */
 @Service
 public class ProtectedOverrideAuditService {
     private static final String FINGERPRINT_VERSION = "selection-query-v1";
@@ -33,6 +40,7 @@ public class ProtectedOverrideAuditService {
         this.clock = clock;
     }
 
+    /** Records an audit entry for a protected override. */
     public ProtectedOverrideAudit insert(
             Long accountId,
             SelectionRequest request,
@@ -53,6 +61,7 @@ public class ProtectedOverrideAuditService {
             clock.instant()));
     }
 
+    /** Computes a fingerprint of the selection query. */
     public String fingerprint(SelectionRequest request) {
         try {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
@@ -71,6 +80,7 @@ public class ProtectedOverrideAuditService {
         }
     }
 
+    /** Writes a length-prefixed value to the fingerprint buffer. */
     private static void write(DataOutputStream output, String value) throws IOException {
         byte[] encoded = value.getBytes(StandardCharsets.UTF_8);
         output.writeInt(encoded.length);

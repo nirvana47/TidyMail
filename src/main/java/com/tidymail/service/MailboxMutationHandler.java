@@ -11,6 +11,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * Handles provider mailbox mutations (archive, trash, mark-read) by dispatching
+ * the exact target IDs to the account's mail provider and classifying the result.
+ *
+ * <p>Product functionality supported: the action execution engine's provider
+ * cleanup mutations.
+ */
 @Service
 public class MailboxMutationHandler implements ActionHandler {
     private final Map<String, MailProvider> providers;
@@ -19,6 +26,7 @@ public class MailboxMutationHandler implements ActionHandler {
         this.providers = providers;
     }
 
+    /** Returns true for archive, trash, and mark-read actions. */
     @Override
     public boolean supports(ActionType actionType) {
         return actionType == ActionType.ARCHIVE
@@ -26,6 +34,7 @@ public class MailboxMutationHandler implements ActionHandler {
             || actionType == ActionType.MARK_READ;
     }
 
+    /** Executes the provider mutation and classifies its result. */
     @Override
     public HandlerResult execute(ExecutionContext context) {
         if (TransactionSynchronizationManager.isActualTransactionActive()) {
@@ -43,6 +52,7 @@ public class MailboxMutationHandler implements ActionHandler {
             ProviderResultClassifier.classify(context.targetOrdinals(), result));
     }
 
+    /** Maps an action type to its provider bulk-action type. */
     private static BulkActionType bulkType(ActionType actionType) {
         return switch (actionType) {
             case ARCHIVE -> BulkActionType.ARCHIVE;
@@ -53,6 +63,7 @@ public class MailboxMutationHandler implements ActionHandler {
         };
     }
 
+    /** Resolves the mail provider bean for the account's provider. */
     private MailProvider provider(com.tidymail.entity.UserAccount account) {
         String beanName = switch (account.getProvider()) {
             case "google" -> "gmailMailService";

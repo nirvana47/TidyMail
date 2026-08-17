@@ -18,6 +18,16 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
+/**
+ * Renders TidyMail's Analytics views, which give the user an explainable,
+ * metadata-only summary of their inbox volume, activity, and cleanup progress.
+ *
+ * <p>Product functionality supported: the <em>Analytics</em> workspace tab
+ * (mailbox dashboard) and the per-sender <em>analytics source</em> drill-down.
+ * Both endpoints parse and authorize a query built from the request parameters,
+ * build the surrounding workspace model (active tab, account switcher, links),
+ * and hand off to {@link AnalyticsService} to compute the dashboard/source data</p>.
+ */
 @Controller
 public class AnalyticsController {
     private final AnalyticsQueryService queryService;
@@ -37,6 +47,11 @@ public class AnalyticsController {
         this.linkService = linkService;
     }
 
+    /**
+     * Renders the Analytics dashboard for the resolved query (date window,
+     * account scope, etc.), layered onto the workspace chrome so the page
+     * stays consistent with the rest of the app.
+     */
     @GetMapping("/analytics")
     public String analytics(
             @RequestParam MultiValueMap<String, String> parameters,
@@ -53,6 +68,10 @@ public class AnalyticsController {
         return "analytics";
     }
 
+    /**
+     * Renders the analytics drill-down for a single sender/domain, showing
+     * volume and activity specifically for that source.
+     */
     @GetMapping("/analytics/source")
     public String source(
             @RequestParam MultiValueMap<String, String> parameters,

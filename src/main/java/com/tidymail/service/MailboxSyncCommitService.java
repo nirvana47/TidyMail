@@ -17,6 +17,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Commits sync units (freshness, backfill, rescan, bootstrap, no-change) to the
+ * database in their own transactions, upserting message metadata, applying
+ * deletes, and advancing the sync-state cursor under a validated lease.
+ *
+ * <p>Product functionality supported: the metadata-only sync's durable commit
+ * of each sync phase.
+ */
 @Service
 public class MailboxSyncCommitService {
     private static final int MAX_UNIT_MESSAGES = 500;
@@ -34,21 +42,25 @@ public class MailboxSyncCommitService {
         this.mapper = mapper;
     }
 
+    /** Commits a freshness sync unit. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public CommitResult commitFreshnessUnit(SyncUnit unit) {
         return commit(unit, Lane.FRESHNESS);
     }
 
+    /** Commits a backfill sync unit. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public CommitResult commitBackfillUnit(SyncUnit unit) {
         return commit(unit, Lane.BACKFILL);
     }
 
+    /** Commits a rescan sync unit. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public CommitResult commitRescanUnit(SyncUnit unit) {
         return commit(unit, Lane.RESCAN);
     }
 
+    /** Commits a bootstrap unit and completes the initial batch. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public CommitResult commitBootstrapUnit(BootstrapUnit unit) {
         if (unit == null || unit.messages() == null || unit.messages().size() > MAX_UNIT_MESSAGES) {
@@ -72,6 +84,7 @@ public class MailboxSyncCommitService {
         return new CommitResult(upserted, 0, state.version() + 1);
     }
 
+    /** Commits a rescan repair unit and begins the rescan. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public CommitResult commitRescanRepair(RescanRepairUnit unit) {
         if (unit == null || unit.messages() == null || unit.messages().size() > MAX_UNIT_MESSAGES) {
@@ -94,6 +107,7 @@ public class MailboxSyncCommitService {
         return new CommitResult(upserted, 0, state.version() + 1);
     }
 
+    /** Commits a no-change freshness success, advancing the cursor. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public CommitResult commitNoChangeSuccess(NoChangeUnit unit) {
         if (unit == null) throw new IllegalArgumentException("No-change unit is required");
@@ -112,6 +126,7 @@ public class MailboxSyncCommitService {
         return new CommitResult(0, 0, state.version() + 1);
     }
 
+    /** Applies a sync unit's messages/deletes and advances the lane cursor. */
     private CommitResult commit(SyncUnit unit, Lane lane) {
         validateUnit(unit, lane);
         StateSnapshot state = states.lockForCommit(unit.accountId());
@@ -161,6 +176,7 @@ public class MailboxSyncCommitService {
         return new CommitResult(upserted, deleted, state.version() + 1);
     }
 
+    /** Upserts message metadata rows for a unit. */
     private int upsertMessages(
             long accountId,
             List<MailMessage> messages,
@@ -178,6 +194,7 @@ public class MailboxSyncCommitService {
         return upserted;
     }
 
+    /** Returns the message with the newer provider revision. */
     private static MailMessage newer(MailMessage left, MailMessage right) {
         if (left.providerRevision() == null) return right;
         if (right.providerRevision() == null) return left;
@@ -185,6 +202,7 @@ public class MailboxSyncCommitService {
             ? right : left;
     }
 
+    /** Validates a sync unit's bounds and lane requirements. */
     private static void validateUnit(SyncUnit unit, Lane lane) {
         if (unit == null) throw new IllegalArgumentException("Sync unit is required");
         if (unit.accountId() <= 0 || unit.expectedVersion() < 0
@@ -213,6 +231,7 @@ public class MailboxSyncCommitService {
         }
     }
 
+    /** Validates the lane lease owner and version before committing. */
     private static void validateLease(
             StateSnapshot state,
             Lane lane,
@@ -233,6 +252,7 @@ public class MailboxSyncCommitService {
         }
     }
 
+    /** Requires a bounded cursor kind and value. */
     private static void requireCursor(String kind, String value) {
         if (kind == null || kind.isBlank() || value == null || value.isBlank()
                 || kind.length() > 32 || value.length() > 2048) {
@@ -240,6 +260,7 @@ public class MailboxSyncCommitService {
         }
     }
 
+    /** A bounded unit of sync changes to commit. */
     public record SyncUnit(
         long accountId,
         String leaseOwner,
@@ -262,6 +283,7 @@ public class MailboxSyncCommitService {
         }
     }
 
+    /** A no-change freshness unit. */
     public record NoChangeUnit(
         long accountId,
         String leaseOwner,
@@ -276,6 +298,7 @@ public class MailboxSyncCommitService {
         }
     }
 
+    /** A bootstrap unit with its history anchor. */
     public record BootstrapUnit(
         long accountId,
         String leaseOwner,
@@ -292,6 +315,7 @@ public class MailboxSyncCommitService {
         }
     }
 
+    /** A rescan repair unit with its new generation. */
     public record RescanRepairUnit(
         long accountId,
         String leaseOwner,
@@ -311,6 +335,7 @@ public class MailboxSyncCommitService {
         }
     }
 
+    /** The result of committing a sync unit. */
     public record CommitResult(int upserted, int deleted, long committedVersion) {
     }
 }

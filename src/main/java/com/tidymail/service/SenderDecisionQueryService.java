@@ -27,6 +27,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * Runs the Senders page decision queries: the paged sender list, the built-in and
+ * user-generated sender categories, and custom-category paging, classifying each
+ * sender fact into a decision row.
+ *
+ * <p>Product functionality supported: the <em>Senders</em> flow's list,
+ * categories, and recommendations.
+ */
 @Service
 @Transactional(readOnly = true)
 public class SenderDecisionQueryService {
@@ -58,11 +66,13 @@ public class SenderDecisionQueryService {
         this.clock = clock;
     }
 
+    /** Returns the paged sender decision list. */
     public DecisionPage<SenderDecisionRow> query(
             Collection<Long> authorizedAccountIds, SenderQuery query) {
         return query(authorizedAccountIds, query, null);
     }
 
+    /** Returns the paged sender decision list, optionally scoped to a drilldown. */
     public DecisionPage<SenderDecisionRow> query(
             Collection<Long> authorizedAccountIds,
             SenderQuery query,
@@ -90,6 +100,7 @@ public class SenderDecisionQueryService {
             pages, previous, next);
     }
 
+    /** Builds the built-in and user-generated sender category groups. */
     public List<SenderCategoryGroup> categories(
             Collection<Long> authorizedAccountIds,
             SenderQuery query,
@@ -123,6 +134,7 @@ public class SenderDecisionQueryService {
         return List.copyOf(groups);
     }
 
+    /** Returns a paged category view for a built-in or custom category. */
     public CategoryPage<SenderDecisionRow> categoryPage(
             Collection<Long> authorizedAccountIds,
             SenderQuery query,
@@ -155,6 +167,7 @@ public class SenderDecisionQueryService {
             scope, query, analyticsScope, categoryKey, offset, loadAll, exactTotal, now);
     }
 
+    /** Builds a paged category view for a built-in category. */
     private CategoryPage<SenderDecisionRow> categoryPage(
             List<Long> scope,
             SenderQuery query,
@@ -188,6 +201,7 @@ public class SenderDecisionQueryService {
             hasMore && loadedCount >= 10 && exactTotal <= 1_000);
     }
 
+    /** Builds a single built-in category group with its initial page. */
     private SenderCategoryGroup group(
             String key,
             String title,
@@ -211,6 +225,7 @@ public class SenderDecisionQueryService {
                 scope, query, analyticsScope, key, 0, false, senderCount, now));
     }
 
+    /** Builds the user-generated category groups. */
     private List<SenderCategoryGroup> userGeneratedGroups(
             List<Long> scope,
             SenderQuery query,
@@ -240,6 +255,7 @@ public class SenderDecisionQueryService {
         return groups;
     }
 
+    /** Builds a paged view for a custom category by key. */
     private CategoryPage<SenderDecisionRow> customCategoryPage(
             List<Long> scope,
             SenderQuery query,
@@ -271,6 +287,7 @@ public class SenderDecisionQueryService {
         return page;
     }
 
+    /** Builds a paged view for a custom category entity. */
     private CategoryPage<SenderDecisionRow> customCategoryPage(
             SenderCategory category,
             Map<String, DecisionSurfaceQueryRepository.SenderFact> facts,
@@ -306,6 +323,7 @@ public class SenderDecisionQueryService {
             hasMore && loadedCount >= 10 && exactTotal <= 1_000);
     }
 
+    /** Loads sender facts keyed by account and sender. */
     private Map<String, DecisionSurfaceQueryRepository.SenderFact> senderFactsByAccountAndSender(
             List<Long> scope,
             SenderQuery query,
@@ -321,10 +339,12 @@ public class SenderDecisionQueryService {
         }
     }
 
+    /** Returns the key for a custom category ID. */
     private static String customCategoryKey(long categoryId) {
         return "custom-" + categoryId;
     }
 
+    /** Parses the category ID from a custom category key. */
     private static long customCategoryId(String categoryKey) {
         try {
             return Long.parseLong(categoryKey.substring("custom-".length()));
@@ -334,15 +354,18 @@ public class SenderDecisionQueryService {
         }
     }
 
+    /** Returns the composite key for an account and sender. */
     private static String factKey(long accountId, String senderKey) {
         return accountId + "\n" + senderKey;
     }
 
+    /** Computes the total page count for a result count. */
     private static int totalPages(long count) {
         long pages = (count + SenderQuery.PAGE_SIZE - 1) / SenderQuery.PAGE_SIZE;
         return Math.toIntExact(pages);
     }
 
+    /** Validates the authorized account scope matches the query. */
     private static List<Long> requireScope(Collection<Long> accountIds, String accountSelector) {
         if (accountIds == null || accountIds.isEmpty()
                 || accountIds.stream().anyMatch(id -> id == null || id <= 0)) {

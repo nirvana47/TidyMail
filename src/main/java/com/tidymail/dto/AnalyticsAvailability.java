@@ -3,6 +3,16 @@ package com.tidymail.dto;
 import java.time.Instant;
 import java.util.Objects;
 
+/**
+ * Describes whether analytics data is available for a requested range, and
+ * why not.
+ *
+ * <p>Product functionality supported: the <em>Analytics</em> dashboard's
+ * honesty guarantees. Analytics are only shown when the underlying metadata
+ * coverage is trustworthy; this type encodes the availability state, the
+ * covered time range, and a user-facing explanation, and can combine two
+ * availabilities (taking the weaker state and intersecting the range).</p>
+ */
 public record AnalyticsAvailability(
     State state,
     Reason reason,
@@ -18,6 +28,10 @@ public record AnalyticsAvailability(
         }
     }
 
+    /**
+     * Builds a fully-available (or partial, when some rows are excluded)
+     * availability for the given coverage range.
+     */
     public static AnalyticsAvailability available(
             Instant coverageStart, Instant coverageEnd, long excludedCount) {
         Reason reason = excludedCount == 0 ? Reason.COMPLETE : Reason.NULL_RECEIVED_AT;
@@ -26,18 +40,28 @@ public record AnalyticsAvailability(
             state, reason, coverageStart, coverageEnd, excludedCount);
     }
 
+    /**
+     * Builds a partial availability with the given reason.
+     */
     public static AnalyticsAvailability partial(
             Reason reason, Instant coverageStart, Instant coverageEnd, long excludedCount) {
         return new AnalyticsAvailability(
             State.PARTIAL, reason, coverageStart, coverageEnd, excludedCount);
     }
 
+    /**
+     * Builds an unavailable availability with the given reason.
+     */
     public static AnalyticsAvailability unavailable(
             Reason reason, Instant coverageStart, Instant coverageEnd, long excludedCount) {
         return new AnalyticsAvailability(
             State.UNAVAILABLE, reason, coverageStart, coverageEnd, excludedCount);
     }
 
+    /**
+     * Combines this availability with another, keeping the weaker state and
+     * intersecting the covered time range (and summing exclusions).
+     */
     public AnalyticsAvailability combine(AnalyticsAvailability other) {
         Objects.requireNonNull(other, "other");
         AnalyticsAvailability weaker =
@@ -53,6 +77,10 @@ public record AnalyticsAvailability(
         return state == State.AVAILABLE;
     }
 
+    /**
+     * Returns a human-readable explanation of the availability reason for
+     * display in the UI.
+     */
     public String safeCopy() {
         return switch (reason) {
             case COMPLETE -> "Indexed metadata covers the selected range.";

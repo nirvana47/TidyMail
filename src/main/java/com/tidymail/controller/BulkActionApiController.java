@@ -28,6 +28,15 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * JSON/htmx API that powers the bulk-action preview flow on the Senders page.
+ *
+ * <p>Product functionality supported: the <em>Bulk Actions</em> feature. When a
+ * user clicks a bulk action (archive / trash / mark-read) on a sender row, this
+ * controller computes the exact set of messages that would be affected, records
+ * a reusable action scope, and returns a preview fragment (with a confirmation
+ * intent) so the user can see the exact count and risk before committing.</p>
+ */
 @Controller
 @RequestMapping("/api/actions")
 public class BulkActionApiController {
@@ -48,6 +57,11 @@ public class BulkActionApiController {
         this.confirmationIntents = confirmationIntents;
     }
 
+    /**
+     * Resolves the currently authenticated user's mailbox account row from the
+     * OAuth principal (email + provider). Rejects the request if the principal
+     * is incomplete or no account row exists.
+     */
     private UserAccount currentAccount(OAuth2AuthenticationToken token) {
         OAuth2AuthenticatedPrincipal principal = token.getPrincipal();
         String email = principal.getAttribute("email");
@@ -57,6 +71,17 @@ public class BulkActionApiController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "no account row"));
     }
 
+    /**
+     * Builds a bulk-action preview for every message from a given sender
+     * address.
+     *
+     * <p>Only archive, trash, and mark-read are supported here. The controller
+     * pages through the sender's messages (capped at 1000) to collect the exact
+     * provider message IDs, counts how many are protected (STARRED/IMPORTANT),
+     * and flags trash as high-risk when protected messages are present. It then
+     * creates (or reuses) an action scope for those exact IDs and returns the
+     * preview fragment plus a confirmation intent for the Review step.</p>
+     */
     @PostMapping("/bulk-by-sender/{fromAddress}")
     public String bulkBySenderFragment(
             @PathVariable String fromAddress,
@@ -112,6 +137,11 @@ public class BulkActionApiController {
         return "fragments/action-scope-preview-frag";
     }
 
+    /**
+     * Legacy endpoint for queueing a numeric scope. The numeric-scope queue
+     * flow has been removed in favor of the confirmation-intent flow, so this
+     * always returns 410 Gone.
+     */
     @PostMapping("/scopes/{scopeId}/queue")
     public String queueScope(
             @PathVariable Long scopeId,

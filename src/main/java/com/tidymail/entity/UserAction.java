@@ -18,6 +18,15 @@ import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+/**
+ * A queued/executed cleanup action against a set of messages for an account,
+ * tracking its exact scope, target, status, execution mode, decision source,
+ * timings, undo eligibility, and inverse data.
+ *
+ * <p>Product functionality supported: the exact-scope action-execution engine
+ * (archive/trash/mark-read/protect/review/unsubscribe/undo/compensation), which
+ * drives the queued-action pipeline, action history, and undo capability.
+ */
 @Entity
 @Table(name = "user_actions")
 public class UserAction {

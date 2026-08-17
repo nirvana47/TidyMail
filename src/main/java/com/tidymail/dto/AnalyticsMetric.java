@@ -4,6 +4,14 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Objects;
 
+/**
+ * A single headline analytics metric with its prior-period comparison.
+ *
+ * <p>Product functionality supported: the <em>Analytics</em> headline metric
+ * cards (received, triaged, archived, etc.). Holds the current value, the
+ * prior value, the absolute and percent deltas, and the availability states
+ * that govern whether the number (and its comparison) is trustworthy.</p>
+ */
 public record AnalyticsMetric(
     MetricId id,
     long value,
@@ -23,6 +31,9 @@ public record AnalyticsMetric(
         if (percentDelta != null) percentDelta = percentDelta.setScale(1, RoundingMode.HALF_UP);
     }
 
+    /**
+     * Convenience factory for the &quot;received&quot; metric.
+     */
     public static AnalyticsMetric received(
             long current,
             Long prior,
@@ -32,6 +43,11 @@ public record AnalyticsMetric(
             MetricId.RECEIVED, current, prior, currentAvailability, priorAvailability);
     }
 
+    /**
+     * Builds a metric from current/prior values, computing the absolute and
+     * percent deltas and combining the availability of both periods when a
+     * comparison exists.
+     */
     public static AnalyticsMetric count(
             MetricId id,
             long current,

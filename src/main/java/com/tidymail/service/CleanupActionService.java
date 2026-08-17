@@ -23,6 +23,14 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.stereotype.Service;
 
+/**
+ * Stages per-sender cleanup actions (archive/trash/mark-read) from the Senders or
+ * Unread surface: materializes exact scopes, submits staged commands under
+ * per-account locks, and returns the staged result for review.
+ *
+ * <p>Product functionality supported: the <em>Bulk Action</em> flow's staging of
+ * cleanup actions into the Review queue.
+ */
 @Service
 public class CleanupActionService {
     public static final String TRASH_RECOVERY_NOTICE =
@@ -48,6 +56,7 @@ public class CleanupActionService {
             TransactionDefinition.ISOLATION_REPEATABLE_READ);
     }
 
+    /** Stages the requested cleanup actions under per-account locks. */
     public StageResult stage(
             String ownerKey,
             List<Long> authorizedAccountIds,
@@ -71,6 +80,7 @@ public class CleanupActionService {
         }
     }
 
+    /** Materializes scopes and submits staged commands within a transaction. */
     private StageResult stageTransaction(
             String ownerKey,
             List<Long> authorizedAccountIds,
@@ -139,6 +149,7 @@ public class CleanupActionService {
                 ? TRASH_RECOVERY_NOTICE : null);
     }
 
+    /** Validates the staging request's surface, action, and acknowledgements. */
     private static void requireRequest(StageRequest request) {
         if (request == null
                 || request.rowKeys() == null
@@ -167,6 +178,7 @@ public class CleanupActionService {
         }
     }
 
+    /** Decodes, deduplicates, and sorts sender row keys into locators. */
     private static List<SelectionLocator> normalizedSenderLocators(
             List<String> rowKeys,
             List<Long> authorizedAccountIds) {
@@ -192,6 +204,7 @@ public class CleanupActionService {
             .toList();
     }
 
+    /** Decodes, deduplicates, and sorts unread row keys into locators. */
     private static List<UnreadSenderLocator> normalizedUnreadLocators(
             List<String> rowKeys,
             List<Long> authorizedAccountIds) {
@@ -218,6 +231,7 @@ public class CleanupActionService {
             .toList();
     }
 
+    /** A request to stage cleanup actions for a set of selected rows. */
     public record StageRequest(
         SelectionSurface surface,
         SenderQuery senderQuery,
@@ -248,6 +262,7 @@ public class CleanupActionService {
         }
     }
 
+    /** One staged sender cleanup action with its exact scope. */
     public record SenderStage(
         String senderAddress,
         UUID actionPublicId,
@@ -257,6 +272,7 @@ public class CleanupActionService {
     ) {
     }
 
+    /** The result of staging: per-sender actions and overall counts. */
     public record StageResult(
         UUID requestToken,
         PreviewAction action,

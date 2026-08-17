@@ -4,6 +4,14 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Determines whether an unsubscribe candidate is eligible for RFC 8058
+ * one-click list-unsubscribe POST, checking the List-Unsubscribe-Post header
+ * and trusted DKIM coverage of the relevant headers.
+ * <p>
+ * Product functionality supported: one-click (RFC 8058) POST unsubscribe in
+ * TidyMail's cleanup flow.
+ */
 public final class Rfc8058Eligibility {
     public static final byte[] CANONICAL_BODY =
         "List-Unsubscribe=One-Click".getBytes(StandardCharsets.US_ASCII);
@@ -18,6 +26,10 @@ public final class Rfc8058Eligibility {
         this.uriPolicy = uriPolicy;
     }
 
+    /**
+     * Classifies a List-Unsubscribe candidate as eligible or ineligible for
+     * one-click POST, including the canonical outbound body when eligible.
+     */
     public Result classify(
             Rfc2369Parser.ParseResult listUnsubscribe,
             List<String> listUnsubscribePostValues,

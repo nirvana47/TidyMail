@@ -7,6 +7,10 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+/**
+ * Queries and persists the individual targets that make up an action scope.
+ * <p>Product functionality: the exact <em>action execution engine</em> (scope targets).
+ */
 public interface ActionScopeTargetRepository
         extends JpaRepository<ActionScopeTarget, Long> {
     List<ActionScopeTarget> findByScopeIdAndAccountIdOrderByScopeOrdinal(
@@ -14,6 +18,9 @@ public interface ActionScopeTargetRepository
     Optional<ActionScopeTarget> findByScopeIdAndAccountIdAndScopeOrdinal(
         Long scopeId, Long accountId, Integer scopeOrdinal);
 
+    /**
+     * Counts the targets shared exactly between two scopes for overlap analysis.
+     */
     @Query("""
         select count(leftTarget)
         from ActionScopeTarget leftTarget, ActionScopeTarget rightTarget

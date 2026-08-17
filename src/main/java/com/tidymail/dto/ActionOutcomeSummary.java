@@ -4,6 +4,16 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Summarizes the outcome of a bulk action execution.
+ *
+ * <p>Product functionality supported: the <em>Review</em> outcome display and
+ * <em>action history</em>. Tracks how many messages were requested, accepted,
+ * succeeded, failed, pending verification, or not dispatched, plus a
+ * human-readable status and per-reason failure counts. Enforces internal
+ * consistency (e.g. requested == succeeded + failed + verificationPending +
+ * notDispatched).</p>
+ */
 public record ActionOutcomeSummary(
     int requested,
     int accepted,
@@ -34,6 +44,11 @@ public record ActionOutcomeSummary(
         events = List.copyOf(events);
     }
 
+    /**
+     * Derives a human-readable status label from the outcome counts (e.g.
+     * &quot;Applied&quot;, &quot;Partially applied&quot;, &quot;Verification
+     * pending&quot;, &quot;Undone&quot;).
+     */
     public String visibleStatus() {
         if ("UNDONE".equals(status)) {
             return "Undone";

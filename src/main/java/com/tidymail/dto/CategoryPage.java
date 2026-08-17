@@ -2,6 +2,14 @@ package com.tidymail.dto;
 
 import java.util.List;
 
+/**
+ * A paginated page of rows within a sender/unread category.
+ *
+ * <p>Product functionality supported: the <em>category drill-down</em> on the
+ * Senders and Unread pages. Tracks how many rows are loaded vs the exact total,
+ * whether more can be loaded, and whether a &quot;load all&quot; is available,
+ * enforcing internal consistency.</p>
+ */
 public record CategoryPage<T>(
     String categoryKey,
     List<T> rows,

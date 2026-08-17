@@ -3,6 +3,15 @@ package com.tidymail.dto;
 import java.math.BigDecimal;
 import java.util.List;
 
+/**
+ * Distribution of message triage delays (time-to-decision), used by the
+ * Analytics dashboard.
+ *
+ * <p>Product functionality supported: the <em>Analytics</em> &quot;triage
+ * delay&quot; visualization. Holds the median delay, sample size, excluded
+ * count, and exactly five time buckets, enforcing that the buckets sum to the
+ * sample and that a median is present iff the sample is non-empty.</p>
+ */
 public record AnalyticsDelayDistribution(
     BigDecimal medianSeconds,
     long sampleSize,

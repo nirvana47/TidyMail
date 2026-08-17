@@ -9,6 +9,10 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+/**
+ * Queries and persists action executions and their idempotency state.
+ * <p>Product functionality: the exact <em>action execution engine</em> (executions).
+ */
 public interface ActionExecutionRepository
         extends JpaRepository<ActionExecution, Long> {
     Optional<ActionExecution> findByPublicIdAndAccountId(UUID publicId, Long accountId);
@@ -17,6 +21,9 @@ public interface ActionExecutionRepository
     Optional<ActionExecution> findByAccountIdAndIdempotencyFingerprint(
         Long accountId, String idempotencyFingerprint);
 
+    /**
+     * Locks and returns an execution by id and account so it can be updated atomically.
+     */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
         select execution from ActionExecution execution

@@ -5,16 +5,25 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * The deterministic, non-AI heuristics that classify senders and unread messages
+ * into types, risks, categories, and recommendations with human-readable reasons.
+ *
+ * <p>Product functionality supported: the <em>Senders</em> and <em>Unread</em>
+ * flows' recommendations and the Reply Zero queue's reply-required detection.
+ */
 public final class DecisionRuleSet {
     public static final DecisionRuleSet V1 = new DecisionRuleSet();
 
     private DecisionRuleSet() {
     }
 
+    /** Classifies a sender without a manual type override. */
     public SenderDecision classify(SenderFacts facts, Instant now) {
         return classify(facts, now, null);
     }
 
+    /** Classifies a sender, optionally applying a manual type override. */
     public SenderDecision classify(SenderFacts facts, Instant now, SenderType manualOverride) {
         requireNow(now);
         SenderType inferredType;
@@ -94,6 +103,7 @@ public final class DecisionRuleSet {
             type, risk, recommendation, distinct(typeReason, riskReason, recommendationReason));
     }
 
+    /** Classifies an unread message and its thread state. */
     public UnreadDecision classify(UnreadFacts facts, Instant now) {
         requireNow(now);
         UnreadCategory category;
@@ -150,14 +160,17 @@ public final class DecisionRuleSet {
             category, threadState, waitingOnMe, recommendation, List.copyOf(reasons.stream().distinct().toList()));
     }
 
+    /** Returns the distinct reason codes in order. */
     private static List<ReasonCode> distinct(ReasonCode... values) {
         return List.of(values).stream().distinct().toList();
     }
 
+    /** Requires a non-null classification instant. */
     private static void requireNow(Instant now) {
         if (now == null) throw new IllegalArgumentException("Classification instant is required");
     }
 
+    /** The metadata facts used to classify a sender. */
     public record SenderFacts(
         boolean listSignal,
         boolean automatedSignal,
@@ -176,6 +189,7 @@ public final class DecisionRuleSet {
         }
     }
 
+    /** The metadata facts used to classify an unread message. */
     public record UnreadFacts(
         boolean listSignal,
         boolean automatedSignal,
@@ -192,6 +206,7 @@ public final class DecisionRuleSet {
         }
     }
 
+    /** The classification result for a sender. */
     public record SenderDecision(
         SenderType type,
         SenderRisk risk,
@@ -203,6 +218,7 @@ public final class DecisionRuleSet {
         }
     }
 
+    /** The classification result for an unread message. */
     public record UnreadDecision(
         UnreadCategory category,
         ThreadState threadState,
@@ -215,15 +231,22 @@ public final class DecisionRuleSet {
         }
     }
 
+    /** The inferred sender types. */
     public enum SenderType { LIST, AUTOMATED, TRANSACTIONAL, PERSONAL, UNKNOWN }
+    /** The sender risk levels. */
     public enum SenderRisk { HIGH, MEDIUM, LOW }
+    /** The recommended handling for a sender. */
     public enum SenderRecommendation { TRASH, ARCHIVE, MARK_READ, REVIEW, KEEP }
+    /** The inferred unread message categories. */
     public enum UnreadCategory { LIST, AUTOMATED, ONE_TO_ONE }
+    /** The thread shape of an unread message. */
     public enum ThreadState { THREADED, SINGLE }
+    /** The recommended handling for an unread message. */
     public enum UnreadRecommendation {
         REPLY_REQUIRED, REVIEW, KEEP, MARK_READ, ARCHIVE, TRASH
     }
 
+    /** A human-readable reason code explaining a classification. */
     public enum ReasonCode {
         LIST_HEADERS_PRESENT("List or unsubscribe headers are indexed."),
         AUTOMATED_HEADER_PRESENT("Automated delivery headers are indexed."),
@@ -250,6 +273,7 @@ public final class DecisionRuleSet {
             this.copy = copy;
         }
 
+        /** Returns the human-readable copy for this reason. */
         public String copy() {
             return copy;
         }

@@ -45,6 +45,14 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 @Service
 @Transactional(readOnly = true)
+/**
+ * Computes the Analytics dashboard and source pages from received-evidence and
+ * ledger facts, deriving availability/coverage bounds, metrics, ratios, trends,
+ * and the optional mailbox dashboard.
+ *
+ * <p>Product functionality supported: the <em>Analytics</em> flow's dashboard,
+ * trend charts, comparisons, source drilldowns, and availability semantics.
+ */
 public class AnalyticsService {
     private final AnalyticsReceivedRepository receivedRepository;
     private final AnalyticsLedgerRepository ledgerRepository;
@@ -97,6 +105,7 @@ public class AnalyticsService {
         this.clock = clock;
     }
 
+    /** Builds the analytics dashboard page model for the query. */
     public AnalyticsPageModel dashboard(
             WorkspacePageModel workspace, AnalyticsQuery query) {
         Coverage coverage = coverage(workspace);
@@ -177,6 +186,7 @@ public class AnalyticsService {
             : page.withMailbox(mailboxDashboard(workspace, query), loadingCopy(workspace));
     }
 
+    /** Builds the optional mailbox-level dashboard. */
     private AnalyticsMailboxDashboard mailboxDashboard(
             WorkspacePageModel workspace, AnalyticsQuery query) {
         long accountId = requireSingleAccount(workspace);
@@ -217,6 +227,7 @@ public class AnalyticsService {
             sizes, actions.archived(), actions.trashed());
     }
 
+    /** Produces the loading/freshness copy for the mailbox dashboard. */
     String loadingCopy(WorkspacePageModel workspace) {
         long accountId = requireSingleAccount(workspace);
         String loaded = mailboxCapability
@@ -235,6 +246,7 @@ public class AnalyticsService {
         return loaded + ". Last updated " + relative + ".";
     }
 
+    /** Requires exactly one active account for analytics. */
     private static long requireSingleAccount(WorkspacePageModel workspace) {
         if (workspace.selectedAccountIds().size() != 1) {
             throw new IllegalArgumentException("Analytics requires one active account");
@@ -242,6 +254,7 @@ public class AnalyticsService {
         return workspace.selectedAccountIds().getFirst();
     }
 
+    /** Maps mailbox facts into per-range series buckets. */
     private static List<SeriesBucket> metricSeries(
             List<AnalyticsQuery.DateRange> ranges,
             List<MailboxBucket> facts,
@@ -253,6 +266,7 @@ public class AnalyticsService {
         return List.copyOf(values);
     }
 
+    /** Builds a paginated analytics source page for a series. */
     public AnalyticsSourcePage source(
             WorkspacePageModel workspace, AnalyticsSourceQuery query) {
         AnalyticsAvailability sourceAvailability = sourceAvailability(workspace, query);
@@ -317,6 +331,7 @@ public class AnalyticsService {
             next);
     }
 
+    /** Computes the availability for an analytics source query. */
     public AnalyticsAvailability sourceAvailability(
             WorkspacePageModel workspace, AnalyticsSourceQuery query) {
         AnalyticsQuery.DateRange range =
@@ -358,12 +373,14 @@ public class AnalyticsService {
                     range.endExclusive(), query.analytics().action()));
     }
 
+    /** Loads the received-evidence fact for a range. */
     private AnalyticsReceivedRepository.ReceivedFact fact(
             WorkspacePageModel workspace, AnalyticsQuery.DateRange range) {
         return receivedRepository.receivedFact(
             workspace.selectedAccountIds(), range.startInclusive(), range.endExclusive());
     }
 
+    /** Computes the conservative received-evidence coverage bounds. */
     private Coverage coverage(WorkspacePageModel workspace) {
         Map<Long, Instant> earliest =
             receivedRepository.earliestReceivedByAccount(workspace.selectedAccountIds());
@@ -384,6 +401,7 @@ public class AnalyticsService {
             missing);
     }
 
+    /** Derives availability for a range from the coverage bounds and sync state. */
     private static AnalyticsAvailability availability(
             AnalyticsQuery.DateRange range,
             WorkspacePageModel workspace,
@@ -421,6 +439,7 @@ public class AnalyticsService {
             coverage.start(), coverage.end(), coverage.nullCount());
     }
 
+    /** Builds the full dashboard from ledger snapshots and derived ratios. */
     private AnalyticsDashboard completeDashboard(
             WorkspacePageModel workspace,
             AnalyticsQuery query,
@@ -549,6 +568,7 @@ public class AnalyticsService {
             coverage);
     }
 
+    /** Builds a count metric with its prior-period comparison. */
     private static AnalyticsMetric metric(
             AnalyticsMetric.MetricId id,
             long current,
@@ -559,6 +579,7 @@ public class AnalyticsService {
             id, current, prior, availability, priorAvailability);
     }
 
+    /** Derives availability for ledger facts given legacy gaps. */
     private AnalyticsAvailability ledgerAvailability(
             WorkspacePageModel workspace,
             AnalyticsQuery.DateRange range,
@@ -582,6 +603,7 @@ public class AnalyticsService {
         return AnalyticsAvailability.available(start, null, 0);
     }
 
+    /** Derives availability for cleaned facts, combining gap reasons. */
     private AnalyticsAvailability cleanedAvailability(
             WorkspacePageModel workspace,
             AnalyticsQuery.DateRange range,
@@ -608,6 +630,7 @@ public class AnalyticsService {
         return availability;
     }
 
+    /** Computes the conservative earliest ledger start across accounts. */
     private Instant ledgerStart(WorkspacePageModel workspace) {
         Map<Long, Instant> starts =
             coverageRepository.earliestLedgerByAccount(workspace.selectedAccountIds());
@@ -622,6 +645,7 @@ public class AnalyticsService {
         return conservative;
     }
 
+    /** Builds an analytics source URL for a series bucket. */
     private static String sourceUrl(
             AnalyticsQuery query,
             AnalyticsQuery.DateRange bucket,
@@ -636,12 +660,14 @@ public class AnalyticsService {
         return builder.build().encode().toUriString();
     }
 
+    /** Builds an encoded URL from a path and query parameters. */
     public static String url(String path, Map<String, String> parameters) {
         UriComponentsBuilder builder = UriComponentsBuilder.fromPath(path);
         parameters.forEach(builder::queryParam);
         return builder.build().encode().toUriString();
     }
 
+    /** Internal received-evidence coverage bounds. */
     private record Coverage(
         Instant start,
         Instant end,

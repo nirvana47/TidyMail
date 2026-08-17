@@ -14,6 +14,13 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.web.util.UriComponentsBuilder;
 
+/**
+ * Builds the email-stats modal for an unsubscribe candidate sender: email count,
+ * time distribution, a preview of recent emails, and bulk cleanup actions.
+ *
+ * <p>Product functionality supported: the <em>Unsubscribe</em> flow's sender
+ * stats modal and cleanup entry points.
+ */
 @Service
 public class UnsubscribeStatsService {
     private static final int MAX_DISTRIBUTION_BUCKETS = 14;
@@ -24,6 +31,7 @@ public class UnsubscribeStatsService {
         this.repository = repository;
     }
 
+    /** Builds the email-stats modal for the sender under the query. */
     public EmailStatsModal model(
             Collection<Long> authorizedAccountIds,
             UnsubscribeQuery query,
@@ -78,6 +86,7 @@ public class UnsubscribeStatsService {
             emails);
     }
 
+    /** Builds the archive/delete cleanup actions for the sender. */
     private static List<EmailStatsModal.TopAction> actions(
             UnsubscribeQuery query,
             String senderRowKey) {
@@ -89,6 +98,7 @@ public class UnsubscribeStatsService {
         return List.copyOf(result);
     }
 
+    /** Builds a single cleanup action URL. */
     private static EmailStatsModal.TopAction cleanupAction(
             UnsubscribeQuery query,
             String senderRowKey,
@@ -106,12 +116,14 @@ public class UnsubscribeStatsService {
             "post");
     }
 
+    /** Builds the unsubscribe page URL for the query. */
     private static String pageUrl(UnsubscribeQuery query) {
         UriComponentsBuilder url = UriComponentsBuilder.fromPath("/unsubscribe");
         query.canonicalParameters().forEach(url::queryParam);
         return url.build().encode().toUriString();
     }
 
+    /** Builds the time-distribution bucket definitions for the range. */
     private static List<UnsubscribeCandidateRepository.SenderEmailBucket>
             bucketDefinitions(UnsubscribeQuery query) {
         long selectedDays = java.time.temporal.ChronoUnit.DAYS.between(

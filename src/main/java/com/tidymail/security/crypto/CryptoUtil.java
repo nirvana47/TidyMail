@@ -5,6 +5,13 @@ import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
 import org.springframework.stereotype.Component;
 
+/**
+ * Provides AES-256-GCM authenticated encryption and decryption of the OAuth
+ * access/refresh tokens stored for linked Gmail and Outlook accounts.
+ * <p>
+ * Product functionality supported: encrypted secrets at rest for per-owner
+ * account linking.
+ */
 @Component
 public class CryptoUtil {
 
@@ -20,6 +27,10 @@ public class CryptoUtil {
         this.secureRandom = new SecureRandom();
     }
 
+    /**
+     * Encrypts plaintext with AES-256-GCM and returns the raw 12-byte IV
+     * prepended to the ciphertext+tag blob.
+     */
     public byte[] encrypt(byte[] plaintext) {
         if (plaintext == null) {
             throw new IllegalArgumentException("Crypto operation failed");
@@ -42,6 +53,10 @@ public class CryptoUtil {
         }
     }
 
+    /**
+     * Decrypts a blob produced by {@link #encrypt}, splitting off the leading
+     * IV and authenticating the ciphertext with the GCM tag.
+     */
     public byte[] decrypt(byte[] blob) {
         if (blob == null || blob.length < GCM_IV_LENGTH + 1) {
             throw new IllegalArgumentException("Crypto operation failed");

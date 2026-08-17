@@ -3,6 +3,15 @@ package com.tidymail.dto;
 import java.time.Instant;
 import java.util.List;
 
+/**
+ * View model for the Activity page's live status panel.
+ *
+ * <p>Product functionality supported: the <em>Activity</em> workspace tab's
+ * status widget, which shows sync progress (indexed vs provider totals,
+ * freshness), per-lane work status, recent events, and an optional call-to-
+ * action. Exposes helper predicates so the template can conditionally render
+ * each section.</p>
+ */
 public record ActivityStatusModel(
     String stateClass,
     String headline,

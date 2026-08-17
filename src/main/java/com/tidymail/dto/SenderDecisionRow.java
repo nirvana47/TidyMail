@@ -7,6 +7,13 @@ import com.tidymail.service.DecisionRuleSet.SenderType;
 import java.time.Instant;
 import java.util.List;
 
+/**
+ * A single sender decision row in the Senders page, carrying the sender's
+ * aggregated counts, inferred type/risk, recommendation, and the reasons behind it.
+ *
+ * <p>Product functionality supported: the <em>Senders</em> flow's decision list,
+ * which drives bulk cleanup recommendations.
+ */
 public record SenderDecisionRow(
     String rowKey,
     long accountId,
@@ -34,15 +41,21 @@ public record SenderDecisionRow(
         reasons = List.copyOf(reasons);
     }
 
+    /** Returns a human-readable label for the sender's estimated size. */
     public String estimatedSizeLabel() {
         return EstimatedSizeLabel.format(estimatedSize);
     }
 }
 
+/**
+ * Shared helper that formats a byte count as a compact human-readable size label
+ * (B, KB, MB, or GB).
+ */
 final class EstimatedSizeLabel {
     private EstimatedSizeLabel() {
     }
 
+    /** Formats the given byte count as a human-readable size label. */
     static String format(Long bytes) {
         if (bytes == null) return "";
         if (bytes < 1024) return bytes + " B";

@@ -9,6 +9,11 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import java.time.Instant;
 
+/**
+ * Assigns a sender address to a user-defined category for a given account.
+ * <p>Product functionality: sender categorization — links individual senders to
+ * their category so cleanup rules can target category members.
+ */
 @Entity
 @Table(name = "sender_category_assignments")
 public class SenderCategoryAssignment {
@@ -32,6 +37,9 @@ public class SenderCategoryAssignment {
     protected SenderCategoryAssignment() {
     }
 
+    /**
+     * Creates a category assignment, validating the account, category, and sender address.
+     */
     public static SenderCategoryAssignment create(
             long accountId, long categoryId, String senderAddress) {
         if (accountId <= 0 || categoryId <= 0

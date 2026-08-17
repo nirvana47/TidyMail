@@ -13,6 +13,12 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+/**
+ * Holds shared raw-SQL fragments for the Senders/Unread decision-surface
+ * queries.
+ * <p>
+ * Product functionality: the Senders and Unread decision surfaces.
+ */
 public final class DecisionSurfaceSql {
     private DecisionSurfaceSql() {
     }

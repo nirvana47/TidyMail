@@ -5,6 +5,13 @@ import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.util.List;
 
+/**
+ * Evaluates whether an IP address is globally routable, blocking private,
+ * loopback, link-local, multicast, and other special-purpose allocations.
+ * <p>
+ * Product functionality supported: SSRF protection in TidyMail's unsubscribe
+ * destination validation.
+ */
 public final class PublicAddressPolicy {
     // IANA special-purpose registries, reviewed 2026-08-09. Globally reachable
     // exceptions are checked before their non-global parent allocation.
@@ -54,6 +61,9 @@ public final class PublicAddressPolicy {
         cidr("fec0::", 10),
         cidr("ff00::", 8));
 
+    /**
+     * Returns whether the given address is a publicly reachable unicast address.
+     */
     public boolean isGlobalUnicast(InetAddress address) {
         if (address == null || address.isAnyLocalAddress() || address.isLoopbackAddress()
                 || address.isLinkLocalAddress() || address.isSiteLocalAddress()

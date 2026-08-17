@@ -9,6 +9,14 @@ import java.math.RoundingMode;
 import java.util.List;
 import org.springframework.stereotype.Service;
 
+/**
+ * Computes the derived analytics ratios and the delay distribution from raw
+ * outcome counts, enforcing cohort bounds and availability semantics.
+ *
+ * <p>Product functionality supported: the <em>Analytics</em> flow's metric
+ * calculations (coverage, cleanup rate, inbox reduction, confidence retention,
+ * and triage-delay distribution).
+ */
 @Service
 public class AnalyticsMetricService {
     public static final String REVIEW_COVERAGE =
@@ -24,6 +32,7 @@ public class AnalyticsMetricService {
     public static final String CONFIDENCE_RETENTION =
         "Succeeded, failed, and not-dispatched targets / requested targets";
 
+    /** Returns a validated copy of an outcome summary. */
     public AnalyticsOutcomeSummary validatePartition(AnalyticsOutcomeSummary outcomes) {
         return new AnalyticsOutcomeSummary(
             outcomes.requested(), outcomes.accepted(), outcomes.succeeded(),
@@ -31,11 +40,13 @@ public class AnalyticsMetricService {
             outcomes.notDispatched());
     }
 
+    /** Computes the review-coverage ratio. */
     public AnalyticsRatio reviewCoverage(
             long staged, long executed, AnalyticsAvailability availability) {
         return AnalyticsRatio.of(staged, executed, REVIEW_COVERAGE, availability, 0);
     }
 
+    /** Computes the cleanup-coverage ratio, rejecting an impossible cohort. */
     public AnalyticsRatio cleanupCoverage(
             long decided, long received, AnalyticsAvailability availability) {
         if (decided > received) {
@@ -45,6 +56,7 @@ public class AnalyticsMetricService {
             decided, received, CLEANUP_COVERAGE, availability, 0);
     }
 
+    /** Computes the unsubscribe-completion ratio. */
     public AnalyticsRatio unsubscribeCompletion(
             long confirmed,
             long eligible,
@@ -57,6 +69,7 @@ public class AnalyticsMetricService {
             confirmed, eligible, UNSUBSCRIBE_COMPLETION, availability, manualOnly);
     }
 
+    /** Computes the net inbox-reduction ratio. */
     public AnalyticsRatio inboxReduction(
             long archive,
             long trash,
@@ -68,6 +81,7 @@ public class AnalyticsMetricService {
         return AnalyticsRatio.of(net, received, INBOX_REDUCTION, availability, 0);
     }
 
+    /** Computes the cleanup-rate ratio. */
     public AnalyticsRatio cleanupRate(
             long cleanedTriaged,
             long triaged,
@@ -79,6 +93,7 @@ public class AnalyticsMetricService {
             cleanedTriaged, triaged, CLEANUP_RATE, availability, 0);
     }
 
+    /** Computes the confidence-retention ratio. */
     public AnalyticsRatio confidenceRetention(
             AnalyticsOutcomeSummary outcomes,
             AnalyticsAvailability availability) {
@@ -88,6 +103,7 @@ public class AnalyticsMetricService {
             CONFIDENCE_RETENTION, availability, valid.verificationPending());
     }
 
+    /** Computes the delay distribution, deriving the median from the sample. */
     public AnalyticsDelayDistribution delay(
             List<Long> eligibleSeconds,
             long excludedCount,
@@ -97,6 +113,7 @@ public class AnalyticsMetricService {
             median(eligibleSeconds.stream().sorted().toList()));
     }
 
+    /** Computes the delay distribution using an authoritative median. */
     public AnalyticsDelayDistribution delay(
             List<Long> eligibleSeconds,
             long excludedCount,
@@ -145,6 +162,7 @@ public class AnalyticsMetricService {
             resolved);
     }
 
+    /** Computes the median of a sorted delay sample. */
     private static BigDecimal median(List<Long> sample) {
         if (sample.isEmpty()) return null;
         int middle = sample.size() / 2;

@@ -17,6 +17,9 @@ import org.springframework.stereotype.Component;
  * encryption at rest would be a privacy bug — better to fail loudly at
  * deployment time and let the operator fix the env vars before any request
  * is ever served.  See Phase 3 DECISIONS.md D-3.4 for full rationale.
+ *
+ * <p>Product functionality supported: guarding token encryption at rest for
+ * linked Gmail/Outlook accounts, refusing to boot on a bad configuration.
  */
 @Component
 public class CryptoStartupValidator implements ApplicationRunner, Ordered {
@@ -42,6 +45,10 @@ public class CryptoStartupValidator implements ApplicationRunner, Ordered {
         return Ordered.HIGHEST_PRECEDENCE;
     }
 
+    /**
+     * Runs at the highest precedence during startup and aborts the application
+     * when the token-encryption configuration is missing or malformed.
+     */
     @Override
     public void run(ApplicationArguments args) {
         if (!cryptoProperties.isConfigured()) {

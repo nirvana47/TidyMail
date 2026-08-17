@@ -14,6 +14,10 @@ import org.springframework.web.bind.annotation.GetMapping;
 @Controller
 public class HomeController {
 
+    /**
+     * Routes the site root: signed-in users to the dashboard, guests to the
+     * login page.
+     */
     @GetMapping("/")
     public String root() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();

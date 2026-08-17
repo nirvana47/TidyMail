@@ -19,6 +19,17 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.view.RedirectView;
 
+/**
+ * Handles sender categorization: correcting a sender's category and organizing
+ * senders into categories.
+ *
+ * <p>Product functionality supported: the <em>Sender Categories</em> feature
+ * on the Senders/Unread pages. These endpoints let the user override an
+ * auto-detected sender type (semantic: LIST/AUTOMATED/TRANSACTIONAL/PERSONAL),
+ * assign senders to a custom category, create new categories, or clear a
+ * category — with strict parameter validation and either htmx refresh or a
+ * redirect back to the origin page.</p>
+ */
 @Controller
 public class SenderCategoryController {
     private static final Set<String> CORRECTION_PARAMETERS = Set.of(
@@ -39,6 +50,10 @@ public class SenderCategoryController {
         this.overrides = overrides;
     }
 
+    /**
+     * Applies a single sender category correction (semantic type, custom
+     * category, or clear) for one sender.
+     */
     @PostMapping("/api/sender-categories/correct")
     public Object correct(
             @RequestParam MultiValueMap<String, String> parameters,
@@ -91,6 +106,11 @@ public class SenderCategoryController {
         return new RedirectView(path + "?account=" + accountId, true);
     }
 
+    /**
+     * Organizes senders into a category: either creates-and-assigns a new
+     * custom category, or applies an existing category target/override to a set
+     * of senders.
+     */
     @PostMapping("/api/sender-categories/organize")
     public Object organize(
             @RequestParam long accountId,
@@ -132,6 +152,10 @@ public class SenderCategoryController {
         return new RedirectView(path + "?account=" + account, true);
     }
 
+    /**
+     * Applies a category target (semantic type, custom category, or clear) to a
+     * batch of senders for the given owner/account.
+     */
     private void applyCategoryTarget(
             String ownerKey, long accountId, List<String> senders, String target) {
         if (target == null) {
@@ -150,11 +174,19 @@ public class SenderCategoryController {
         }
     }
 
+    /**
+     * Normalizes the category target, defaulting a numeric {@code categoryId}
+     * to the {@code custom:<id>} form.
+     */
     private static String normalizedCategoryTarget(String categoryTarget, Long categoryId) {
         if (categoryTarget != null && !categoryTarget.isBlank()) return categoryTarget;
         return categoryId == null ? null : "custom:" + categoryId;
     }
 
+    /**
+     * Reads a required single value from the submitted parameters, rejecting
+     * missing, duplicate, or blank values.
+     */
     private static String required(
             MultiValueMap<String, String> parameters, String name) {
         List<String> values = parameters.get(name);
@@ -165,6 +197,10 @@ public class SenderCategoryController {
         return values.getFirst();
     }
 
+    /**
+     * Maps a requested return route to a safe path, rejecting anything else to
+     * prevent open-redirect.
+     */
     private static String returnPath(String returnTo) {
         return switch (returnTo) {
             case "senders" -> "/senders";
@@ -173,10 +209,16 @@ public class SenderCategoryController {
         };
     }
 
+    /**
+     * Convenience factory for a 400 Bad Request with the given reason.
+     */
     private static ResponseStatusException bad(String reason) {
         return new ResponseStatusException(HttpStatus.BAD_REQUEST, reason);
     }
 
+    /**
+     * Builds a 204 response that signals htmx to refresh the current page.
+     */
     private static ResponseEntity<Void> refreshResponse() {
         return ResponseEntity.noContent().header("HX-Refresh", "true").build();
     }

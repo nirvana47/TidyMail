@@ -19,6 +19,13 @@ import java.util.concurrent.TimeoutException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+/**
+ * Resolves and validates unsubscribe destination hostnames over DNS, enforcing
+ * public-address and hostname safety before any outbound connection is formed.
+ * <p>
+ * Product functionality supported: destination validation for TidyMail's
+ * automated unsubscribe flow.
+ */
 @Component
 public final class DestinationResolver implements AutoCloseable {
     private static final int MAX_HOST_LENGTH = 253;
@@ -57,6 +64,10 @@ public final class DestinationResolver implements AutoCloseable {
         this.executor.allowCoreThreadTimeOut(true);
     }
 
+    /**
+     * Resolves the hostname to public addresses and validates them, returning a
+     * pinned destination or failing with a resolution reason.
+     */
     public ResolvedDestination resolveAndValidate(String hostname) {
         String normalized = normalizeHostname(hostname);
         final Future<InetAddress[]> future;

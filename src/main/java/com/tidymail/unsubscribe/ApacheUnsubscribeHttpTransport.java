@@ -22,6 +22,13 @@ import org.apache.hc.core5.http.io.entity.ByteArrayEntity;
 import org.apache.hc.core5.io.CloseMode;
 import org.springframework.stereotype.Component;
 
+/**
+ * Executes validated unsubscribe requests over the HTTP layer, building GET or
+ * POST calls, enforcing a total timeout, and cancelling on early abort.
+ * <p>
+ * Product functionality supported: automated unsubscribe (RFC 8058 POST and
+ * legacy HTTPS GET) in TidyMail's cleanup flow.
+ */
 @Component
 public final class ApacheUnsubscribeHttpTransport implements UnsubscribeHttpTransport {
     private static final String FORM_CONTENT_TYPE =
@@ -37,6 +44,10 @@ public final class ApacheUnsubscribeHttpTransport implements UnsubscribeHttpTran
         this.properties = properties;
     }
 
+    /**
+     * Executes the request against its pinned destination within the total
+     * timeout, classifying redirects, oversized responses, and remote rejections.
+     */
     @Override
     public TransportResult execute(ValidatedUnsubscribeRequest request) {
         HttpUriRequestBase outbound = buildRequest(request);

@@ -1,6 +1,16 @@
 package com.tidymail.unsubscribe;
 
+/**
+ * Abstraction for executing a validated unsubscribe request and classifying the
+ * outcome, with results that describe accepted vs failed plus reason.
+ * <p>
+ * Product functionality supported: the transport seam for TidyMail's
+ * automated unsubscribe requests.
+ */
 public interface UnsubscribeHttpTransport {
+    /**
+     * Executes the request and returns the transport result.
+     */
     TransportResult execute(ValidatedUnsubscribeRequest request);
 
     record TransportResult(Outcome outcome, Integer httpStatusClass, FailureReason reason) {

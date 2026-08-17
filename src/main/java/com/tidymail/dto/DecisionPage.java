@@ -5,6 +5,15 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * A paginated page of decision rows (senders, unread items, unsubscribe
+ * candidates) with aggregate metrics and prev/next navigation.
+ *
+ * <p>Product functionality supported: the <em>Senders</em>, <em>Unread</em>,
+ * and <em>Unsubscribe</em> pages' result lists. Carries the row data,
+ * filtered-count, metrics (total/primary/secondary/protected), and the query
+ * maps for pagination.</p>
+ */
 public record DecisionPage<T>(
     List<T> rows,
     long filteredCount,

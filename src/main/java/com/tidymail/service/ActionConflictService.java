@@ -23,6 +23,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * Detects, exposes, and resolves conflicts between queued actions that overlap on
+ * the same messages and are incompatible (e.g. archive vs. trash). Blocks
+ * conflicting actions and restores them once resolved.
+ *
+ * <p>Product functionality supported: the <em>Review</em> flow's conflict detection
+ * and resolution, and the safety checks preventing incompatible actions.
+ */
 @Service
 public class ActionConflictService {
     private final UserAccountRepository accounts;
@@ -51,6 +59,7 @@ public class ActionConflictService {
         this.operationIntents = operationIntents;
     }
 
+    /** Recomputes conflicts among queued actions for the given accounts. */
     @Transactional
     public void recompute(List<Long> authorizedAccountIds) {
         List<Long> ordered = authorizedAccountIds.stream().distinct().sorted().toList();
@@ -92,6 +101,7 @@ public class ActionConflictService {
         }
     }
 
+    /** Throws if a new action would conflict with an existing queued action. */
     public void assertNoConflict(
             long accountId, long scopeId, ActionType actionType) {
         for (UserAction candidate : actions.findConflictCandidates(accountId)) {
@@ -105,6 +115,7 @@ public class ActionConflictService {
         }
     }
 
+    /** Returns the display detail for an open conflict. */
     @Transactional(readOnly = true)
     public ReviewConflictDetail detail(
             String ownerKey, List<Long> authorizedAccountIds, UUID conflictPublicId) {
@@ -143,6 +154,7 @@ public class ActionConflictService {
             operationIntents.issue(ownerKey, "RESOLVE_CONFLICT", subject));
     }
 
+    /** Resolves an open conflict by cancelling one side or keeping both. */
     @Transactional
     public Resolution resolve(
             String ownerKey,
@@ -196,6 +208,7 @@ public class ActionConflictService {
         };
     }
 
+    /** Cancels a queued or blocked action, recording an event. */
     void cancel(UserAction action) {
         if ("CANCELLED".equals(action.getStatus())) return;
         if (!"QUEUED".equals(action.getStatus()) && !"BLOCKED".equals(action.getStatus())) {
@@ -207,6 +220,7 @@ public class ActionConflictService {
             action, null, "ACTION_CANCELLED", null, clock.instant()));
     }
 
+    /** Resolves conflicts involving a cancelled action and restores survivors. */
     void resolveOpenForCancelled(UserAction cancelled) {
         Instant now = clock.instant();
         for (ActionConflict conflict : conflicts.findOpenByAction(
@@ -221,6 +235,7 @@ public class ActionConflictService {
         }
     }
 
+    /** Un-blocks an action once it has no open conflicts. */
     private void restoreIfClear(UserAction action) {
         if ("BLOCKED".equals(action.getStatus())
                 && conflicts.findOpenByAction(
@@ -231,6 +246,7 @@ public class ActionConflictService {
         }
     }
 
+    /** Blocks a queued action that is now in conflict. */
     private void block(UserAction action) {
         if ("QUEUED".equals(action.getStatus())) {
             action.setStatus("BLOCKED");
@@ -238,25 +254,30 @@ public class ActionConflictService {
         }
     }
 
+    /** Builds the operation-intent subject for a conflict. */
     private static String subject(ActionConflict conflict) {
         return ReviewOperationIntentService.subject(
             conflict.getPublicId(), conflict.getLowerActionId(),
             conflict.getHigherActionId(), conflict.getOverlapCount(), conflict.getStatus());
     }
 
+    /** Formats an action type as a human-readable label. */
     private static String label(String actionType) {
         String value = actionType.toLowerCase(Locale.ROOT).replace('_', ' ');
         return Character.toUpperCase(value.charAt(0)) + value.substring(1);
     }
 
+    /** Returns a not-found exception for a missing conflict. */
     private static ResponseStatusException notFound() {
         return new ResponseStatusException(HttpStatus.NOT_FOUND, "conflict_not_found");
     }
 
+    /** Throws a conflict when the conflict changed underneath the request. */
     private static ResponseStatusException stale() {
         return new ResponseStatusException(HttpStatus.CONFLICT, "conflict_changed");
     }
 
+    /** The outcome of resolving a conflict. */
     public record Resolution(String code, UUID cancelledActionPublicId) {
     }
 }

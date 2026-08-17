@@ -21,6 +21,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * Records the completion of an execution: applies per-target results, updates the
+ * execution and action statuses, sets undo eligibility, and logs the event.
+ *
+ * <p>Product functionality supported: the action execution engine's completion
+ * and undo-window tracking.
+ */
 @Service
 public class ExecutionCompletionService {
     private static final Duration UNDO_WINDOW = Duration.ofMinutes(10);
@@ -53,6 +60,7 @@ public class ExecutionCompletionService {
         this.clock = clock;
     }
 
+    /** Completes an execution from the handler result, updating all state. */
     @Transactional
     public Completion complete(
             long accountId, long executionId, String lease,
@@ -118,6 +126,7 @@ public class ExecutionCompletionService {
             execution.getPublicId(), action.getPublicId(), facts, action.getStatus());
     }
 
+    /** Maps an execution status to the corresponding action status. */
     private static ActionStatus actionStatus(ExecutionStatus status) {
         return switch (status) {
             case APPLIED -> ActionStatus.APPLIED;
@@ -129,10 +138,12 @@ public class ExecutionCompletionService {
         };
     }
 
+    /** Returns a not-found exception for a missing execution. */
     private static ResponseStatusException notFound() {
         return new ResponseStatusException(HttpStatus.NOT_FOUND, "execution_not_found");
     }
 
+    /** The result of completing an execution. */
     public record Completion(
         java.util.UUID executionPublicId,
         java.util.UUID actionPublicId,

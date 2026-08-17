@@ -9,6 +9,14 @@ import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * Validated query parameters for the Senders page, controlling which senders are
+ * listed (account, search, time window, sender type, risk, unread pressure, queue
+ * state, protection, sort, page, and optional analytics drilldown key).
+ *
+ * <p>Product functionality supported: the <em>Senders</em> flow's list, filtering,
+ * sorting, and pagination.
+ */
 public record SenderQuery(
     String account,
     String search,
@@ -56,6 +64,7 @@ public record SenderQuery(
         if (page < 0) throw QueryParsing.bad("page");
     }
 
+    /** Parses and validates raw HTTP parameters into a {@link SenderQuery}. */
     public static SenderQuery parse(Map<String, ? extends List<String>> parameters) {
         Map<String, String> values = QueryParsing.singleValues(parameters, PARAMETERS);
         return new SenderQuery(
@@ -75,6 +84,7 @@ public record SenderQuery(
             values.getOrDefault("analyticsKey", ""));
     }
 
+    /** Returns the canonical parameter set for this query. */
     public Map<String, String> canonicalParameters() {
         LinkedHashMap<String, String> values = new LinkedHashMap<>();
         values.put("account", account);
@@ -91,16 +101,19 @@ public record SenderQuery(
         return Collections.unmodifiableMap(values);
     }
 
+    /** Returns a copy of this query with the given page number. */
     public SenderQuery withPage(int newPage) {
         return new SenderQuery(
             account, search, window, type, risk, unread, queue, protection, sort, newPage,
             analyticsKey);
     }
 
+    /** Returns a copy of this query reset to the first page. */
     public SenderQuery resetPage() {
         return withPage(0);
     }
 
+    /** Returns the row offset for the current page. */
     public long offset() {
         return Math.multiplyExact((long) page, PAGE_SIZE);
     }
@@ -110,6 +123,7 @@ public record SenderQuery(
         return value;
     }
 
+    /** Time window over which senders are aggregated. */
     public enum Window implements QueryValue {
         D7("7d"), D30("30d"), D90("90d"), ALL("all");
         private final String value;
@@ -117,6 +131,7 @@ public record SenderQuery(
         public String value() { return value; }
     }
 
+    /** Inferred sender type filter. */
     public enum Type implements QueryValue {
         ALL("all"), PERSONAL("personal"), LIST("list"), AUTOMATED("automated"),
         TRANSACTIONAL("transactional"), UNKNOWN("unknown");
@@ -125,6 +140,7 @@ public record SenderQuery(
         public String value() { return value; }
     }
 
+    /** Sender risk-level filter. */
     public enum Risk implements QueryValue {
         ALL("all"), LOW("low"), MEDIUM("medium"), HIGH("high");
         private final String value;
@@ -132,6 +148,7 @@ public record SenderQuery(
         public String value() { return value; }
     }
 
+    /** Unread-pressure filter for a sender's messages. */
     public enum UnreadPressure implements QueryValue {
         ALL("all"), NONE("none"), SOME("some"), MAJORITY("majority"), ALL_UNREAD("all_unread");
         private final String value;
@@ -139,6 +156,7 @@ public record SenderQuery(
         public String value() { return value; }
     }
 
+    /** Whether senders are queued for action or still open. */
     public enum QueueState implements QueryValue {
         ALL("all"), OPEN("open"), QUEUED("queued");
         private final String value;
@@ -146,6 +164,7 @@ public record SenderQuery(
         public String value() { return value; }
     }
 
+    /** How protected senders are treated in the listing. */
     public enum Protection implements QueryValue {
         EXCLUDE("exclude"), ONLY("only"), INCLUDE("include");
         private final String value;
@@ -153,6 +172,7 @@ public record SenderQuery(
         public String value() { return value; }
     }
 
+    /** Sort order for the sender listing. */
     public enum Sort implements QueryValue {
         VOLUME_DESC("volume_desc"), UNREAD_DESC("unread_desc"), OLDEST_FIRST("oldest_first"),
         RISK_DESC("risk_desc"), RECOMMENDATION("recommendation"), RECENT_DESC("recent_desc");
@@ -162,14 +182,22 @@ public record SenderQuery(
     }
 }
 
+/**
+ * Common contract for query enums that expose a canonical string {@code value}.
+ */
 interface QueryValue {
     String value();
 }
 
+/**
+ * Shared helper for parsing and validating query parameters across the Senders,
+ * Unread, and Unsubscribe surfaces.
+ */
 final class QueryParsing {
     private QueryParsing() {
     }
 
+    /** Validates that only recognized single-valued parameters are present. */
     static Map<String, String> singleValues(
             Map<String, ? extends List<String>> input, Set<String> recognized) {
         if (input == null || input.isEmpty()) return Map.of();
@@ -185,6 +213,7 @@ final class QueryParsing {
         return result;
     }
 
+    /** Normalizes and validates an account selector ("current", "all", or an id). */
     static String account(String value) {
         String normalized = text(value == null ? "current" : value, "account", 32, false)
             .toLowerCase(Locale.ROOT);
@@ -198,12 +227,14 @@ final class QueryParsing {
         throw bad("account");
     }
 
+    /** Trims, length-checks, and optionally lowercases a free-text parameter. */
     static String text(String value, String field, int max, boolean lowerCase) {
         String normalized = value == null ? "" : value.trim();
         if (normalized.length() > max || malformed(normalized)) throw bad(field);
         return lowerCase ? normalized.toLowerCase(Locale.ROOT) : normalized;
     }
 
+    /** Validates a sender-address parameter, rejecting malformed addresses. */
     static String senderAddress(String value) {
         String normalized = text(value, "sender", 320, true);
         if (normalized.isEmpty()) return normalized;
@@ -218,6 +249,7 @@ final class QueryParsing {
         return normalized;
     }
 
+    /** Parses a non-negative page number parameter. */
     static int page(String value) {
         if (value == null) return 0;
         try {
@@ -229,6 +261,7 @@ final class QueryParsing {
         throw bad("page");
     }
 
+    /** Parses an enum parameter, falling back to a default when absent. */
     static <E extends Enum<E> & QueryValue> E enumeration(
             String value, E defaultValue, Class<E> type, String field) {
         if (value == null) return defaultValue;
@@ -239,11 +272,13 @@ final class QueryParsing {
         throw bad(field);
     }
 
+    /** Builds a BAD_REQUEST exception for an invalid query parameter. */
     static ResponseStatusException bad(String field) {
         return new ResponseStatusException(
             HttpStatus.BAD_REQUEST, "Invalid " + field + " query parameter");
     }
 
+    /** Returns true if the value contains control, replacement, or malformed surrogate characters. */
     private static boolean malformed(String value) {
         for (int i = 0; i < value.length(); i++) {
             char character = value.charAt(i);

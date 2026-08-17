@@ -18,6 +18,13 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.web.util.UriComponentsBuilder;
 
+/**
+ * Builds the action-history view model for the Review page, aggregating past
+ * cleanup actions, their outcomes, events, undo eligibility, and pagination.
+ *
+ * <p>Product functionality supported: the <em>Review</em> flow's history tab,
+ * which shows what was done and whether it can be undone.
+ */
 @Service
 public class ActionHistoryService {
     private static final DateTimeFormatter PRIMARY_TIME =
@@ -36,6 +43,7 @@ public class ActionHistoryService {
         this.providerLinks = providerLinks;
     }
 
+    /** Builds the history model for the given workspace and query. */
     public ActionHistoryModel history(
             WorkspacePageModel workspace, HistoryQuery query) {
         List<Long> accountIds = workspace.selectedAccountIds();
@@ -70,6 +78,7 @@ public class ActionHistoryService {
                 : url(withPage(query, query.page() + 1)));
     }
 
+    /** Maps a history record and its events/reasons to a display row. */
     private ActionHistoryRow row(
             ActionHistoryRepository.HistoryRecord record,
             List<ActionHistoryRepository.EventRecord> eventRecords,
@@ -123,6 +132,7 @@ public class ActionHistoryService {
             record.compensatesActionPublicId());
     }
 
+    /** Summarizes the follow-up availability for a history row. */
     private static String availability(
             boolean undoEligible,
             String action,
@@ -138,6 +148,7 @@ public class ActionHistoryService {
         return unavailable == null ? "No follow-up" : "Details available";
     }
 
+    /** Groups and limits raw failure reasons into safe display labels. */
     private static Map<String, Integer> safeReasons(Map<String, Integer> raw) {
         Map<String, Integer> grouped = new LinkedHashMap<>();
         raw.forEach((code, count) -> grouped.merge(reason(code), count, Integer::sum));
@@ -150,6 +161,7 @@ public class ActionHistoryService {
                 Integer::sum, LinkedHashMap::new), Collections::unmodifiableMap));
     }
 
+    /** Maps a failure reason code to a human-readable label. */
     private static String reason(String code) {
         return switch (code) {
             case "PROVIDER_REJECTED" -> "Provider rejected the request";
@@ -161,11 +173,13 @@ public class ActionHistoryService {
         };
     }
 
+    /** Formats an enum-style value as a human-readable label. */
     private static String visible(String value) {
         String normalized = value.toLowerCase(Locale.ROOT).replace('_', ' ');
         return Character.toUpperCase(normalized.charAt(0)) + normalized.substring(1);
     }
 
+    /** Formats an account label with its provider name. */
     private static String accountLabel(String email, String providerValue) {
         String provider = switch (providerValue) {
             case "google" -> "Google";
@@ -175,10 +189,12 @@ public class ActionHistoryService {
         return email + " (" + provider + ")";
     }
 
+    /** Returns the integer value, defaulting to zero when null. */
     private static int value(Integer value) {
         return value == null ? 0 : value;
     }
 
+    /** Returns the query parameters with the given page applied. */
     private static Map<String, String> withPage(HistoryQuery query, int page) {
         LinkedHashMap<String, String> values =
             new LinkedHashMap<>(query.withoutPage());
@@ -186,6 +202,7 @@ public class ActionHistoryService {
         return values;
     }
 
+    /** Builds a /review URL from the given query parameters. */
     private static String url(Map<String, String> parameters) {
         UriComponentsBuilder builder = UriComponentsBuilder.fromPath("/review");
         parameters.forEach(builder::queryParam);

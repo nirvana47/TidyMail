@@ -4,6 +4,13 @@ import java.util.Locale;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
+/**
+ * Sanitizes and validates user-provided sender-category names, rejecting markup,
+ * script syntax, control characters, and over-length names.
+ *
+ * <p>Product functionality supported: the <em>Senders</em> flow's category
+ * creation and renaming.
+ */
 @Component
 public class SenderCategoryNameSanitizer {
     public static final int MAX_LENGTH = 80;
@@ -13,6 +20,7 @@ public class SenderCategoryNameSanitizer {
             + "|\\b(?:javascript|vbscript|data)\\s*:"
             + "|\\bon[a-z]+\\s*=");
 
+    /** Validates and sanitizes a category name, returning its value and key. */
     public SanitizedName sanitize(String rawName) {
         if (rawName == null) {
             throw new IllegalArgumentException("Category name is required");
@@ -35,6 +43,7 @@ public class SenderCategoryNameSanitizer {
         return new SanitizedName(name, name.toLowerCase(Locale.ROOT));
     }
 
+    /** Returns true if the code point is an unsafe control/format character. */
     private static boolean isUnsafeControl(int codePoint) {
         int type = Character.getType(codePoint);
         return Character.isISOControl(codePoint)
@@ -43,6 +52,7 @@ public class SenderCategoryNameSanitizer {
             || type == Character.PARAGRAPH_SEPARATOR;
     }
 
+    /** A sanitized category name and its lowercase key. */
     public record SanitizedName(String value, String key) {
     }
 }

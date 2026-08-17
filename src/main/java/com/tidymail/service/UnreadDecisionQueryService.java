@@ -225,14 +225,17 @@ public class UnreadDecisionQueryService {
             return direct;
         }
 
+        /** Returns true if any fact has attachments. */
         private boolean hasAttachments() {
             return hasAttachments;
         }
 
+        /** Returns true if the sender is unknown/uncategorized. */
         private boolean other() {
             return "__missing__".equals(senderKey);
         }
 
+        /** Builds the unread sender row for this accumulation. */
         private UnreadSenderRow row() {
             DecisionRuleSet.UnreadCategory inferred = listsOrAutomated
                 ? DecisionRuleSet.UnreadCategory.AUTOMATED
@@ -250,6 +253,7 @@ public class UnreadDecisionQueryService {
                 actionQuery());
         }
 
+        /** Builds the action query parameters for this sender. */
         private Map<String, String> actionQuery() {
             if ("__missing__".equals(senderKey)) return Map.of();
             return new UnreadQuery(

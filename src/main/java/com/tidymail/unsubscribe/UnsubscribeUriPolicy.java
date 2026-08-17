@@ -15,6 +15,13 @@ import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 
+/**
+ * Validates unsubscribe URIs (HTTPS or mailto) against strict hostname, port,
+ * encoding, and redaction rules, producing canonical targets and fingerprints.
+ * <p>
+ * Product functionality supported: destination validation with redaction for
+ * TidyMail's unsubscribe flow.
+ */
 public final class UnsubscribeUriPolicy {
     public static final int MAX_URI_LENGTH = 4096;
     public static final int MAX_HOST_LENGTH = 253;
@@ -22,6 +29,10 @@ public final class UnsubscribeUriPolicy {
     public static final int MAX_QUERY_LENGTH = 2048;
     public static final int MAX_MAILTO_RECIPIENT_LENGTH = 320;
 
+    /**
+     * Validates the raw URI, returning an invalid result with a reason or a
+     * valid redacted/canonical target.
+     */
     public Result validate(String raw) {
         if (raw == null || raw.isEmpty()) return Result.invalid(Reason.EMPTY);
         if (raw.length() > MAX_URI_LENGTH) return Result.invalid(Reason.TOO_LONG);

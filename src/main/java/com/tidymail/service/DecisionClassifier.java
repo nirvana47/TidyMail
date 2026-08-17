@@ -8,13 +8,23 @@ import com.tidymail.repository.DecisionSurfaceQueryRepository.UnreadFact;
 import java.time.Instant;
 import org.springframework.stereotype.Service;
 
+/**
+ * Converts raw decision facts into {@link SenderDecisionRow} and
+ * {@link UnreadDecisionRow} by running the deterministic decision rules, and
+ * verifies the Java classification matches the SQL-computed facts.
+ *
+ * <p>Product functionality supported: the <em>Senders</em> and <em>Unread</em>
+ * flows' decision lists and recommendations.
+ */
 @Service
 public class DecisionClassifier {
 
+    /** Classifies a sender fact into a decision row (no manual override). */
     public SenderDecisionRow sender(String rowKey, SenderFact fact, Instant now) {
         return sender(rowKey, fact, now, (DecisionRuleSet.SenderType) null);
     }
 
+    /** Classifies a sender fact with a manual type override. */
     public SenderDecisionRow sender(
             String rowKey,
             SenderFact fact,
@@ -24,6 +34,7 @@ public class DecisionClassifier {
             ? null : DecisionRuleSet.SenderType.valueOf(manualOverride.name()));
     }
 
+    /** Classifies a sender fact with a rule-set type override. */
     public SenderDecisionRow sender(
             String rowKey,
             SenderFact fact,
@@ -61,6 +72,7 @@ public class DecisionClassifier {
             decision.reasons().stream().map(DecisionRuleSet.ReasonCode::copy).toList());
     }
 
+    /** Classifies an unread fact into a decision row. */
     public UnreadDecisionRow unread(String rowKey, UnreadFact fact, Instant now) {
         DecisionRuleSet.UnreadDecision decision = DecisionRuleSet.V1.classify(
             new DecisionRuleSet.UnreadFacts(

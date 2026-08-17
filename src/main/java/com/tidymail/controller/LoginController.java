@@ -27,6 +27,10 @@ public class LoginController {
         this.availability = availability;
     }
 
+    /**
+     * Renders the login page, exposing whether each OAuth provider (Google /
+     * Microsoft) is configured so the UI can show/hide the sign-in buttons.
+     */
     @GetMapping("/login")
     public String login(Model model) {
         model.addAttribute("googleAvailable", availability.isGoogleConfigured());
@@ -34,6 +38,10 @@ public class LoginController {
         return "login";
     }
 
+    /**
+     * Post-login landing page; currently redirects straight to the Senders
+     * dashboard.
+     */
     @GetMapping("/dashboard")
     public String dashboard() {
         return "redirect:/senders";

@@ -9,6 +9,13 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import org.hibernate.annotations.Immutable;
 
+/**
+ * Immutable audit row recording when a protected-sender guard was overridden during
+ * a cleanup action, including the selection surface, query fingerprint, and how many
+ * protected senders/messages were bypassed.
+ * <p>Product functionality: protected-override auditing — tracks deliberate
+ * overrides of protected-sender protection for accountability.
+ */
 @Entity
 @Immutable
 @Table(name = "protected_override_audits")
@@ -47,6 +54,9 @@ public class ProtectedOverrideAudit {
     protected ProtectedOverrideAudit() {
     }
 
+    /**
+     * Creates an audit row from validated server-side facts about an override.
+     */
     public static ProtectedOverrideAudit create(
             Long accountId,
             String surface,

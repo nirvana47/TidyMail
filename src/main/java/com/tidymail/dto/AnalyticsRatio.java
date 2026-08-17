@@ -4,6 +4,14 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Objects;
 
+/**
+ * A ratio (numerator/denominator/percent) used by the Analytics dashboard
+ * (e.g. review coverage, cleanup rate).
+ *
+ * <p>Product functionality supported: the <em>Analytics</em> ratio cards.
+ * Computes the percentage, and marks the ratio unavailable when there is no
+ * denominator (no eligible rows).</p>
+ */
 public record AnalyticsRatio(
     long numerator,
     long denominator,
@@ -27,6 +35,10 @@ public record AnalyticsRatio(
         }
     }
 
+    /**
+     * Factory that computes the percentage and downgrades availability to
+     * unavailable when the denominator is zero.
+     */
     public static AnalyticsRatio of(
             long numerator,
             long denominator,

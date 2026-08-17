@@ -20,6 +20,15 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * Serves the Reply Zero page, which surfaces personal-looking inbox messages
+ * the user hasn't replied to yet.
+ *
+ * <p>Product functionality supported: the <em>Reply Zero</em> workspace tab.
+ * The page itself is rendered here; the actual queue contents are computed and
+ * refreshed via the {@code /reply-zero-frag} fragment (see
+ * {@link FragmentController}).</p>
+ */
 @Controller
 public class ReplyZeroPageController {
 
@@ -39,6 +48,10 @@ public class ReplyZeroPageController {
         this.replyZeroDetector = replyZeroDetector;
     }
 
+    /**
+     * Maps a stored account's provider string to the Spring bean that talks to
+     * that mail provider (Gmail or Outlook).
+     */
     private MailProvider resolveProvider(UserAccount account) {
         String beanName = switch (account.getProvider()) {
             case "google" -> "gmailMailService";
@@ -50,6 +63,10 @@ public class ReplyZeroPageController {
         return p;
     }
 
+    /**
+     * Resolves the authenticated user's mailbox account row from the OAuth
+     * principal (email + provider).
+     */
     private UserAccount currentAccount(OAuth2AuthenticationToken token) {
         OAuth2AuthenticatedPrincipal principal = token.getPrincipal();
         String email = principal.getAttribute("email");
@@ -59,6 +76,10 @@ public class ReplyZeroPageController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "no account row"));
     }
 
+    /**
+     * Renders the Reply Zero page shell for the current account, exposing the
+     * account's email and provider to the template.
+     */
     @GetMapping("/reply-zero")
     public String replyZeroPage(Model model, OAuth2AuthenticationToken principal) {
         UserAccount account = currentAccount(principal);

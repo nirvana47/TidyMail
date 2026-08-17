@@ -2,6 +2,13 @@ package com.tidymail.dto;
 
 import java.util.List;
 
+/**
+ * A category grouping unread senders (e.g. direct, other) with its rows and exact
+ * sender/unread totals, used to organize the Unread page.
+ *
+ * <p>Product functionality supported: the <em>Unread</em> flow's category grouping
+ * and bulk cleanup.
+ */
 public record UnreadCategoryGroup(
     String key,
     String title,
@@ -43,14 +50,17 @@ public record UnreadCategoryGroup(
         }
     }
 
+    /** Returns the exact number of senders in this category. */
     public long senderCount() {
         return exactSenderCount;
     }
 
+    /** Returns the exact number of unread messages in this category. */
     public long unreadCount() {
         return exactUnreadCount;
     }
 
+    /** Returns a copy of this group with its rows removed (for collapsed display). */
     public UnreadCategoryGroup withoutRows() {
         return new UnreadCategoryGroup(
             key, title, description, List.of(), direct, other, dataAvailable,

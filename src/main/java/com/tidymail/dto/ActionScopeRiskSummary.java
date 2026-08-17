@@ -4,6 +4,15 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;
 import java.util.regex.Pattern;
 
+/**
+ * Risk summary for a staged action scope: how many messages are protected
+ * (STARRED/IMPORTANT) and how many are high-risk, plus warning codes.
+ *
+ * <p>Product functionality supported: the <em>Bulk Actions</em> safety
+ * checks. Enforces bounded, well-formed values (non-negative counts, at most
+ * 16 uppercase enum-like warning codes) so the risk data is safe to render and
+ * compare.</p>
+ */
 @JsonIgnoreProperties(ignoreUnknown = false)
 public record ActionScopeRiskSummary(
         int protectedCount,

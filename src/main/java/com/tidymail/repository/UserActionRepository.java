@@ -10,6 +10,13 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+/**
+ * Persists and queries user actions, including pessimistic-lock lookups and
+ * conflict/active-action queries.
+ * <p>
+ * Product functionality: user actions across the decision surfaces and
+ * execution pipeline.
+ */
 public interface UserActionRepository extends JpaRepository<UserAction, Long> {
 
     long countByAccountId(Long accountId);

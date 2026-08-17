@@ -10,6 +10,13 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
 
+/**
+ * Records one per-scope target item as it is dispatched and completed by an
+ * execution.
+ *
+ * <p>Product functionality supported: per-target dispatch and completion
+ * tracking for the EXACT-scope action-execution engine.
+ */
 @Entity
 @Table(name = "action_execution_targets")
 public class ActionExecutionTarget {
@@ -44,6 +51,9 @@ public class ActionExecutionTarget {
     protected ActionExecutionTarget() {
     }
 
+    /**
+     * Creates a pending execution target from its source scope target.
+     */
     public static ActionExecutionTarget pending(
             long executionId, ActionScopeTarget target) {
         ActionExecutionTarget row = new ActionExecutionTarget();
@@ -57,11 +67,17 @@ public class ActionExecutionTarget {
         return row;
     }
 
+    /**
+     * Marks this target as dispatched.
+     */
     public void markDispatched(Instant now) {
         dispatchState = "DISPATCHED";
         dispatchedAt = now;
     }
 
+    /**
+     * Completes this target with its terminal status and outcome reason.
+     */
     public void complete(
             ExecutionTargetStatus status, boolean accepted,
             ActionReasonCode reason, Instant now) {
@@ -74,6 +90,9 @@ public class ActionExecutionTarget {
         completedAt = now;
     }
 
+    /**
+     * Links this target to the unsubscribe attempt that processed it.
+     */
     public void linkUnsubscribeAttempt(long attemptId) {
         if (attemptId <= 0 || unsubscribeAttemptId != null) {
             throw new IllegalArgumentException("Invalid unsubscribe attempt link");

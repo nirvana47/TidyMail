@@ -9,6 +9,14 @@ import org.springframework.security.oauth2.client.authentication.OAuth2Authentic
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * Resolves an analytics sender-drilldown request: validates the encrypted
+ * drilldown key, the account ownership, and that the sender still exists in the
+ * analytics evidence before allowing the Senders view to open.
+ *
+ * <p>Product functionality supported: the <em>Analytics</em> flow's sender
+ * drilldown into the Senders page.
+ */
 @Service
 public class AnalyticsSenderScopeResolver {
     private static final String UNAVAILABLE = "Analytics sender drilldown is unavailable";
@@ -26,6 +34,7 @@ public class AnalyticsSenderScopeResolver {
         this.repository = repository;
     }
 
+    /** Resolves and validates the drilldown scope for a sender query. */
     public ResolvedScope resolve(
             OAuth2AuthenticationToken authentication, SenderQuery query) {
         if (query.analyticsKey().isBlank()) {
@@ -41,6 +50,7 @@ public class AnalyticsSenderScopeResolver {
         return new ResolvedScope(scope, accountIds);
     }
 
+    /** A validated drilldown scope bound to concrete account IDs. */
     public record ResolvedScope(AnalyticsSenderScope scope, List<Long> accountIds) {
         public ResolvedScope {
             accountIds = List.copyOf(accountIds);

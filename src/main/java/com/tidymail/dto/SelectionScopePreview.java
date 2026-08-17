@@ -2,6 +2,14 @@ package com.tidymail.dto;
 
 import java.util.List;
 
+/**
+ * The result of previewing a bulk action selection: the overall state (ready,
+ * empty, blocked, capped, or invalid), per-account scope digests, and counts of
+ * targets, protected senders, and high-risk items.
+ *
+ * <p>Product functionality supported: the <em>Bulk Action Preview</em> flow, which
+ * shows exact impact and safety exclusions before the user confirms execution.
+ */
 public record SelectionScopePreview(
     State state,
     List<SelectionScopeDigest> scopes,
@@ -47,6 +55,7 @@ public record SelectionScopePreview(
         return List.copyOf(scopes);
     }
 
+    /** The overall state of a computed selection preview. */
     public enum State {
         READY,
         EMPTY,

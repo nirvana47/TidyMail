@@ -5,6 +5,14 @@ import java.util.EnumSet;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * Defines which pairs of action types can coexist on overlapping messages and which
+ * conflict (e.g. archiving and trashing the same message). Used to detect and block
+ * incompatible queued actions.
+ *
+ * <p>Product functionality supported: the <em>Review</em> flow's conflict detection
+ * and the safety checks that prevent incompatible actions from executing together.
+ */
 public final class ActionCompatibility {
     private static final Map<ActionType, Set<ActionType>> CONFLICTS = Map.of(
         ActionType.ARCHIVE, EnumSet.of(
@@ -28,6 +36,7 @@ public final class ActionCompatibility {
     private ActionCompatibility() {
     }
 
+    /** Returns true when the two action types can safely apply to the same messages. */
     public static boolean compatible(ActionType left, ActionType right) {
         if (left == null || right == null) {
             throw new IllegalArgumentException("Action types are required");

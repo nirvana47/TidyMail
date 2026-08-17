@@ -2,6 +2,13 @@ package com.tidymail.dto;
 
 import java.util.List;
 
+/**
+ * A user-defined sender category with its initial decision page, used to group
+ * senders for bulk cleanup.
+ *
+ * <p>Product functionality supported: the <em>Senders</em> flow's sender
+ * categorization and category-based bulk actions.
+ */
 public record SenderCategoryGroup(
     String key,
     String title,
@@ -26,10 +33,12 @@ public record SenderCategoryGroup(
         }
     }
 
+    /** Returns the rows of the category's initial page. */
     public List<SenderDecisionRow> rows() {
         return initialPage.rows();
     }
 
+    /** Returns a human-readable label for the category's estimated size. */
     public String estimatedSizeLabel() {
         return EstimatedSizeLabel.format(estimatedSize);
     }

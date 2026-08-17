@@ -18,6 +18,13 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+/**
+ * Queries the review queue: metrics, counts, group totals, paged rows,
+ * approval candidates, and email stats/sender history for a given action.
+ * <p>
+ * Product functionality: the Review decision surface and its email-stats
+ * modal.
+ */
 @Repository
 public class ReviewActionQueryRepository {
     private static final String PIPELINE = """

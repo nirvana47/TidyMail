@@ -18,6 +18,14 @@ import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
 import org.springframework.stereotype.Service;
 
+/**
+ * Coordinates background (non-interactive) authorization of linked Google
+ * accounts, refreshing access tokens through the authorized client manager and
+ * coalescing concurrent requests per account.
+ * <p>
+ * Product functionality supported: keeping Gmail credentials valid for
+ * background sync without forcing the user to re-login.
+ */
 @Service
 public class ManagedGoogleCredentialService {
 
@@ -60,6 +68,11 @@ public class ManagedGoogleCredentialService {
         this.expirySkew = Duration.ofSeconds(expirySkewSeconds);
     }
 
+    /**
+     * Authorizes the given Google account, reusing an in-flight request for the
+     * same account and failing with a {@link CredentialAuthorizationException}
+     * when re-authentication is required.
+     */
     public OAuth2AuthorizedClient authorize(UserAccount account) {
         requireGoogleIdentity(account);
         AccountKey key = new AccountKey("google", account.getProviderAccountId());

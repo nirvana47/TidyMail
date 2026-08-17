@@ -6,6 +6,12 @@ import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+/**
+ * Persists and queries manual sender-type overrides.
+ * <p>
+ * Product functionality: sender type overrides on the Senders decision
+ * surface.
+ */
 public interface SenderTypeOverrideRepository
         extends JpaRepository<SenderTypeOverride, Long> {
 

@@ -4,6 +4,13 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
+/**
+ * A validated HTTPS unsubscribe request: a canonical URI, pinned destination,
+ * method, and bounded body ready for the transport layer.
+ * <p>
+ * Product functionality supported: the validated request consumed by TidyMail's
+ * automated unsubscribe transport.
+ */
 public record ValidatedUnsubscribeRequest(
         URI uri,
         ResolvedDestination destination,

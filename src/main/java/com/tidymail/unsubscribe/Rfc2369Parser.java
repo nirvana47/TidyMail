@@ -3,11 +3,22 @@ package com.tidymail.unsubscribe;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Parses RFC 2369 List-Unsubscribe header values into ordered URI items,
+ * enforcing strict structure, length limits, and unfolding rules.
+ * <p>
+ * Product functionality supported: subscription metadata inspection in
+ * TidyMail's unsubscribe flow.
+ */
 public final class Rfc2369Parser {
     public static final int MAX_FIELD_LENGTH = 8192;
     public static final int MAX_FIELD_VALUES = 8;
     public static final int MAX_ITEMS = 8;
 
+    /**
+     * Parses the provided field values, returning parsed URI items or a
+     * malformed result with the failing reason.
+     */
     public ParseResult parse(List<String> fieldValues) {
         if (fieldValues == null || fieldValues.isEmpty()) {
             return new ParseResult(List.of(), false, Reason.EMPTY);

@@ -14,6 +14,13 @@ import org.hibernate.annotations.Immutable;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+/**
+ * Immutable snapshot of the exact set of messages targeted by an action, with
+ * target and risk summaries.
+ *
+ * <p>Product functionality supported: precise EXACT-scope targeting for the
+ * action-execution engine.
+ */
 @Entity
 @Immutable
 @Table(name = "action_scopes")
@@ -56,6 +63,9 @@ public class ActionScope {
     protected ActionScope() {
     }
 
+    /**
+     * Creates a validated scope from the exact message IDs and summary payloads.
+     */
     public static ActionScope create(
             Long accountId,
             String actionType,

@@ -18,6 +18,14 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+/**
+ * Aggregates the action ledger for analytics, producing snapshots, outcome
+ * summaries, cohort/review/unsubscribe counts, delay statistics, and cleaned
+ * or detail source rows.
+ * <p>
+ * Product functionality: analytics dashboards and drilldowns over the action
+ * ledger (decisions, outcomes, delays, and cleaned/detail sources).
+ */
 @Repository
 public class AnalyticsLedgerRepository {
     private static final String SAFE_SOURCE_COLUMNS = """

@@ -3,6 +3,13 @@ package com.tidymail.unsubscribe;
 import java.net.InetAddress;
 import java.util.List;
 
+/**
+ * An immutable, validated unsubscribe destination: an ASCII hostname with its
+ * resolved public addresses.
+ * <p>
+ * Product functionality supported: destination validation for TidyMail's
+ * automated unsubscribe flow.
+ */
 public record ResolvedDestination(String asciiHostname, List<InetAddress> addresses) {
     public ResolvedDestination {
         if (asciiHostname == null || asciiHostname.isBlank()

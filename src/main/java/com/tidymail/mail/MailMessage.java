@@ -7,6 +7,13 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+/**
+ * A metadata-only projection of a mail message.
+ * <p>
+ * Product functionality supported: metadata-only mailbox sync. This record
+ * deliberately carries only facts (headers, labels, size estimate) and never
+ * message bodies, upholding the privacy contract.
+ */
 public record MailMessage(
     String id,
     String threadId,
@@ -53,6 +60,9 @@ public record MailMessage(
         return labelIds != null && labelIds.contains("UNREAD");
     }
 
+    /**
+     * Returns the first value for a case-insensitive header name, if present.
+     */
     public Optional<String> getHeaderSingle(String name) {
         if (headers == null || name == null) {
             return Optional.empty();

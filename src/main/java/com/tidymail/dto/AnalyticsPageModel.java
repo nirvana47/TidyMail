@@ -6,6 +6,14 @@ import java.util.Objects;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 
+/**
+ * View model for the Analytics page.
+ *
+ * <p>Product functionality supported: the <em>Analytics</em> workspace tab.
+ * Bundles the workspace chrome, the received metric and trend, the full
+ * dashboard, coverage, navigation URLs, the mailbox charts, and helper methods
+ * that format metric values, comparisons, ratios, and byte sizes for display.</p>
+ */
 public record AnalyticsPageModel(
     WorkspacePageModel workspace,
     UnreadScopeCounts unreadScopeCounts,
@@ -83,6 +91,10 @@ public record AnalyticsPageModel(
         detailUrls = Map.copyOf(detailUrls);
     }
 
+    /**
+     * Returns a copy of this model with the mailbox dashboard and its loading
+     * copy attached.
+     */
     public AnalyticsPageModel withMailbox(
             AnalyticsMailboxDashboard mailbox, String loadingCopy) {
         return new AnalyticsPageModel(
@@ -91,6 +103,9 @@ public record AnalyticsPageModel(
               detailUrls, mailbox, loadingCopy);
     }
 
+    /**
+     * Formats a byte count as a human-readable size (B/KB/MB/GB/TB).
+     */
     public String bytesValue(Long bytes) {
         if (bytes == null) return "Unavailable";
         double value = bytes;
@@ -104,6 +119,9 @@ public record AnalyticsPageModel(
             .stripTrailingZeros().toPlainString() + " " + unit;
     }
 
+    /**
+     * Returns the human-readable label for a metric id.
+     */
     public String metricLabel(AnalyticsMetric.MetricId id) {
         return switch (id) {
             case RECEIVED -> "Received";
@@ -115,6 +133,9 @@ public record AnalyticsPageModel(
         };
     }
 
+    /**
+     * Returns the definition copy for a metric id (what it counts).
+     */
     public String metricDefinition(AnalyticsMetric.MetricId id) {
         return switch (id) {
             case RECEIVED ->
@@ -132,6 +153,9 @@ public record AnalyticsPageModel(
         };
     }
 
+    /**
+     * Formats a metric's value, reflecting its availability state.
+     */
     public String metricValue(AnalyticsMetric metric) {
         return switch (metric.availability().state()) {
             case UNAVAILABLE -> "Unavailable";
@@ -140,6 +164,9 @@ public record AnalyticsPageModel(
         };
     }
 
+    /**
+     * Formats the comparison copy for a metric (prior-period delta).
+     */
     public String comparisonCopy(AnalyticsMetric metric) {
         if (metric.priorValue() == null) return "No prior comparison requested.";
         if (!metric.comparisonAvailability().available()) {
@@ -154,18 +181,27 @@ public record AnalyticsPageModel(
         return direction + metric.percentDelta().abs() + "% versus the prior equivalent period.";
     }
 
+    /**
+     * Formats a ratio (numerator/denominator/percent) for display.
+     */
     public String ratioValue(AnalyticsRatio ratio) {
         if (!ratio.availability().available()) return "Unavailable - no eligible rows.";
         return ratio.numerator() + " / " + ratio.denominator() + " = "
             + ratio.percent() + "%";
     }
 
+    /**
+     * Formats a count as a percentage of a total.
+     */
     public String bucketPercent(long count, long total) {
         if (total == 0) return "Unavailable";
         return BigDecimal.valueOf(count).multiply(BigDecimal.valueOf(100))
             .divide(BigDecimal.valueOf(total), 1, RoundingMode.HALF_UP) + "%";
     }
 
+    /**
+     * Formats the median triage delay as a human-readable duration.
+     */
     public String delayMedianCopy() {
         if (dashboard == null || dashboard.triageDelay().medianSeconds() == null) {
             return "Unavailable - no eligible rows.";

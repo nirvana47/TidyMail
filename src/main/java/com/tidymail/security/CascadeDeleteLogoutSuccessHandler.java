@@ -11,6 +11,9 @@ import org.springframework.stereotype.Component;
 /**
  * Legacy bean name retained for configuration compatibility. Ordinary logout is deliberately
  * session-only; destructive deletion is handled by the confirmed delete-data endpoint.
+ * <p>
+ * Product functionality supported: the session-based logout flow that ends the
+ * user's login session without deleting their linked accounts.
  */
 @Component
 public class CascadeDeleteLogoutSuccessHandler extends SimpleUrlLogoutSuccessHandler {

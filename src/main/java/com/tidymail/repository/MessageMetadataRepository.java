@@ -10,6 +10,10 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+/**
+ * Queries and persists the metadata-only representation of synced messages.
+ * <p>Product functionality: the metadata-only <em>mailbox sync</em> (message metadata).
+ */
 public interface MessageMetadataRepository extends JpaRepository<MessageMetadata, Long> {
 
     interface FreshnessSummary {
@@ -38,6 +42,9 @@ public interface MessageMetadataRepository extends JpaRepository<MessageMetadata
 
     long countByAccountIdIn(Collection<Long> accountIds);
 
+    /**
+     * Aggregates message count and newest received/last-synced timestamps for freshness reporting.
+     */
     @Query("""
         select count(m) as messageCount,
                max(m.receivedAt) as newestReceivedAt,
