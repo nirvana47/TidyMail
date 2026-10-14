@@ -1,123 +1,77 @@
-# TidyMail — Local Deployment Guide
+# Setup and deployment
 
-## §0 Prerequisites & Runtime Pre-Check (CRITICAL)
+Mapped from source configuration on 2026-10-14. These instructions do not establish that this checkout is running or deployed.
 
-Assumptions:
-- macOS host
-- Homebrew installed
-- JDK 21 already installed (JAVA_HOME: `/opt/homebrew/opt/openjdk@21`)
+## Local setup
 
-### Step 0 — Docker runtime check (MUST PASS before anything else)
+Use Java 21, Maven and a running Docker-compatible engine. There is no Maven wrapper in this checkout. Confirm the tools:
 
-```bash
-docker info >/dev/null 2>&1 && echo "PASS: docker daemon ok" || echo "FAIL: docker daemon not running. Install & start runtime first:"
+```sh
+java -version
+mvn -version
+docker info
 ```
 
-If the check above fails, choose **one** of the following two paths:
+On a Homebrew Mac, if necessary:
 
-**Path A — Colima (recommended for headless / CI-like usage):**
-```bash
-HOMEBREW_NO_AUTO_UPDATE=1 brew install colima docker docker-compose
-colima start --cpu 2 --memory 3 --disk 20
+```sh
+export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
+export PATH="$JAVA_HOME/bin:$PATH"
 ```
 
-**Path B — Docker Desktop (alternative):**
-1. Download from [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop)
-2. Install and open the Docker Desktop application
-3. Wait until the status shows "Docker Desktop is running"
+From the repository root, copy `.env.example` to `.env` only if you do not already have one. Supply Google credentials and independent encryption values: run `openssl rand -hex 32` for `TOKEN_ENCRYPT_SECRET` and `openssl rand -hex 16` for `TOKEN_ENCRYPT_SALT`. Keep these values stable: changing them prevents decrypting existing tokens. `.env` is ignored by Git.
 
----
+Enable Gmail API for the Google OAuth application and register `http://localhost:8080/login/oauth2/code/google` as the local redirect URI. `SecurityConfig` requests `openid`, `email`, `profile` and `gmail.modify`; offline refresh uses `access_type=offline`, not a Google `offline_access` scope. Configured providers require network access for OIDC discovery at startup. Without usable credentials, sign-in is unavailable.
 
-## §1 Quickstart localhost (copy-paste order)
+Start the database, wait for readiness, then build and run:
 
-Run each step in a shell in the given order:
-
-**(i) Build the jar:**
-```bash
-cd /Users/bytedance/Documents/trae_projects/TidyMail && export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home && mvn -q package -DskipTests
-```
-
-**(ii) Start the Postgres database container:**
-```bash
+```sh
 docker compose up -d db
+docker compose exec db pg_isready -U tidymail -d tidymail
+mvn package -DskipTests
+java -Xms512m -Xmx1g -jar target/tidymail-0.1.0.jar
 ```
 
-**(iii) Wait ~10 seconds for Postgres, then boot the app:**
-```bash
-java -Xms512m -Xmx1g -jar target/tidymail-0.1.0.jar --server.port=8080 --spring.flyway.enabled=true
-```
+Open `http://localhost:8080/login`. Skipping tests builds the JAR without validating behavior; see [Testing](docs/TESTING.md) before accepting a release.
 
-**(iv) Open the app:**
-```
-http://localhost:8080
-```
+Compose supplies PostgreSQL 16 on port 5432, database/user `tidymail`, development password `tidymaildev`, and persistent volume `tidymail-db-data`. Stopping the database does not remove data. Flyway runs by default; Hibernate validates the schema. Do not replace migrations with Hibernate `update`.
 
----
+## Effective configuration
 
-## §2 Env var production rotation
+Defaults are in `src/main/resources/application.properties`. `.env.example` has legacy comments and extra values that may not be consumed. Prefer the explicit keys below; avoid conflicting `DATABASE_*` and `SPRING_DATASOURCE_*` values.
 
-Rotate cryptographic secrets with these exact `openssl` commands:
+| Environment variable | Default / purpose |
+|---|---|
+| `DATABASE_URL`, `DATABASE_USER`, `DATABASE_PASSWORD` | JDBC PostgreSQL URL, user and password; local Compose defaults |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google sign-in |
+| `TOKEN_ENCRYPT_SECRET`, `TOKEN_ENCRYPT_SALT` | OAuth token encryption material |
+| `SERVER_PORT` | `8080` |
+| `SPRING_FLYWAY_ENABLED` | `true` |
+| `SESSION_COOKIE_SECURE` | `false` locally; set `true` for HTTPS |
+| `SERVER_SERVLET_SESSION_TIMEOUT` | `86400s`; does not purge data |
+| `THYMELEAF_CACHE` | `false`; enable for deployed templates |
+| `SYNC_INITIAL_PAGE_SIZE` | `200`; valid range 100–250 |
+| `SYNC_MAX_MESSAGES_PER_ACCOUNT` | `0`, unlimited; positive values bound unique indexed messages |
+| `SYNC_GMAIL_BACKFILL_PAGE_SIZE` | `500` |
+| `SYNC_FRESHNESS_CYCLE_MS` | `300000`, five minutes |
+| `SYNC_FRESHNESS_EXECUTOR_THREADS`, `SYNC_BACKFILL_EXECUTOR_THREADS` | `2` each; independent lanes |
+| `SYNC_GMAIL_API_CONCURRENCY`, `SYNC_GMAIL_API_BATCH_DELAY_MS` | `5` concurrent requests, `100` ms batch delay |
 
-- **TOKEN_ENCRYPT_SECRET** (64 hex chars):
-  ```bash
-  openssl rand -hex 32
-  ```
+Datasource properties can also be supplied directly through Spring configuration. `DATABASE_*` are the placeholders the application property file explicitly reads. `APP_BASE_URL` in the example does not construct OAuth redirects: registration uses Spring's request-derived `{baseUrl}`. The active `prod` profile alone is not a complete production configuration.
 
-- **TOKEN_ENCRYPT_SALT** (32 hex chars):
-  ```bash
-  openssl rand -hex 16
-  ```
+## Hosting and troubleshooting
 
-### OAuth redirect URIs
+Run the JAR on a persistent Java host with PostgreSQL. This repository supplies local database Compose configuration, not an application container or deployment pipeline. Cloudflare Tunnel can proxy the host when configured separately. Register the HTTPS Google callback URI and verify forwarded host/protocol handling so Spring constructs that callback correctly. No public deployment was performed during this refresh.
 
-In your cloud provider's OAuth console (Google Cloud Console, Microsoft Entra):
+Microsoft registration keys exist, but enabling that button does not provide Outlook cleanup.
 
-- **Google Cloud Console → Credentials → Authorized redirect URIs**
-  - Add: `<your-cloudflared-public-URL>/login/oauth2/code/google`
+| Symptom | Check |
+|---|---|
+| Database connection failure | Docker, readiness, port 5432 and effective datasource values |
+| Missing table/column | Flyway enabled, migration permissions, correct database |
+| Encryption startup failure | Secret decodes to 32 bytes, salt to at least 8; generated 16-byte salt recommended |
+| Missing Google button | Both credentials supplied and not placeholders; `OAuthProviderAvailability` |
+| Wrong callback | Request-derived host/protocol and registered `/login/oauth2/code/google` URI |
+| Reconnection required | `/activity`; failed OAuth preserves indexed data |
 
-- **Microsoft (same pattern):**
-  - Add: `<your-cloudflared-public-URL>/login/oauth2/code/microsoft`
-
-Replace `<your-cloudflared-public-URL>` with the HTTPS URL generated by `cloudflared` in §3 below.
-
----
-
-## §3 Optional: cloudflared quick public tunnel
-
-**Install (run once):**
-```bash
-HOMEBREW_NO_AUTO_UPDATE=1 brew install cloudflared
-```
-
-**RUN MANUAL WHEN NEEDED:**
-
-> cloudflared tunnel --url http://localhost:8080
-
-**WARNING:** This exposes localhost:8080 publicly on the internet until you Ctrl-C the process. Only run when you need a public HTTPS URL for testing OAuth redirects, kill with Ctrl-C when done.
-
----
-
-## §4 Troubleshooting
-
-- **(i) Postgres "password authentication failed for user tidymail"** — check that `.env` has `SPRING_DATASOURCE_USERNAME=tidymail` / `SPRING_DATASOURCE_PASSWORD=tidymaildev` matching the `POSTGRES_USER` / `POSTGRES_PASSWORD` values in `docker-compose.yml`. Restart the app after fixing.
-
-- **(ii) Schema-validation: missing column [X]** — add `--spring.flyway.enabled=true` to the jar command line. `spring.flyway.enabled=false` is the default in `application.properties` to prevent accidental DDL side effects on re-runs against a real DB.
-
-- **(iii) docker / Colima disk full** — run:
-  ```bash
-  docker image prune -af && docker volume prune -f
-  ```
-  If still tight:
-  ```bash
-  colima list
-  colima stop
-  colima start --disk 30
-  ```
-
-- **(iv) Browser login button missing** — check env vars do **not** start with the `your-` prefix (starts-with-`your-` is the convention for offline placeholder values; real values must replace them).
-
-**R8.1 top-listed mitigation — run `docker info` FIRST** before any compose or app commands to verify the container runtime is actually up.
-
----
-
-This doc intentionally does not contain any commands that actually deploy to a cloud host. All commands target localhost. The cloudflared command is a manual short-lived test tunnel; kill with Ctrl-C.
+Ordinary logout retains data. Confirmed owner deletion is the application removal path. Back up PostgreSQL according to your retention needs.

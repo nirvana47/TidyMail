@@ -1,30 +1,37 @@
-# Inbox Cleaner (Java)
+# TidyMail
 
-**Tagline:** A simple, non-AI Gmail and Outlook bulk cleanup web app for people who want control over their inboxes without the LLM complexity.
+TidyMail is a self-hosted, non-LLM email cleanup application. It indexes Gmail metadata, groups messages by sender, and lets users preview, stage, approve and inspect bulk cleanup actions. This document describes source mapped on 2026-10-14; implemented does not mean verified against a live mailbox.
 
-## What it is
-A self-hosted, single-binary (Spring Boot JAR) tool that lets you sign in with Google or Microsoft, see your inbox summarized by sender, and take high-leverage bulk actions — archive, unsubscribe, mark read, trash — on entire groups of email at once. Also surfaces a "reply zero" queue of personal emails that still need your response.
+## Implemented product
 
-Inspired by [Inbox Zero](https://github.com/elie222/inbox-zero), but:
-- **No AI features.** No LLM, no auto-drafts, no chat assistant, no AI categorization.
-- **Java/Spring Boot instead of Next.js**, so deployment is one `java -jar` on any machine with a JVM.
-- **Deliberately smaller surface area.** Designed to be maintainable by one person for personal use first, with the option to open up sign-ups later.
+| Surface | Behavior | Entry point |
+|---|---|---|
+| Bulk Archive/Delete | Sender summaries, filters, categories, classification corrections and exact cleanup staging | `/senders` |
+| Unread Only | Inbox unread groups, recommendations, selection and staging | `/unread` |
+| Bulk Unsubscribe | Candidates, sender statistics, method inspection, explicit confirmation and outcomes | `/unsubscribe` |
+| Review | Queue, conflicts, approval, execution history and eligible undo | `/review` |
+| Sync / Activity | Indexing progress, freshness, rescan and retry state | `/activity` |
+| Analytics | Received-mail facts, outcomes, UTC trends, comparisons and drilldowns | `/analytics` |
+| Reply Zero | Metadata-based reply heuristics, outside the main workspace rail | `/reply-zero` |
 
-## Core value
-Help users confidently clean large amounts of inbox clutter through clear, high-leverage sender-grouped actions without making the experience feel confusing, risky, or overwhelming.
+Google OAuth and the Gmail provider are implemented. Microsoft OAuth configuration and provider abstractions exist, but there is no production Outlook mail provider. Multiple accounts can be linked to an owner; the workspace selects one active account and rejects `account=all`.
 
-## Non-goals
-- No LLM, no AI-assisted replies, no AI categorization, no meeting briefs
-- No billing, subscriptions, premium tiers, Stripe/Lemon Squeezy
-- No Apple Sign In, SSO/SCIM, Slack/Teams/Telegram bots, mobile push
-- No queues on external brokers (BullMQ/RabbitMQ/Kafka) — in-process `@Scheduled` only
-- No native Workers/Pages backend — Java requires a real JVM host
+Archive, Trash and Mark Read mutate the mailbox. Keep, Protect, Review and Remove Protection are local decisions. Unsubscribe supports RFC 8058 POST, explicitly selected legacy HTTPS GET and manual paths. Request acceptance is recorded separately from confirmation.
 
-## Target runtime shape (per decisions — see `docs/DECISIONS.md`)
-- **Web framework:** Spring Boot 3, Java 21+, Maven build
-- **Auth:** Spring Security OAuth2 Client — "Sign in with Google" + "Sign in with Microsoft" buttons
-- **Mail APIs:** Official Gmail Java client + Microsoft Graph SDK
-- **Persistence:** Spring Data JPA + PostgreSQL (Neon / Supabase / Tembo managed, or local Docker Postgres)
-- **Templates:** Server-rendered Thymeleaf + htmx fragments (no SPA bundler)
-- **Scheduling:** Spring `@Scheduled` for sync, watch renewal, follow-up reminders
-- **Deployment:** Single executable JAR behind a **Cloudflare Tunnel** — no open ports, free end-to-end HTTPS on Cloudflare-managed domain
+## Architecture and privacy
+
+The stack is Java 21, Maven, Spring Boot 3.5.16, PostgreSQL, Flyway, Spring Data JPA, Thymeleaf and local JavaScript for fragment interactions. Deployment produces an executable JAR. Background work uses Spring scheduling and in-process executors with persisted state and leases. Cloudflare Tunnel is an optional front door to a Java host, not a Workers backend.
+
+Gmail reads use `METADATA` with a fixed header whitelist. Addresses, subject headers, labels, timestamps, unsubscribe evidence and message-size estimates can be stored; bodies, snippets and attachment contents are excluded. Attachment presence is separate membership evidence, not downloaded content.
+
+Ordinary logout ends the session and retains account data. Explicit deletion requires `DELETE` at `/logout/delete-data` and removes the owner's linked accounts and cascading records. Session expiry is not a data-retention timer. Housekeeping does not provide a complete mailbox purge after 24 hours.
+
+Actions bind to materialized message IDs and record per-target results. Undo applies to successful targets of eligible Archive, Trash and Mark Read actions within the engine's ten-minute window. Protection removal has a separate compensation path. Unsubscribe is not reversible through mailbox undo.
+
+There is no LLM integration, Gmail filter-creation workflow, embedded trained classifier, billing or live export subsystem in the mapped source. Older plans for those features describe historical intent.
+
+## Documentation authority
+
+[Codebase map](docs/CODEBASE.md) explains flows and ownership; [Status](docs/STATUS.md) records evidence and remaining work; [Deployment](DEPLOY.md) and [Testing](docs/TESTING.md) cover operation and verification. [History](docs/HISTORY.md) explains recovery of removed plans.
+
+Source, migrations and executable tests are the implementation authority. Update these documents when behavior changes; historical phase names and old source comments are not current requirements.
