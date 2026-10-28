@@ -74,3 +74,22 @@ with exponential delay, jitter and `Retry-After`. Successful metadata stays in
 memory while failed IDs are retried. The page cursor advances only after the
 complete page commits. If retries are exhausted, the next scheduled sync also
 queues unfinished backfill. Active work renews its lease while waiting.
+
+## Dashboard Phase 2 baseline
+
+Run the isolated synthetic benchmark with the Docker environment above:
+
+```sh
+mvn -o -Dtest=DashboardBaselinePerformanceTest test
+```
+
+It migrates a disposable PostgreSQL database through the production migrations,
+seeds 10,000 then 50,000 messages across 500 addresses, and measures current sender
+summary/page, search/date, later paging and a message-expansion SQL prototype.
+Each operation has one warmup and ten timed observations, idle and with a separate
+writer committing 200-row metadata updates. It asserts result counts and surfaces
+writer errors; timings are evidence, not hardcoded machine-dependent passes.
+No real OAuth account or provider is used. The prototype does not establish the
+future dashboard's received/grouping semantics or browser rendering performance.
+Results, targets and the full-suite baseline are recorded in the
+[Phase 2 report](PHASE-2-BASELINE-AND-PERSISTENCE.md).

@@ -288,6 +288,7 @@ and independent job progress/Cancel controls. Sender pagination sits below the l
 
 Approval covers the design baseline. Mockup behavior remains synthetic; identical
 Inbox/All received counts remain a documented limitation to resolve in implementation.
-Phase 2 baseline verification and persistence design is the next phase; it has not
-started. No application implementation, mailbox action, or publication occurs as
-part of locking this design.
+At design lock, Phase 2 had not started. Baseline verification and persistence
+design is now complete; see the [Phase 2 report](PHASE-2-BASELINE-AND-PERSISTENCE.md).
+No application implementation, mailbox action, or publication occurred as part of
+locking this design.

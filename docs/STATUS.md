@@ -1,5 +1,17 @@
 # Project status
 
+## Dashboard Phase 2 — 2026-10-28
+
+Baseline verification and persistence design are complete. The existing suite ran
+451 tests: 448 passed, three baseline failures, no errors/skips. The new isolated
+10k/50k-message benchmark passed; the slowest sampled repository operation was
+972.46 ms during concurrent synthetic metadata writes. This does not establish
+dashboard rendering performance: the existing warm sender-route check failed at
+27.688 s. See the [Phase 2 report](PHASE-2-BASELINE-AND-PERSISTENCE.md) for component
+reuse, evidence gaps, additive schema/state design, backup/upgrade fixtures and
+Phase 3 targets. No application source, retained database or live mailbox changed.
+Phase 3 indexed browsing is next; the three baseline failures remain open.
+
 Source mapped on 2026-10-14. Implementation findings below are distinct from historical test evidence and live acceptance. No application code changed during this refresh.
 
 ## Current capabilities

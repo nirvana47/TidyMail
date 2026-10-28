@@ -188,7 +188,9 @@ dependency, concrete deliverable, affected components, acceptance checks, and ev
 At phase completion, record what changed, checks run/results, limitations, and the
 next phase. Phase 1 is complete: the current revised wireframe was approved and locked on 2026-10-28. See
 [Phase 1 experience and review gate](PHASE-1-EXPERIENCE.md) and the
-[dashboard wireframe](wireframes/sender-dashboard.html). Phases 2–7 remain not started.
+[dashboard wireframe](wireframes/sender-dashboard.html). Phase 2 verification and
+persistence design is complete; see the [baseline report](PHASE-2-BASELINE-AND-PERSISTENCE.md)
+for measurements, open baseline failures and migration contracts. Phases 3–7 remain not started.
 
 ## Review refinements — 2026-10-28
 
@@ -272,6 +274,6 @@ and independent job progress/Cancel controls. Sender pagination sits below the l
 
 Approval covers the design baseline. Mockup behavior remains synthetic; identical
 Inbox/All received counts remain a documented limitation to resolve in implementation.
-Phase 2 baseline verification and persistence design is the next phase; it has not
-started. No application implementation, mailbox action, or publication occurs as
-part of locking this design.
+At design lock, Phase 2 had not started. It is now complete as recorded in the
+[Phase 2 report](PHASE-2-BASELINE-AND-PERSISTENCE.md). No application implementation,
+mailbox action, or publication occurred as part of locking this design.
