@@ -127,10 +127,14 @@
      * Serializes an element's parent form into URL-encoded body data.
      * Product functionality: sends form-based submissions for POST actions.
      */
-    function bodyFor(element) {
+    function bodyFor(element, submitter) {
         const form = element.closest("form");
         if (!form) return null;
-        return new URLSearchParams(new FormData(form));
+        const data = new FormData(form);
+        if (submitter && submitter.name && !submitter.disabled) {
+            data.append(submitter.name, submitter.value);
+        }
+        return new URLSearchParams(data);
     }
 
     /**
@@ -320,7 +324,7 @@
         if (method !== "GET") {
             init.body = options && options.values
                 ? new URLSearchParams(options.values)
-                : bodyFor(element);
+                : bodyFor(element, options && options.submitter);
             headers["Content-Type"] = "application/x-www-form-urlencoded;charset=UTF-8";
         }
         return fetch(url, init)
@@ -334,6 +338,7 @@
                 };
                 if (!response.ok) {
                     trigger(element, "responseError", responseDetail);
+                    trigger(element, "afterRequest", responseDetail);
                     if (options && options.polling) recordPollingFailure(element);
                     return { successful: false };
                 }
@@ -355,9 +360,12 @@
                     });
             })
             .catch((error) => {
-                trigger(element, "responseError", {
-                    elt: element, target, error, successful: false
-                });
+                const failureDetail = {
+                    elt: element, target, error, successful: false,
+                    xhr: { status: 0, responseText: "" }
+                };
+                trigger(element, "responseError", failureDetail);
+                trigger(element, "afterRequest", failureDetail);
                 if (options && options.polling) recordPollingFailure(element);
                 return { successful: false };
             })
@@ -431,11 +439,11 @@
      * Submits a form via AJAX based on its hx-post / hx-get attributes.
      * Product functionality: intercepts marked forms so they update in place.
      */
-    function submitForm(form) {
+    function submitForm(form, submitter) {
         const method = form.getAttribute("hx-post") ? "POST" : "GET";
         const url = form.getAttribute("hx-post") || form.getAttribute("hx-get");
         if (!url) return;
-        request(form, method, url);
+        request(form, method, url, { submitter });
     }
 
     document.addEventListener("click", (event) => {
@@ -456,7 +464,7 @@
         const form = event.target;
         if (!form.matches("form[hx-get], form[hx-post]")) return;
         event.preventDefault();
-        submitForm(form);
+        submitForm(form, event.submitter);
     });
 
     document.addEventListener("DOMContentLoaded", () => {

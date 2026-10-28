@@ -40,6 +40,17 @@ The harness owns its test database; it does not use the local Compose developmen
 
 ## Live acceptance still needed
 
+The [dashboard MVP plan](MVP-PLAN.md#preserve-first-implementation-and-testing)
+adds acceptance requirements for retained-data upgrades, scope/grouping,
+500+ target background jobs, throttling, partial failures, refresh/restart
+recovery, and live progress. Prefer preserving the existing connected account
+and downloaded metadata; use isolated fixtures for destructive tests. A necessary
+fresh local-index start is permitted after a recoverable backup and a recorded
+reason, and is separate from deleting Gmail messages. The current-surface checks
+below describe the existing app; replace removed-surface UI checks as the MVP is
+implemented rather than treating six-page navigation or unsubscribe as new MVP
+requirements.
+
 Use a controlled mailbox and redacted evidence. Establish recent-page usefulness while older mail indexes, then observe new mail and label/read changes arriving without waiting for backfill. Compare unique Inbox versus All Mail unread counts, message-size estimates and attachment presence with Gmail. Verify managed refresh persists and reconnect errors retain indexed data.
 
 For cleanup, confirm a known exact selection, approve it, compare the provider outcome and Review ledger, then undo an eligible action within its window. Check protection/conflicts and unsubscribe acceptance versus confirmation independently. Verify logout retains data and confirmed deletion removes every owned account's local data.

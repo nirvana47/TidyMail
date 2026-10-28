@@ -87,6 +87,40 @@ class Phase15StagingTest {
     }
 
     @Test
+    void defaultSenderFormStagesThreeDeletesWithAnEmptySearchWithoutChangingGmail()
+            throws Exception {
+        UserAccount account = account("default-form@example.com");
+        String[] senders = {"one@example.com", "two@example.com", "three@example.com"};
+        for (int index = 0; index < senders.length; index++) {
+            seed(account, "default-message-" + index, senders[index]);
+        }
+        var post = post("/api/cleanup-actions")
+            .with(csrf())
+            .with(authentication(auth(account.getEmail())))
+            .header("HX-Request", "true")
+            .param("surface", "SENDERS")
+            .param("action", "TRASH")
+            .param("deleteAcknowledged", "true")
+            .param("requestToken", UUID.randomUUID().toString())
+            .param("rowKey", java.util.Arrays.stream(senders)
+                .map(sender -> DecisionRowKey.sender(account.getId(), sender))
+                .toArray(String[]::new));
+        // Use every canonical field rendered by the default sender form, including search="".
+        SenderQuery.parse(Map.of("account", List.of(account.getId().toString())))
+            .canonicalParameters().forEach((name, value) -> post.param(name, value));
+
+        mockMvc.perform(post).andExpect(status().isOk());
+
+        assertThat(actions.findAll()).hasSize(3).allSatisfy(action -> {
+            assertThat(action.getActionType()).isEqualTo("TRASH");
+            assertThat(action.getStatus()).isEqualTo("QUEUED");
+            assertThat(action.getExecutionMode()).isEqualTo("STAGED");
+            assertThat(action.getMessageIds()).hasSize(1);
+        });
+        verifyNoInteractions(gmail, outlook);
+    }
+
+    @Test
     void directPostsPersistExactPerSenderScopesReuseActiveActionsAndReturnCanonicalRoute()
             throws Exception {
         UserAccount account = account("stage@example.com");

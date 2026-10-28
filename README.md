@@ -4,8 +4,14 @@ Self-hosted Gmail cleanup with sender grouping, unread triage, unsubscribe inspe
 
 Start with [local setup](DEPLOY.md). Read [PROJECT.md](PROJECT.md) for product and privacy behavior.
 
+The agreed next MVP is a simpler sender dashboard with Inbox / All received mail,
+bulk Gmail actions, and live background-action progress. See the
+[MVP plan](docs/MVP-PLAN.md) for scope and preserve-first testing decisions.
+This is planned behavior; the description above reflects the existing product.
+
 | Reference | Contents |
 |---|---|
+| [MVP plan](docs/MVP-PLAN.md) | Agreed dashboard scope, progress requirements, and data-preservation plan |
 | [Codebase map](docs/CODEBASE.md) | Where features live and how data moves |
 | [Status](docs/STATUS.md) | Implemented capabilities and verification gaps |
 | [Testing](docs/TESTING.md) | PostgreSQL harness and test commands |

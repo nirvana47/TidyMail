@@ -349,9 +349,13 @@ function prepareDeleteDialog(button) {
         ? button.closest("form")
         : document.getElementById(button.dataset.deleteSource);
     const surface = source instanceof HTMLFormElement
-        ? source.querySelector("input[name='surface']")?.value.toLowerCase()
+        ? source.querySelector("input[name='surface']")?.value
         : "";
-    const dialog = document.getElementById(`${surface}-delete-dialog`);
+    const dialogId = {
+        SENDERS: "sender-delete-dialog",
+        UNREAD: "unread-delete-dialog"
+    }[surface];
+    const dialog = dialogId ? document.getElementById(dialogId) : null;
     const target = dialog?.querySelector("[data-delete-fields]");
     if (!(source instanceof HTMLFormElement)
             || !(dialog instanceof HTMLDialogElement)

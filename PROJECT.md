@@ -4,6 +4,11 @@ TidyMail is a self-hosted, non-LLM email cleanup application. It indexes Gmail m
 
 ## Implemented product
 
+The [2026-10-28 MVP plan](docs/MVP-PLAN.md) defines the next product direction:
+one sender dashboard, Inbox by default, All received mail excluding Spam/Trash,
+and asynchronous bulk actions with live progress. It takes precedence over older
+product priorities, but does not change the implementation inventory below.
+
 | Surface | Behavior | Entry point |
 |---|---|---|
 | Bulk Archive/Delete | Sender summaries, filters, categories, classification corrections and exact cleanup staging | `/senders` |

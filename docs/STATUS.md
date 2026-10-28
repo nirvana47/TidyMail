@@ -28,13 +28,21 @@ At mapping time, `src/main/resources/templates/login.html` contained a pre-exist
 
 ## Remaining work
 
+The [2026-10-28 MVP plan](MVP-PLAN.md) supersedes the priorities below where they
+conflict. Durable background cleanup and live action progress are now MVP
+requirements; unsubscribe, multi-account UI, and future automatic rules are out
+of scope. Preserve the existing connected account/index for testing where
+practical. This update records requirements only; no implementation or new live
+acceptance is claimed.
+
 | Priority | Work | Evidence / completion criterion |
 |---|---|---|
 | First | Controlled live Gmail acceptance | Prove fresh mail during backfill, managed refresh and indexed metadata against a test mailbox; record redacted observations |
 | First | Current release verification | Run affected/full PostgreSQL tests and authenticated browser checks after application changes |
 | Next | Classification quality | Rules and corrections exist; old plans proposed a labeled accuracy benchmark and optional local ML, neither delivered in source |
 | Next | Architectural maintenance | Large candidate/analytics services, duplicate validation/account helpers and in-JVM staging locks remain; preserve journeys while refactoring |
-| Later | Gmail rules and bulk execution feedback | Filter creation and durable background bulk-action progress were planned; current cleanup is request-dispatched, unlike background mailbox sync |
+| MVP | Bulk execution feedback | Durable background cleanup with live progress is required by the new plan; current cleanup is request-dispatched, unlike background mailbox sync |
+| Later | Gmail rules | Automatic rules for future messages remain outside the dashboard MVP |
 | Scope decision | Outlook completion | Implement and verify a provider before claiming Outlook cleanup support |
 | Scope decision | Automatic data expiry | Current jobs perform partial housekeeping, not full timed deletion of metadata/tokens |
 

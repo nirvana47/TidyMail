@@ -171,7 +171,7 @@ public class CleanupActionController {
                     && (values == null
                         || values.size() != 1
                         || values.getFirst() == null
-                        || values.getFirst().isBlank())) {
+                        || values.getFirst().isBlank() && !"search".equals(name))) {
                 throw bad("invalid_" + name);
             }
         });
