@@ -6,7 +6,7 @@
     "read_status": "ok"
   },
   "project": {
-    "designProjectPath": "/Users/bytedance/Documents/trae_projects/TidyMail/tidymail-ux-rehaul-draft",
+    "designProjectPath": "./tidymail-ux-rehaul-draft",
     "resolvedLane": "redesign_duplicate_project",
     "selectedIntentWorkflowRead": true,
     "contextRequirementsLoaded": [
@@ -249,8 +249,8 @@
         "source": "main-agent-runtime-trace"
       }
     ],
-    "sourceProjectPath": "/Users/bytedance/Documents/trae_projects/TidyMail/tidymail-ux-rehaul",
-    "duplicateProjectPath": "/Users/bytedance/Documents/trae_projects/TidyMail/tidymail-ux-rehaul-draft",
+    "sourceProjectPath": "./tidymail-ux-rehaul",
+    "duplicateProjectPath": "./tidymail-ux-rehaul-draft",
     "redesignAudit": {
       "primaryIssue": "implementation-state crowding",
       "fixPriority": [
@@ -1234,7 +1234,7 @@
     ],
     "repairStopConditionMet": true,
     "repairStopReason": "repair-ledger-diagnostic",
-    "lastValidationReportPath": "/Users/bytedance/Documents/trae_projects/TidyMail/tidymail-ux-rehaul-draft/validation-report.json",
+    "lastValidationReportPath": "./tidymail-ux-rehaul-draft/validation-report.json",
     "remainingBlockingIssues": [
       "[repair-ledger] validationRepairLedger[] has 4 entries; repair stop condition threshold is 3"
     ]

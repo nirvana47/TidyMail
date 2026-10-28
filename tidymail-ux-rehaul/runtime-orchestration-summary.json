@@ -6,7 +6,7 @@
     "read_status": "ok"
   },
   "project": {
-    "designProjectPath": "/Users/bytedance/Documents/trae_projects/TidyMail/tidymail-ux-rehaul",
+    "designProjectPath": "./tidymail-ux-rehaul",
     "resolvedLane": "existing_edit_add_comparison",
     "selectedIntentWorkflowRead": true,
     "contextRequirementsLoaded": [

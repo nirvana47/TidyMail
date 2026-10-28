@@ -121,7 +121,7 @@
   "terminalState": null,
   "nextCheck": {
     "type": "finish-readiness",
-    "command": "node '/Users/bytedance/.trae-cn/builtin/design/default/skills/solo-design/shared-runtime/deterministic-tooling/validate-finish-readiness.mjs' '/Users/bytedance/Documents/trae_projects/TidyMail/tidymail-ux-rehaul' --check=all",
+    "command": "node \"$HOME/.trae-cn/builtin/design/default/skills/solo-design/shared-runtime/deterministic-tooling/validate-finish-readiness.mjs\" './tidymail-ux-rehaul' --check=all",
     "fullValidationAllowed": false,
     "reason": "workspace validation passed; run complete finish readiness before final delivery"
   },
@@ -147,7 +147,7 @@
     "repairActionTable": [],
     "nextCheck": {
       "type": "finish-readiness",
-      "command": "node '/Users/bytedance/.trae-cn/builtin/design/default/skills/solo-design/shared-runtime/deterministic-tooling/validate-finish-readiness.mjs' '/Users/bytedance/Documents/trae_projects/TidyMail/tidymail-ux-rehaul' --check=all",
+      "command": "node \"$HOME/.trae-cn/builtin/design/default/skills/solo-design/shared-runtime/deterministic-tooling/validate-finish-readiness.mjs\" './tidymail-ux-rehaul' --check=all",
       "fullValidationAllowed": false,
       "reason": "workspace validation passed; run complete finish readiness before final delivery"
     },
@@ -168,7 +168,7 @@
     "pages/unread-compact-suite.html": "fde2021475f063bcdd1f1dd42c1fff3a596c5f8242fb2b4f116ced2d3c44bf24",
     "pages/unsubscribe-compact-suite.html": "ba841fe30d2bccde90107f02feca4171ce07c67623db34fbfbed02feacf6ca0c"
   },
-  "designDir": "/Users/bytedance/Documents/trae_projects/TidyMail/tidymail-ux-rehaul",
+  "designDir": "./tidymail-ux-rehaul",
   "expectedPages": 5,
   "requireInteractions": null,
   "checkedAt": "2026-08-08T22:06:09.919Z"

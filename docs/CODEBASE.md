@@ -21,7 +21,6 @@ Mapped on 2026-10-14. Java paths below are relative to `src/main/java/com/tidyma
 | `src/main/resources/db/migration/` | Fifteen production Flyway migrations, V1–V15 |
 | `src/test/java/` | Unit, web, PostgreSQL journey, contract, security and performance tests |
 | `tidymail-ux-rehaul/`, `tidymail-ux-rehaul-draft/` | Design references and mock HTML, not served application templates |
-| `remove_rule_interactions.py` | Historical design helper with obsolete absolute path; not runtime |
 | `target/` | Ignored build artifacts; regenerate for current evidence |
 
 ## Routes and owners

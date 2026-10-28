@@ -18,8 +18,8 @@ and applying bulk Gmail actions. Keep the main journey on one screen.
 | Main view | Sender groups, collapsed by default, highest matching message count first |
 | Group expansion | Individual sender addresses, counts, and message previews using subjects and dates |
 | Selection | Entire groups, particular addresses, or individual messages; distinguish visible rows from all matching messages |
-| Filters | Search and date range, applied consistently to counts, previews, selection, and actions |
-| Actions | Archive, Move to Trash, Mark as Read, with eligible Undo |
+| Filters | Search and date range, defaulting to all indexed dates; applied consistently to counts, previews, selection, and actions |
+| Actions | Archive, Move to Trash, Mark as Read; confirmation required, no Undo |
 | Action scope | Existing selected messages only; no rules for future messages |
 | Account | One connected Gmail account in the UI, with its address and Sign out |
 | Feedback | Sync status, live bulk-action progress, results, and recent activity |
@@ -44,7 +44,7 @@ uncertain matches should stay separate and contributing addresses must be visibl
 | Summary | Matching messages, unread messages, sender groups |
 | Table | Sender group, message count, unread count, latest received; expandable details |
 | Selection toolbar | Mark as Read, Archive, Move to Trash |
-| Progress/activity | Running work, waiting states, results, failures, eligible Undo |
+| Progress/activity | Running work, Cancel, waiting states, results, and failures |
 
 Select → preview exact scope and affected count → confirm on the dashboard →
 background execution → live progress and results. No separate approval queue is
@@ -72,20 +72,32 @@ this requirement does not prescribe a new queue service or infrastructure.
 | Requirement | Expected behavior |
 |---|---|
 | Honest progress | Show confirmed outcomes against the fixed target count; update after acknowledged batches, not a timer-driven animation |
-| Visible states | Queued, running, waiting for Gmail/retry, needs reconnection, completed, partially completed, failed, or awaiting verification |
-| Outcome counts | Keep successful, failed, skipped/no-op, unresolved, and remaining counts distinct; “finished” must not imply every target succeeded |
+| Visible states | Queued, running, waiting for Gmail/retry, needs reconnection, cancel requested, cancelled, completed, partially completed, failed, or awaiting verification |
+| Outcome counts | Keep successful, failed, skipped/no-op, unresolved, cancelled-before-dispatch, and remaining counts distinct; “finished” must not imply every target succeeded |
 | Usable dashboard | Keep browsing available; mark pending changes and reconcile displayed counts with confirmed results |
 | Reopen/reload | Recover job status after navigation or refresh; closing the browser does not cancel server work |
 | Restart recovery | Persist completed work and reconcile uncertain requests before resuming; never silently duplicate or assume success |
 | Rate limiting | Coordinate sync, backfill, cleanup, and verification budgets; bound concurrency and batch sizes |
 | Retry behavior | Respect provider retry guidance, use bounded backoff with jitter for retryable failures, retain completed work, and expose exhausted retries |
 | Ambiguous outcomes | A timeout after dispatch can leave the result unknown; verify before replaying a mutation |
-| Undo | Apply only to confirmed eligible changes; make availability/expiry clear and prevent racing Undo against active work |
+| Cancellation | Offer Cancel while work is queued or active; stop further mutation dispatch, preserve completed changes, reconcile in-flight requests, and report final affected counts. No pause, resume, or Undo |
 
-A compact progress panel on the dashboard is the proposed default, with a small
-Activity view or drawer for details and history. Final presentation remains open;
-live visibility and recoverable status are mandatory. This refines the earlier
-idea of removing Activity entirely: simplify navigation without hiding long work.
+Use a compact progress panel on the dashboard and an Activity drawer for details
+and recent history. Cancel is available immediately while work is queued or active;
+it does not wait for a three-minute threshold. Persist the cancellation request
+and show “Cancellation requested” while already dispatched requests settle.
+Cancellation does not reverse completed changes or retract requests already sent
+to Gmail. Stop new mutation batches and mutation retries after cancellation takes
+effect; allow read-only verification of uncertain outcomes. Cancellation survives
+reloads and worker restarts, and cancelled work cannot resume automatically.
+
+Show how many messages were confirmed changed before cancellation took effect,
+including already dispatched requests that finish after the click. Keep failed,
+skipped, unresolved, and cancelled-before-dispatch targets separate. Never report
+an unknown outcome as unchanged. Example: “Cancelled: 120 changed, 380 not
+processed”; if needed, add “5 outcomes still being checked” with consistent totals.
+There is no Undo in the MVP. Confirmation must explain that cancellation stops
+remaining work and does not reverse changes already made.
 
 Google documents rate/concurrency limits, backoff, and the fact that HTTP batching
 does not remove individual request costs. Choose request types and batch sizes
@@ -100,7 +112,8 @@ and [HTTP batching](https://developers.google.com/workspace/gmail/api/guides/bat
 Remove Unread Only, Unsubscribe, multi-account management/settings, the separate
 Review journey, and standalone analytics navigation from the MVP experience.
 Retain useful underlying code rather than undertaking unrelated deletion/refactoring.
-Disable unsubscribe execution in MVP mode, including direct routes and previously
+Disable legacy Undo entry points in MVP mode; retain historical records and useful
+underlying code. Disable unsubscribe execution in MVP mode, including direct routes and previously
 queued unsubscribe actions; hiding navigation alone is insufficient. Retain basic
 account identity, Sign out, and access to local-data deletion without a broad
 settings area. Do not discard linked-account records just to simplify the UI.
@@ -131,27 +144,29 @@ deletion. No reset or mailbox mutation is part of this planning change.
 |---|---|
 | Scope correctness | Read and unread Inbox mail; archived mail only in All received mail; Spam/Trash excluded from both, including during selection |
 | Grouping | Related address variants, mixed message categories, shared-domain counterexamples, and merge/separate corrections |
-| Selection/actions | Exact IDs across pages/filters, effective action counts, duplicate submissions, stale labels, and Undo |
-| Long-running work | More than 500 synthetic targets with multiple batches, throttling, partial failure, ambiguous response, reconnect, reload, and worker restart |
+| Selection/actions | Exact IDs across pages/filters, effective action counts, duplicate submissions, stale labels, confirmation, and cancellation |
+| Long-running work | More than 500 synthetic targets with multiple batches, throttling, partial failure, ambiguous response, reconnect, reload, worker restart, and cancellation before/during dispatch or retry |
 | Performance | Representative retained-index and synthetic sizes; measure summary/filter/paging/expansion responsiveness while sync and cleanup run |
 | Retained-data upgrade | Existing account/index remains usable after migration; fresh install also works |
-| Live Gmail | Controlled selected messages verify actual changes, progress reconciliation, and eligible Undo; separate from simulated-provider evidence |
-| Removed surfaces | Old navigation is absent and unsubscribe cannot execute through alternate paths or legacy queued work |
+| Live Gmail | Small user-selected sets first, then a larger user-confirmed Archive/Trash test if those pass; verify actual changes, progress reconciliation, and cancellation where observable; separate from simulated-provider evidence |
+| Removed surfaces | Old navigation is absent; unsubscribe and Undo cannot execute through alternate paths in MVP mode, including legacy queued unsubscribe work |
 
 Use the isolated PostgreSQL test harness for destructive fixtures. Do not direct
 test cleanup at the retained development database. A 500+ message live mutation
-is not required merely to prove the synthetic long-job path. Define measured
+is not required merely to prove the synthetic long-job path. The user also wants
+a larger live Archive or Move to Trash test after small live selections pass;
+preview and confirm that selection before execution. Define measured
 performance targets during implementation after establishing a baseline; record
 dataset size and results rather than claiming unmeasured throughput.
 
 ## Implementation sequence and open decisions
 
-First finalize a wireframe, grouping rules, default date range, and Activity
-presentation. Then map reusable query/action components and data migration needs;
-implement indexed scope/group queries and durable action execution with progress;
-connect the simplified UI and disable deferred actions; validate retained-data
-upgrade, fresh setup, simulated failures, browser behavior, and controlled Gmail
-changes. Plan Undo timing for long jobs before exposing it in the new flow.
+Follow [Implementation strategy](IMPLEMENTATION-STRATEGY.md), one phase at a time.
+The agreed defaults are all indexed dates, conservative evidence-based grouping
+with manual corrections, a compact progress panel and Activity drawer, wireframe
+review before interface implementation, and small user-selected live Gmail tests.
+Confirmation and cancellation replace Undo. Exact grouping rules and the wireframe
+are the first design deliverables; application implementation has not begun here.
 
 Current source already provides metadata indexing, Gmail label mutations,
 execution records, Undo, and Activity polling. `ExactScopeExecutor` currently
