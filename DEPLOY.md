@@ -54,8 +54,12 @@ Defaults are in `src/main/resources/application.properties`. `.env.example` has 
 | `SYNC_MAX_MESSAGES_PER_ACCOUNT` | `0`, unlimited; positive values bound unique indexed messages |
 | `SYNC_GMAIL_BACKFILL_PAGE_SIZE` | `500` |
 | `SYNC_FRESHNESS_CYCLE_MS` | `300000`, five minutes |
+| `SYNC_STARTUP_DELAY_MS` | `5000`; resume active accounts shortly after startup |
 | `SYNC_FRESHNESS_EXECUTOR_THREADS`, `SYNC_BACKFILL_EXECUTOR_THREADS` | `2` each; independent lanes |
 | `SYNC_GMAIL_API_CONCURRENCY`, `SYNC_GMAIL_API_BATCH_DELAY_MS` | `5` concurrent requests, `100` ms batch delay |
+| `SYNC_GMAIL_METADATA_BATCH_DELAY_MS` | `1000`; minimum spacing between metadata batches of up to ten messages, shared across lanes/accounts in this process |
+
+Metadata batches are paced separately from the existing concurrency permits. Temporary sync read failures get up to five retries with increasing delays and `Retry-After` support; exhausted pages resume on the next sync cycle. Worker leases renew while reads or retries are in progress. This budget is per process, so multiple application instances still share Google project quotas.
 
 Datasource properties can also be supplied directly through Spring configuration. `DATABASE_*` are the placeholders the application property file explicitly reads. `APP_BASE_URL` in the example does not construct OAuth redirects: registration uses Spring's request-derived `{baseUrl}`. The active `prod` profile alone is not a complete production configuration.
 

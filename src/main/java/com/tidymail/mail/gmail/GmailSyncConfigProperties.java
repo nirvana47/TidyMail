@@ -38,6 +38,9 @@ public class GmailSyncConfigProperties {
     @Value("${SYNC_GMAIL_API_BATCH_DELAY_MS:100}")
     private int batchDelayMs;
 
+    @Value("${SYNC_GMAIL_METADATA_BATCH_DELAY_MS:1000}")
+    private int metadataBatchDelayMs = 1000;
+
     @Value("${app.sync.initial-page-size:200}")
     private int initialPageSize = 200;
 
@@ -71,6 +74,10 @@ public class GmailSyncConfigProperties {
 
     public int getInitialPageSize() {
         return initialPageSize;
+    }
+
+    public int getMetadataBatchDelayMs() {
+        return metadataBatchDelayMs;
     }
 
     public void setInitialPageSize(int initialPageSize) {
@@ -127,6 +134,10 @@ public class GmailSyncConfigProperties {
         if (batchDelayMs < 0) {
             throw new IllegalStateException(
                 "SYNC_GMAIL_API_BATCH_DELAY_MS must be >= 0; got " + batchDelayMs);
+        }
+        if (metadataBatchDelayMs < 0 || metadataBatchDelayMs > 60000) {
+            throw new IllegalStateException(
+                "SYNC_GMAIL_METADATA_BATCH_DELAY_MS must be between 0 and 60000");
         }
         if (initialPageSize < 100 || initialPageSize > 250) {
             throw new IllegalStateException(

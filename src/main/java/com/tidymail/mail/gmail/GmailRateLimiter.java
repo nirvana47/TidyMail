@@ -1,7 +1,13 @@
 package com.tidymail.mail.gmail;
 
 import jakarta.annotation.PostConstruct;
+import com.google.api.client.http.HttpHeaders;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,6 +30,7 @@ public class GmailRateLimiter {
     private Semaphore totalCapacity;
     private Semaphore backfillCapacity;
     private int delayMs;
+    private long nextMetadataBatchNanos;
 
     public GmailRateLimiter(GmailSyncConfigProperties config) {
         this.config = config;
@@ -51,6 +58,49 @@ public class GmailRateLimiter {
 
     public void release() {
         totalCapacity.release();
+    }
+
+    /** Pace every metadata HTTP batch, sharing the budget across sync lanes. */
+    public synchronized void paceMetadataBatch() {
+        long remaining = nextMetadataBatchNanos - System.nanoTime();
+        if (remaining > 0) {
+            sleep(TimeUnit.NANOSECONDS.toMillis(remaining) + 1);
+        }
+        nextMetadataBatchNanos = System.nanoTime()
+            + TimeUnit.MILLISECONDS.toNanos(config.getMetadataBatchDelayMs());
+    }
+
+    /** Bounded exponential backoff with jitter; respect Google's Retry-After. */
+    public void pauseBeforeRetry(int retry, HttpHeaders headers) {
+        long delay = (1000L << Math.min(retry, 5))
+            + ThreadLocalRandom.current().nextLong(251);
+        String retryAfter = headers == null ? null : headers.getRetryAfter();
+        if (retryAfter != null) {
+            try {
+                delay = Math.max(delay, Math.multiplyExact(Long.parseLong(retryAfter), 1000));
+            } catch (NumberFormatException exception) {
+                try {
+                    long until = ZonedDateTime.parse(
+                        retryAfter, DateTimeFormatter.RFC_1123_DATE_TIME)
+                        .toInstant().toEpochMilli() - System.currentTimeMillis();
+                    delay = Math.max(delay, until);
+                } catch (DateTimeParseException ignored) {
+                    // Malformed provider headers do not disable bounded retries.
+                }
+            } catch (ArithmeticException ignored) {
+                // Ignore an unrepresentable provider delay.
+            }
+        }
+        sleep(delay);
+    }
+
+    private static void sleep(long milliseconds) {
+        try {
+            java.lang.Thread.sleep(milliseconds);
+        } catch (InterruptedException exception) {
+            java.lang.Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while pacing Gmail requests", exception);
+        }
     }
 
     public Permit acquireFreshnessPermit() {

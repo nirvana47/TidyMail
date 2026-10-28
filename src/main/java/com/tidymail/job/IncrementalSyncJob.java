@@ -15,6 +15,7 @@ import com.tidymail.service.MessageMetadataSyncService;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -45,6 +46,9 @@ public class IncrementalSyncJob {
     private final TaskExecutor backfillExecutor;
     private final MailboxSyncExecutorConfig config;
     private final String instanceOwner = UUID.randomUUID().toString();
+    private final Map<LeaseKey, String> activeLeases = new ConcurrentHashMap<>();
+
+    private record LeaseKey(long accountId, Lane lane) {}
 
     public IncrementalSyncJob(
             Map<String, MailboxSyncProvider> providerMap,
@@ -71,7 +75,7 @@ public class IncrementalSyncJob {
      */
     @Scheduled(
         fixedRateString = "${app.sync.freshness-cycle-ms:300000}",
-        initialDelayString = "${app.sync.freshness-cycle-ms:300000}")
+        initialDelayString = "${app.sync.startup-delay-ms:5000}")
     public void run() {
         accounts.findAll().stream()
             .filter(account -> account.getEncryptedAccessToken() != null)
@@ -94,7 +98,41 @@ public class IncrementalSyncJob {
                 || state.initialBatchCompletedAt() == null
             ? Lane.BACKFILL
             : Lane.FRESHNESS;
-        return requestLane(accountId, lane);
+        SyncProgress requested = requestLane(accountId, lane);
+        if (lane == Lane.FRESHNESS && !"COMPLETE".equals(state.backfillStatus())) {
+            // A failed page must resume even after bootstrap has established freshness.
+            requestLane(accountId, Lane.BACKFILL);
+        }
+        return requested;
+    }
+
+    /** Keep paced/retrying provider work owned without holding a DB transaction. */
+    @Scheduled(fixedDelay = 2000)
+    public void renewActiveLeases() {
+        activeLeases.forEach((key, owner) -> {
+            try {
+                for (int attempt = 0; attempt < 4; attempt++) {
+                    StateSnapshot state = states.findByAccountId(key.accountId()).orElse(null);
+                    if (state == null || !laneOwnedBy(state, key.lane(), owner)
+                            || !laneOwnedAndLive(state, key.lane(), Instant.now())) {
+                        return;
+                    }
+                    Instant expiry = key.lane() == Lane.FRESHNESS
+                        ? state.freshnessLeaseExpiresAt() : state.backfillLeaseExpiresAt();
+                    if (expiry.isAfter(Instant.now().plus(config.laneLeaseDuration().dividedBy(2)))) {
+                        return;
+                    }
+                    if (states.heartbeatLaneLease(
+                            key.accountId(), key.lane(), owner,
+                            Instant.now().plus(config.laneLeaseDuration()), state.version())) {
+                        return;
+                    }
+                }
+            } catch (RuntimeException exception) {
+                log.warn("Mailbox lease renewal failed for account {} lane {}",
+                    key.accountId(), key.lane());
+            }
+        });
     }
 
     /** Requests a full backfill sync for an account. */
@@ -135,6 +173,8 @@ public class IncrementalSyncJob {
         if (leased == null) {
             return;
         }
+        LeaseKey leaseKey = new LeaseKey(accountId, lane);
+        activeLeases.put(leaseKey, leaseOwner);
         try {
             SyncProgress row = progress.findById(progressId).orElse(null);
             if (row == null || !"QUEUED".equals(row.getStatus())) {
@@ -179,6 +219,8 @@ public class IncrementalSyncJob {
                 "Mailbox sync unit failed for account {} lane {} supportCode=SYNC_UNIT_FAILED",
                 accountId, lane);
         } finally {
+            activeLeases.remove(leaseKey, leaseOwner);
+            releaseLane(accountId, lane, leaseOwner);
             drainQueuedLane(accountId, lane);
         }
     }

@@ -39,3 +39,29 @@ At mapping time, `src/main/resources/templates/login.html` contained a pre-exist
 | Scope decision | Automatic data expiry | Current jobs perform partial housekeeping, not full timed deletion of metadata/tokens |
 
 These priorities consolidate unfinished historical work and mapping findings; they are not authorization to implement all of it. No production deployment, full-mailbox capacity guarantee or comprehensive security certification is established by this map.
+
+## Sync recovery update
+
+Metadata HTTP batches now share a paced budget (default: ten messages per
+second), with up to five retries for rate-limit and temporary server errors.
+Retries retain successful metadata and request only failed IDs. Read retries
+respect `Retry-After`; they do not retry mailbox mutations. Active worker leases
+renew, and scheduled sync resumes unfinished backfill alongside freshness,
+including shortly after application startup.
+
+New coverage uses the actual Gmail SDK, simulated HTTP responses and a real
+PostgreSQL test database. It verifies a 200-message bootstrap, exhausted page
+retries without cursor advancement, automatic recovery to 214 messages, partial
+batch retries, pacing, lease renewal and permanent permission failures.
+
+The full suite ran 450 tests: 447 passed, three failed, zero errors or skips.
+The sender-display assertion also fails on the committed baseline; the
+legacy deployment-document assertion requires a command missing from the
+committed baseline as well. The 10,000-row sender performance check exceeded
+its two-second threshold in the full run, but passed on both the baseline and updated code in
+isolation. These remain separate from the passing sync recovery checks.
+
+After rebuilding and restarting locally, the live Gmail index advanced beyond
+200 to at least 11,500 messages, with completed 500-message backfill pages and
+continued work. This establishes recovery beyond the original stall, not full
+mailbox completion or acceptance of cleanup/undo and other product journeys.

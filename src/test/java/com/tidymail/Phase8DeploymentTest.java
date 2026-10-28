@@ -83,7 +83,7 @@ class Phase8DeploymentTest {
             assertNotNull(syncSched, "IncrementalSyncJob.run must have @Scheduled");
             assertEquals("${app.sync.freshness-cycle-ms:300000}",
                 syncSched.fixedRateString(), "IncrementalSyncJob configurable cycle");
-            assertEquals("${app.sync.freshness-cycle-ms:300000}",
+            assertEquals("${app.sync.startup-delay-ms:5000}",
                 syncSched.initialDelayString(), "IncrementalSyncJob configurable initial delay");
 
             assertTrue(ScheduleConfig.class.isAnnotationPresent(Configuration.class),

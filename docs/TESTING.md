@@ -47,3 +47,19 @@ For cleanup, confirm a known exact selection, approve it, compare the provider o
 An authenticated browser pass should cover the six rail pages, paging/filter state, fragment updates, desktop/narrow layouts and keyboard focus. Existing MockMvc/template assertions do not establish absence of overflow in a live browser. Keep live evidence free of real addresses, subject text, provider IDs and OAuth tokens.
 
 Historical results and the outstanding provider gate are summarized in [Status](STATUS.md). No fresh test run was performed for this documentation-only change.
+
+## Gmail throttling and backfill recovery
+
+`GmailBackfillRecoveryJourneyTest` uses the real Gmail SDK against a local HTTP
+server and the PostgreSQL journey harness. It reproduces a successful 200-message
+bootstrap followed by a rate-limited page, then checks scheduled recovery, page
+continuation, retries of only failed metadata IDs, permanent-error handling,
+metadata-batch spacing and lane lease renewal. Google responses are simulated;
+this is separate from live Gmail acceptance.
+
+Sync reads retry rate-limit responses (`403 rateLimitExceeded` /
+`userRateLimitExceeded`, `429`) and temporary server errors at most five times,
+with exponential delay, jitter and `Retry-After`. Successful metadata stays in
+memory while failed IDs are retried. The page cursor advances only after the
+complete page commits. If retries are exhausted, the next scheduled sync also
+queues unfinished backfill. Active work renews its lease while waiting.
