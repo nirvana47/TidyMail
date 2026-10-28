@@ -22,9 +22,20 @@ mutations. Subsequent implementation can proceed within the agreed phase scope.
 | Feedback | Compact dashboard progress panel and Activity drawer, restored after reload. |
 | Testing | Synthetic large-job/failure tests, then small live selections, then a larger user-confirmed live Archive/Trash selection if small tests pass. |
 
+## Reference-led layout revision
+
+The first wireframe was rejected on 2026-10-28. Use the supplied dashboard image
+and the revised [MVP visual direction](MVP-PLAN.md#visual-direction--reference-led-revision-2026-10-28).
+The seven phases remain appropriate. The incremental work is a synchronized
+list/detail interface, shared selection state, and responsive bottom action/progress
+dock. Body previews, external logo services, company enrichment and account
+switching are deferred. No new service or infrastructure is prescribed.
+
 ## Phase 1 — Specify the experience
 
-Deliver a dashboard wireframe showing collapsed/expanded groups, filters,
+Deliver a reference-led dashboard wireframe with sender table, inline address
+expansion, right-hand Messages / Sender addresses pane, bottom action and
+progress dock, and modal confirmation. Show collapsed/expanded groups, filters,
 selection, confirmation, progress, cancellation, and Activity. Include empty,
 partially indexed, reconnect, partial-failure, and uncertain-outcome states.
 Specify received-mail eligibility, deterministic grouping evidence and shared-domain
@@ -67,20 +78,26 @@ Implement a shared scope/filter contract used by summaries, groups, previews,
 selection materialization, and action eligibility. Implement server-side grouping,
 paging, on-demand expansion, and account-owned merge/separate corrections.
 Add the reviewed browsing interface, account identity, scope toggle, date/search
-controls, and coverage indicators.
+controls, and coverage indicators. Build the desktop split view and responsive
+fallback with shared selection IDs across table, expanded addresses and detail tabs.
+Keep row focus/expansion independent of selection; support mixed parent checkboxes.
+Use initial badges and indexed subject/sender/date previews, without body fetching
+or remote logo discovery. Include selected-action state and exact review modal.
 
 Implement exact selection preview and immutable confirmed target IDs, including
-all-matching versus visible-row selection. Recheck eligibility at dispatch and
+current-page versus individual group/address/message selection. Recheck eligibility at dispatch and
 report no-op/stale targets. Enforce ownership on every query and action boundary.
 
 **Gate:** scope/grouping fixtures pass, counts and selections agree across pages,
 shared-domain senders remain separate, corrections work, and browsing meets the
-phase-2 targets without a new full Gmail download.
+phase-2 targets without a new full Gmail download. Verify cross-pane checkbox/count
+agreement, tab switches without selection changes, filter invalidation and stale
+response handling when rapidly switching focused groups.
 
 ## Phase 4 — Deliver one complete background action
 
 Implement Mark as Read first: selection → preview → confirmation → persisted job
-→ bounded background batches → acknowledged progress → reconciled dashboard.
+→ bounded background batches → acknowledged bottom-dock progress → reconciled dashboard.
 Use the existing application and PostgreSQL rather than adding queue infrastructure
 without demonstrated need. Make duplicate confirmation submissions idempotent.
 
@@ -125,7 +142,9 @@ success or blind replay. These are simulated-provider results, not live throughp
 ## Phase 6 — Complete the simplified experience
 
 Finish Activity history, progress details, cancellation/results messages, pending
-row indicators, and responsive/keyboard behavior. Remove Unread Only, Unsubscribe,
+row indicators, and responsive/keyboard behavior. Verify the bottom dock never
+obscures rows/focus, the narrow-screen detail pane remains usable, and confirmation
+and Activity restore focus correctly. Remove Unread Only, Unsubscribe,
 multi-account management, separate Review, and standalone analytics navigation.
 Keep Sign out and confirmed local-data deletion accessible.
 
@@ -167,4 +186,92 @@ required gates remain unverified. Deployment/publication is a separate decision.
 For each task, record status (not started / in progress / blocked / complete),
 dependency, concrete deliverable, affected components, acceptance checks, and evidence.
 At phase completion, record what changed, checks run/results, limitations, and the
-next phase. Start with Phase 1; all phases are currently not started.
+next phase. Phase 1 is complete: the current revised wireframe was approved and locked on 2026-10-28. See
+[Phase 1 experience and review gate](PHASE-1-EXPERIENCE.md) and the
+[dashboard wireframe](wireframes/sender-dashboard.html). Phases 2–7 remain not started.
+
+## Review refinements — 2026-10-28
+
+Remove the About tab from the MVP. Retain manual merge/separate requirements, with
+correction controls to live in Sender addresses rather than a dedicated About section.
+Keep the detail pane open; selecting another sender changes its contents. Remove
+the close button and the redundant About ellipsis. Keep only “Clean up your inbox.”
+in the subtitle. Align Activity and Sign out to the same right edge and width; inset
+the date dropdown arrow.
+
+Header sync status must reflect actual indexing state: “Fetching mail…” for initial
+fetch, “Fetching older mail…” during backfill, and connection/error status when
+blocked. Show “Synced…” only with an actual successful sync timestamp. Do not invent
+percentages or an estimated completion time. Empty-index coverage stays unavailable
+until metadata arrives.
+
+Single-address senders use ordinary rows labeled “1 sender address.” Sender pagination
+has explicit previous/next buttons and a visible range. The design sample has 11
+senders over two pages (10 per page). The MVP sender page size is 10. Page selection affects that page only; existing
+selections persist on page changes. These refinements are included in the design approved on 2026-10-28. Application
+implementation has not begun.
+
+## Selection visibility and pagination refinement
+
+Show the selection/action row only when at least one message is selected. Keep
+job progress and Cancel independently visible when work exists; hide the entire
+dock when neither selection nor job exists. Place the sender page range and
+previous/next controls immediately below the sender list, not in the summary area.
+
+Date changes discard the draft selection and invalidate any open preview. Never
+cache selections per date range: all dates → last 7 days → all dates leaves zero
+selected throughout both transitions. The same clearing policy applies to scope
+and search changes. Confirmed jobs retain their fixed targets. Acceptance check:
+select two senders, change dates, switch back, verify all checkboxes remain clear
+and the action row stays hidden while existing job controls remain accessible.
+
+## Message paging and all-matching selection clarification
+
+The Messages tab needs independent previous/next controls and a visible message
+range so every matching message can be inspected. Show 10 messages per page.
+Message paging preserves selected IDs; changing the focused sender resets message
+paging but preserves selection. Filter changes reset both pagers and clear selection.
+
+The sender header checkbox selects only messages from sender groups on the current
+page. A group checkbox includes all matching children, including message pages not
+loaded. There is no whole-result selection button. Explicit selections on additional
+sender pages accumulate and still require exact preview and confirmation.
+
+Acceptance: move to message page two without losing selections; verify that page selection stays limited to the current sender page.
+
+## Review refinement — remove whole-result selection
+
+Remove the “Select all matching” button and its explanatory section from the MVP.
+Keep the sender-table header checkbox limited to the current page, plus individual
+group/address/message checkboxes. Additional pages require explicit selection;
+paging preserves prior choices and filter changes still discard them.
+
+Known mockup limitation: Inbox and All received mail currently use identical
+synthetic mail counts. Implementation must include archived received messages only
+in All received mail, and apply that scope consistently to counts, previews and
+selection. Verify with an archived-message fixture in the implementation phases.
+
+Sender pagination: show 10 sender rows per page. Expanded address rows do not count
+toward this limit. Message pagination remains independent.
+
+Message pagination: show 10 messages per page in the right-hand detail pane,
+independently of the sender list pager.
+
+## Approved design baseline — 2026-10-28
+
+The user approved the current wireframe: “ok i think this looks good. Let's lock it
+for now.” Phase 1 is complete. Preserve the
+[approved snapshot](wireframes/sender-dashboard-approved.html) as the implementation
+reference. Later design changes require an explicit scope update.
+
+The locked baseline includes 10 senders per page and 10 messages per detail page,
+Messages and Sender addresses tabs, no About tab or detail close button, current-page
+and individual selection without a whole-result selection button, permanent draft
+selection clearing on filter changes, a selection row visible only when selected,
+and independent job progress/Cancel controls. Sender pagination sits below the list.
+
+Approval covers the design baseline. Mockup behavior remains synthetic; identical
+Inbox/All received counts remain a documented limitation to resolve in implementation.
+Phase 2 baseline verification and persistence design is the next phase; it has not
+started. No application implementation, mailbox action, or publication occurs as
+part of locking this design.
