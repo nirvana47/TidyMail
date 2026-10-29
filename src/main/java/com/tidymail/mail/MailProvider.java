@@ -12,6 +12,11 @@ import java.util.List;
  * capabilities and translate requests into provider-specific calls.
  */
 public interface MailProvider {
+    /** One dashboard mutation attempt. Callers verify labels before counting success.
+     * Implementations must not automatically retry an ambiguous mutation. */
+    default void markReadOnce(UserAccount account, List<String> messageIds) {
+        throw new UnsupportedOperationException("Durable Mark as Read is unavailable for this provider");
+    }
     /**
      * Describes what this provider can report reliably; unknown by default.
      */

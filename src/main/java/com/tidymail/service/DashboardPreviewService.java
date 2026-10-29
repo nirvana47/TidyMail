@@ -83,8 +83,8 @@ public class DashboardPreviewService {
         var rows=new org.springframework.jdbc.core.namedparam.MapSqlParameterSource[targets.size()];
         for(int i=0;i<targets.size();i++) {var t=targets.get(i);rows[i]=new org.springframework.jdbc.core.namedparam.MapSqlParameterSource(t).addValue("preview",id).addValue("account",account).addValue("ordinal",i);}
         jdbc.batchUpdate("""
-          INSERT INTO dashboard_preview_targets(preview_id,account_id,ordinal,message_id,subject_header,sender_address,received_at,effective,reason)
-          VALUES(:preview,:account,:ordinal,:dashboard_message_id,:subject_header,:address,:received_at,:effective,:reason)
+          INSERT INTO dashboard_preview_targets(preview_id,account_id,ordinal,message_id,provider_message_id,subject_header,sender_address,received_at,effective,reason)
+          VALUES(:preview,:account,:ordinal,:dashboard_message_id,:provider_message_id,:subject_header,:address,:received_at,:effective,:reason)
           """,rows);
         return new Preview(id,request.action(),targets.size(),effective,targets.size()-effective,protectedCount,request.filter().firstPage(),coverage,expires);
     }

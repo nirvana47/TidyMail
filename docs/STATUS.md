@@ -1,5 +1,27 @@
 # Project status
 
+## Dashboard Phase 4 — 2026-10-28
+
+Durable Gmail Mark as Read is implemented at `/dashboard`: exact preview and
+idempotent confirmation, fixed PostgreSQL targets, 50-target background batches,
+progress/Cancel, reload restoration and Activity results. Cancellation stops new
+claims and settles in-flight work. Ambiguous or lost dispatches use read-only
+label verification without automatic mutation replay. V17 fresh/10k-row retained
+upgrade fixtures passed, including retained V16 preview handling.
+
+The Java 21 full suite ran 481 tests: 479 passed, the two known sender-label and
+deployment-command assertions failed, and there were no errors/skips. The final
+focused run passed all 30 checks after bounded scope/deletion refinements; see the
+[Phase 4 report](PHASE-4-BACKGROUND-MARK-READ.md) for its result and exact evidence.
+Desktop synthetic browser checks passed confirmation, progress across reload,
+cancellation, completion, count reconciliation, history and keyboard focus.
+This is simulated-provider evidence; live Gmail and release acceptance remain open.
+
+Phase 4 is complete within that scope. Phase 5 Archive/Trash and resilience are
+next; those dashboard actions remain preview-only. The retained application and
+database were not upgraded/restarted, and no real mailbox action, commit, push or
+deployment was performed.
+
 ## Dashboard Phase 3 — 2026-10-28
 
 Indexed browsing and exact-selection previews are implemented at `/dashboard`.
@@ -16,7 +38,8 @@ along with the final provider-label and grouping guards. The two pre-existing
 sender-label/deployment-command assertions remain open; the full suite was not
 repeated after those bounded fixes. See the
 [Phase 3 report](PHASE-3-INDEXED-DASHBOARD.md) for exact evidence and screenshots.
-Phase 4 durable background actions are next; dashboard execution is disabled.
+At Phase 3 completion, durable background actions were next and execution was
+disabled. Phase 4 supersedes that state as recorded above.
 The retained database/application and live mailbox were not changed or restarted.
 No commit, push or deployment was performed.
 

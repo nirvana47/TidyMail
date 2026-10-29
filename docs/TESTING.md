@@ -118,3 +118,21 @@ after 15 minutes or when `/tmp/tidymail-phase3-browser-done` exists. Startup rem
 an earlier completion marker. This explicitly selected harness is excluded from
 the normal `*Test` suite. It does not log in to or mutate a real mailbox.
 See the [Phase 3 report](PHASE-3-INDEXED-DASHBOARD.md) for evidence and limitations.
+
+## Dashboard background Mark as Read — Phase 4
+
+```sh
+mvn -o -Dtest='DashboardJobJourneyTest,DashboardGmailDispatchTest,DashboardJourneyTest,DashboardMigrationTest,Phase15PostgresMigrationTest,LogoutSemanticsTest' test
+```
+
+Use Java 21 and the Docker environment above. Coverage includes 501 fixed targets,
+50-target batches, duplicate confirmations, overlap/ownership/CSRF boundaries,
+queued and in-flight cancellation, read failures, ambiguous sends, lease loss,
+stale-worker fencing, revision-aware reconciliation and deletion barriers. The
+Gmail adapter test uses its actual SDK against loopback HTTP for success/401/503
+and verifies one exact mutation attempt without automatic replay.
+
+`DashboardBrowserFixture` now also provides simulated label reads/mutations and
+a timer driving the real worker tick. It supports desktop confirmation, progress,
+reload, cancellation, history and reconciliation checks. See the
+[Phase 4 report](PHASE-4-BACKGROUND-MARK-READ.md) for evidence and limitations.

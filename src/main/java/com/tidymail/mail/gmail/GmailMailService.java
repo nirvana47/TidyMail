@@ -477,6 +477,25 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
     // ---------------------------------------------------------------------
     // batchModify (GML-4, D-4.4, D-4.6 partial-failure)
     // ---------------------------------------------------------------------
+    @Override
+    public void markReadOnce(UserAccount account, List<String> messageIds) {
+        Gmail gmail=clientFactory.buildFor(account);
+        rateLimiter.supplyWithPermit(() -> {
+            try {
+                var request=gmail.users().messages().batchModify(USER_ID_ME,
+                    new BatchModifyMessagesRequest().setIds(List.copyOf(messageIds)).setRemoveLabelIds(List.of("UNREAD")));
+                var http=request.buildHttpRequest();
+                http.setNumberOfRetries(0);
+                http.setIOExceptionHandler(null);
+                http.execute().disconnect();
+                return null;
+            } catch(IOException error) {
+                // Never convert transport failure into a definite per-target rejection.
+                throw new IllegalStateException("Dashboard mutation needs label verification",error);
+            }
+        });
+    }
+
     /**
      * Applies a bulk label add/remove action to the given messages, reporting
      * partial failures per message.

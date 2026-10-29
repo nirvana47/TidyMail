@@ -2,12 +2,18 @@
 
 Mapped on 2026-10-14. Java paths below are relative to `src/main/java/com/tidymail/`. This guide describes source behavior, not release certification.
 
-Updated 2026-10-28 for [Phase 3 indexed browsing](PHASE-3-INDEXED-DASHBOARD.md).
+Updated for [Phase 3 indexed browsing](PHASE-3-INDEXED-DASHBOARD.md) and
+[Phase 4 durable Mark as Read](PHASE-4-BACKGROUND-MARK-READ.md).
 `DashboardController` owns `/dashboard` and `/dashboard/api/**`; `DashboardService`
 and `DashboardRepository` share the scope/filter queries, `DashboardIdentity`
 derives conservative unit keys, `DashboardGroupingService` persists corrections,
 and `DashboardPreviewService` freezes exact targets using the existing scope hash
-and records. UI assets are `dashboard.html`, `dashboard.css` and `dashboard.js`.
+and records. `DashboardJobController` exposes confirm/list/status/cancel routes;
+`DashboardJobService` coordinates V17 job/target/batch/claim/event records through
+short transactions; `DashboardCleanupWorker` runs bounded provider I/O on its own
+executor. `GmailMailService.markReadOnce` disables automatic mutation retries;
+metadata observations and provider revisions govern outcome accounting and local
+reconciliation. UI assets are `dashboard.html`, `dashboard.css` and `dashboard.js`.
 `MessageMetadataMapper` and the bulk sync repository retain the new evidence;
 V16's trigger maintains derived memberships for all metadata insert paths.
 

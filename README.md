@@ -9,7 +9,9 @@ bulk Gmail actions, and live background-action progress. See the
 [MVP plan](docs/MVP-PLAN.md) for scope and preserve-first testing decisions.
 Phase 3 now implements indexed browsing, grouping corrections and exact-selection
 previews at `/dashboard`; see the [implementation report](docs/PHASE-3-INDEXED-DASHBOARD.md).
-Background cleanup and live action progress remain for Phase 4 onward. The older
+Phase 4 adds confirmed background Mark as Read, cancellation and restored progress;
+see the [Phase 4 report](docs/PHASE-4-BACKGROUND-MARK-READ.md). Archive and Trash
+remain preview-only until Phase 5. The older
 cleanup surfaces remain available until the navigation cleanup phase.
 
 | Reference | Contents |

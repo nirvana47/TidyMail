@@ -33,7 +33,7 @@ class LogoutSemanticsTest {
         when(accounts.findAllByOwnerKeyOrderByIdAsc("owner@example.com:google"))
             .thenReturn(java.util.List.of());
 
-        new UserDataDeletionService(accounts)
+        new UserDataDeletionService(accounts,org.mockito.Mockito.mock(com.tidymail.service.DashboardJobService.class))
             .deleteOwnerData("owner@example.com:google");
 
         verify(accounts).deleteByOwnerKey("owner@example.com:google");

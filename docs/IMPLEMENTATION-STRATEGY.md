@@ -199,7 +199,9 @@ persistence design is complete; see the [baseline report](PHASE-2-BASELINE-AND-P
 for measurements, open baseline failures and migration contracts. Phase 3 indexed
 browsing and exact selections are complete; see the
 [implementation and verification report](PHASE-3-INDEXED-DASHBOARD.md).
-Phases 4–7 remain not started. The two existing display/documentation assertions
+Phase 4 background Mark as Read is implemented with simulated-provider and desktop
+browser evidence; see the [Phase 4 report](PHASE-4-BACKGROUND-MARK-READ.md).
+Phases 5–7 remain not started. The two existing display/documentation assertions
 and later release gates remain open.
 
 ## Review refinements — 2026-10-28

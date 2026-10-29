@@ -13,6 +13,7 @@ import org.springframework.mock.web.MockHttpSession;
 
 /** Explicit-only browser harness: authenticated MockMvc bridge over loopback, synthetic DB/provider. */
 class DashboardBrowserFixture extends PostgresJourneyTest {
+    @org.springframework.beans.factory.annotation.Autowired com.tidymail.job.DashboardCleanupWorker cleanupWorker;
     @Test void serveSyntheticDashboardForBrowserAcceptance() throws Exception {
         long account=userAccounts.createAccount("browser-fixture@example.test");
         jdbc.update("""
@@ -26,6 +27,17 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
           FROM generate_series(1,360) i
           """,account);
         jdbc.update("INSERT INTO mailbox_sync_state(account_id,provider,lifecycle,backfill_status,initial_batch_completed_at,incremental_last_success_at) VALUES(?,'google','ACTIVE','COMPLETE',now(),now())",account);
+        var providerUnread=java.util.concurrent.ConcurrentHashMap.<String>newKeySet();
+        providerUnread.addAll(jdbc.queryForList("SELECT provider_message_id FROM message_metadata WHERE account_id=? AND unread",String.class,account));
+        org.mockito.Mockito.when(gmailProvider.getCurrentMetadata(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.anyList())).thenAnswer(call->{
+            java.util.List<String> ids=call.getArgument(1);
+            return ids.stream().map(id->new com.tidymail.mail.MailMessage(id,"synthetic-thread","google",java.time.Instant.now(),java.util.Map.of(),
+                providerUnread.contains(id)?java.util.Set.of("INBOX","UNREAD"):java.util.Set.of("INBOX"))).toList();
+        });
+        org.mockito.Mockito.doAnswer(call->{Thread.sleep(1500);providerUnread.removeAll(call.getArgument(1));return null;})
+            .when(gmailProvider).markReadOnce(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.anyList());
+        var cleanup=java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
+        cleanup.scheduleWithFixedDelay(cleanupWorker::tick,1,1,java.util.concurrent.TimeUnit.SECONDS);
         var session=new MockHttpSession();
         var server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
         server.createContext("/",exchange->{
@@ -44,6 +56,6 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
         Path done=Path.of("/tmp/tidymail-phase3-browser-done");Files.deleteIfExists(done);
         System.out.printf("DASHBOARD_BROWSER_FIXTURE http://127.0.0.1:%d/dashboard%n",server.getAddress().getPort());
         try {long deadline=System.nanoTime()+java.time.Duration.ofMinutes(15).toNanos();while(!Files.exists(done)&&System.nanoTime()<deadline)Thread.sleep(500);}
-        finally {server.stop(0);((java.util.concurrent.ExecutorService)server.getExecutor()).shutdownNow();}
+        finally {cleanup.shutdownNow();server.stop(0);((java.util.concurrent.ExecutorService)server.getExecutor()).shutdownNow();}
     }
 }

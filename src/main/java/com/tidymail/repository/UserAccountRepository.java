@@ -20,6 +20,16 @@ import org.springframework.transaction.annotation.Transactional;
  * product.
  */
 public interface UserAccountRepository extends JpaRepository<UserAccount, Long> {
+    @Query(value="SELECT id FROM user_accounts WHERE owner_key=:owner ORDER BY id FOR UPDATE",nativeQuery=true)
+    List<Long> lockOwnerForDeletion(@Param("owner") String owner);
+
+    @Query(value="""
+        SELECT count(*) FROM cleanup_jobs j JOIN user_accounts a ON a.id=j.account_id
+        WHERE a.owner_key=:owner AND (j.worker_id IS NOT NULL OR EXISTS
+        (SELECT 1 FROM cleanup_job_targets t WHERE t.job_id=j.public_id
+         AND t.state IN ('QUEUED','DISPATCH_INTENT')))
+        """,nativeQuery=true)
+    long pendingCleanupForDeletion(@Param("owner") String owner);
 
     Optional<UserAccount> findByProviderAndProviderAccountId(String provider, String providerAccountId);
 

@@ -46,8 +46,9 @@
   </section>
   <section class="dock" id="dock" hidden aria-label="Selected messages">
     <div class="selection row" id="selectionRow"><div><strong id="selectionCount"></strong><p class="muted" id="selectionDescription">Selection stays while paging.</p></div><button class="ghost" id="clear">Clear selection</button>
-      <div class="actions row" role="group" aria-label="Choose cleanup action"><button data-action="MARK_READ" aria-pressed="false">Mark as read</button><button class="active" data-action="ARCHIVE" aria-pressed="true">Archive</button><button class="trash" data-action="TRASH" aria-pressed="false">Move to Trash</button><button id="review" class="primary">Review and confirm →</button></div>
+      <div class="actions row" role="group" aria-label="Choose cleanup action"><button class="active" data-action="MARK_READ" aria-pressed="true">Mark as read</button><button data-action="ARCHIVE" aria-pressed="false">Archive</button><button class="trash" data-action="TRASH" aria-pressed="false">Move to Trash</button><button id="review" class="primary">Review and confirm →</button></div>
     </div>
+    <div id="jobProgress" role="status" aria-live="polite"></div>
   </section>
   <noscript>Enable JavaScript to browse indexed messages and inspect selections.</noscript>
 </main>
@@ -56,7 +57,7 @@
   <p id="confirmScope"></p><p id="confirmCounts"></p><p id="confirmCoverage" class="muted"></p>
   <details open><summary>Inspect exact targets</summary><div id="exactTargets"></div><div class="paging"><button id="targetPrev" aria-label="Previous exact targets">‹</button><span id="targetRange"></span><button id="targetNext" aria-label="Next exact targets">›</button></div></details>
   <p id="actionExplanation"></p><p>This applies only to these selected messages, not future mail. Cancel stops remaining work; completed changes are not reversed.</p>
-  <p class="muted">Background actions are not available yet. You can inspect the exact selection.</p>
+  <p class="muted" id="actionAvailability"></p>
   <div class="row spread"><button data-close="confirm">Back to selection</button><button id="confirmAction" class="primary" disabled></button></div>
 </dialog>
 <dialog id="activity" class="drawer" aria-labelledby="activityTitle"><div class="row spread"><h2 id="activityTitle">Activity</h2><button data-close="activity">Close</button></div><div id="activityContent"></div>

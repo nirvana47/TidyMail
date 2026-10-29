@@ -1,8 +1,39 @@
 'use strict';
 (() => {
   const $ = id => document.getElementById(id);
-  const state = {scope:'inbox',page:0,messagePage:0,tab:'messages',data:null,focused:null,details:null,action:'ARCHIVE',preview:null,targetPage:0,revision:0};
+  const state = {scope:'inbox',page:0,messagePage:0,tab:'messages',data:null,focused:null,details:null,action:'MARK_READ',preview:null,targetPage:0,revision:0};
   const selected = new Map(), expanded = new Map();
+  let jobs=[], confirming=false, jobsRequest=0;
+  const activeJob=j=>j.remaining>0||j.unresolved>0;
+  const jobCounts=j=>`${fmt(j.changed)} changed · ${fmt(j.failed)} failed · ${fmt(j.skipped)} skipped · ${fmt(j.unresolved)} unresolved · ${fmt(j.cancelled)} cancelled before dispatch · ${fmt(j.remaining)} remaining of ${fmt(j.total)}`;
+  function renderJobs() {
+    const focused=document.activeElement?.dataset?.cancelJob;
+    $('jobProgress').replaceChildren();
+    for(const job of jobs.filter(activeJob).slice(0,3)) {
+      const row=node('div',undefined,'job-progress'),copy=node('div');
+      copy.append(node('strong',job.cancelRequested?(job.remaining?'Cancellation pending — claimed requests may finish':'Cancelled — verification continues'):'Mark as Read · '+job.status.toLowerCase().replaceAll('_',' ')),node('p',jobCounts(job),'muted'));
+      row.append(copy);if(!job.cancelRequested){const cancel=node('button','Cancel');cancel.dataset.cancelJob=job.id;cancel.onclick=()=>cancelJob(job.id,cancel);row.append(cancel);}$('jobProgress').append(row);
+    }
+    updateSelection();if($('activity').open)renderActivity();
+    if(focused&&!$('activity').open){const next=[...$('jobProgress').querySelectorAll('button')].find(b=>b.dataset.cancelJob===focused);(next||$('activityOpen')).focus();}
+  }
+  function renderActivity() {
+    const focused=document.activeElement?.dataset?.cancelJob;
+    $('activityContent').replaceChildren(node('p',$('syncStatus').textContent),node('p',$('coverage').textContent));
+    for(const job of jobs){const item=node('div',undefined,'target');item.append(node('strong',`Mark as Read · ${job.status.toLowerCase().replaceAll('_',' ')}`),node('p',jobCounts(job)),node('small',`Confirmed ${dateText(job.createdAt)} · Completed changes stay.`,'muted'));if(activeJob(job)&&!job.cancelRequested){const cancel=node('button','Cancel remaining work');cancel.dataset.cancelJob=job.id;cancel.onclick=()=>cancelJob(job.id,cancel);item.append(cancel);}$('activityContent').append(item);}
+    if(!jobs.length)$('activityContent').append(node('p','No cleanup jobs yet.'));
+    if(focused&&$('activity').open){const next=[...$('activityContent').querySelectorAll('button')].find(b=>b.dataset.cancelJob===focused);(next||$('activity').querySelector('[data-close]')).focus();}
+    const sync=state.data?.sync||{};if(sync.oauth_status==='REAUTH_REQUIRED'||sync.lifecycle==='REAUTH_REQUIRED'){const link=node('a','Reconnect Gmail');link.href='/oauth2/authorization/google';$('activityContent').append(link);}
+  }
+  async function cancelJob(id,button) {button.disabled=true;try{await api(`jobs/${id}/cancel`,{});await pollJobs();}catch(error){notice(error.message);button.disabled=false;}}
+  async function pollJobs() {
+    const request=++jobsRequest;try{const latest=await api('jobs');if(request!==jobsRequest)return;const prior=new Map(jobs.map(j=>[j.id,j]));if(latest.length===jobs.length&&latest.every(j=>prior.get(j.id)?.version===j.version))return;const changed=latest.some(j=>prior.has(j.id)&&prior.get(j.id).version!==j.version);jobs=latest;renderJobs();if(changed){await loadPage();if(jobs.some(j=>prior.has(j.id)&&activeJob(prior.get(j.id))&&!activeJob(j)))notice('Cleanup settled. '+jobCounts(jobs.find(j=>prior.has(j.id)&&activeJob(prior.get(j.id))&&!activeJob(j))));}}catch(error){notice('Job status unavailable. Saved work continues. '+error.message);}
+  }
+  async function confirmJob() {
+    if(confirming||!state.preview||state.preview.action!=='MARK_READ')return;
+    confirming=true;$('confirmAction').disabled=true;const preview=state.preview;
+    try{const job=await api('jobs',{preview:preview.id});state.preview=null;selected.clear();$('confirm').close();renderSelectionControls();notice('Mark as Read saved. You can close this page; work continues.');await pollJobs();if(!jobs.some(j=>j.id===job.id)){jobs.unshift(job);renderJobs();}}catch(error){notice(error.message);}finally{confirming=false;$('confirmAction').disabled=!state.preview||state.preview.action!=='MARK_READ'||!state.preview.effective;}
+  }
   let filterEpoch=0, listRequest=0, detailRequest=0, selectionBusy=0, mergePage=0, correctionDraft=null;
   const fmt = number => Number(number).toLocaleString();
   function node(tag,text,className) { const e=document.createElement(tag); if(text!==undefined)e.textContent=text; if(className)e.className=className; return e; }
@@ -35,7 +66,7 @@
   }
   const selectedCount = (group,address) => [...selected.values()].filter(v=>v.groupId===group && (address===undefined || v.address===address)).length;
   function updateSelection() {
-    $('dock').hidden=selected.size===0;$('selectionCount').textContent=`${fmt(selected.size)} messages selected`;
+    $('selectionRow').hidden=selected.size===0;$('dock').hidden=selected.size===0&&!jobs.some(activeJob);$('selectionCount').textContent=`${fmt(selected.size)} messages selected`;
     const groupCount=new Set([...selected.values()].map(v=>v.groupId)).size;
     $('selectionDescription').textContent=`${fmt(groupCount)} sender ${groupCount===1?'group':'groups'} · includes other pages`;
     const groups=state.data?.groups||[], total=groups.reduce((n,g)=>n+g.messages,0), chosen=groups.reduce((n,g)=>n+selectedCount(g.id),0);
@@ -141,6 +172,8 @@
     const epoch=filterEpoch,ids=[...selected.keys()];$('review').disabled=true;
     try {const preview=await api('previews',{filter:filter(),ids,action:state.action,revision:state.revision});if(epoch!==filterEpoch||ids.length!==selected.size||ids.some(id=>!selected.has(id))){api(`previews/${preview.id}/invalidate`,{});return;}
       state.preview=preview;state.targetPage=0;
+      $('confirmAction').disabled=confirming||preview.action!=='MARK_READ'||!preview.effective;
+      $('actionAvailability').textContent=preview.action==='MARK_READ'?'Work is saved before processing. Closing this page does not cancel it.':'This action becomes available in Phase 5.';
       const action=preview.action==='MARK_READ'?`Mark ${fmt(preview.effective)} as read`:preview.action==='ARCHIVE'?`Archive ${fmt(preview.effective)} messages`:`Move ${fmt(preview.effective)} to Trash`;
       $('confirmTitle').textContent=action+'?';$('confirmAction').textContent=action;
       $('confirmScope').textContent=`${preview.filter.scope==='inbox'?'Inbox':'All received mail'} · ${preview.filter.start||'All indexed dates'}${preview.filter.end?' through '+preview.filter.end:''} · ${preview.filter.zone}${preview.filter.q?' · Search: '+preview.filter.q:''}`;
@@ -177,13 +210,15 @@
   document.querySelectorAll('[data-action]').forEach(button=>button.onclick=()=>{state.action=button.dataset.action;invalidatePreview();document.querySelectorAll('[data-action]').forEach(b=>{b.classList.toggle('active',b===button);b.setAttribute('aria-pressed',String(b===button));});});
   document.querySelectorAll('[data-tab]').forEach((button,index,tabs)=>{button.onclick=()=>{state.tab=button.dataset.tab;tabs.forEach(b=>{b.classList.toggle('active',b===button);b.setAttribute('aria-selected',String(b===button));b.tabIndex=b===button?0:-1;});$('detailContent').setAttribute('aria-labelledby',button.id);renderDetail();};button.onkeydown=e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();const next=tabs[(index+1)%2];next.click();next.focus();}};});
   document.querySelectorAll('[data-close]').forEach(button=>button.onclick=()=>$(button.dataset.close).close());
-  $('confirm').addEventListener('close',()=>{$('review').focus();});$('correction').addEventListener('close',()=>{correctionDraft=null;});
+  $('confirm').addEventListener('close',()=>{(selected.size?$('review'):$('senderTable')).focus();});$('correction').addEventListener('close',()=>{correctionDraft=null;});
   $('targetPrev').onclick=()=>{state.targetPage--;loadTargets();};$('targetNext').onclick=()=>{state.targetPage++;loadTargets();};
-  $('activityOpen').onclick=()=>{const sync=state.data?.sync||{};$('activityContent').replaceChildren(node('p',$('syncStatus').textContent),node('p',$('coverage').textContent),node('p',sync.error_code?'Sync needs attention. Reconnect or inspect sync details.':'Background cleanup jobs will appear here when available.'));if(sync.oauth_status==='REAUTH_REQUIRED'||sync.lifecycle==='REAUTH_REQUIRED'){const link=node('a','Reconnect Gmail');link.href='/oauth2/authorization/google';$('activityContent').append(link);}$('activity').showModal();};
+  $('activityOpen').onclick=()=>{renderActivity();$('activity').showModal();pollJobs();};
+  $('confirmAction').onclick=confirmJob;
   $('activity').addEventListener('close',()=>$('activityOpen').focus());
   $('correctionKind').onchange=correctionFields;for(const id of ['correctionUnit','mergeGroup','mergeLabel','resetCorrection'])$(id).addEventListener('input',()=>{correctionDraft=null;$('applyCorrection').disabled=true;});
   $('findGroups').onclick=()=>{mergePage=0;findMergeGroups();};$('mergePrev').onclick=()=>{mergePage--;findMergeGroups();};$('mergeNext').onclick=()=>{mergePage++;findMergeGroups();};$('previewCorrection').onclick=previewCorrection;$('applyCorrection').onclick=applyCorrection;
   new ResizeObserver(()=>{document.documentElement.style.setProperty('--dock-height',$('dock').hidden?'0px':$('dock').getBoundingClientRect().height+'px');}).observe($('dock'));
   document.addEventListener('focusin',event=>{if($('dock').hidden||$('dock').contains(event.target)||event.target.closest('dialog'))return;const bottom=window.innerHeight-$('dock').getBoundingClientRect().height-24;const bounds=event.target.getBoundingClientRect();if(bounds.bottom>bottom)window.scrollBy({top:bounds.bottom-bottom,behavior:'instant'});});
+  pollJobs();setInterval(pollJobs,2000);
   api('settings').then(settings=>{if(![...$('zone').options].some(o=>o.value===settings.zone)){const o=node('option',settings.zone);o.value=settings.zone;$('zone').append(o);}$('zone').value=settings.zone;return loadPage();}).catch(error=>notice(error.message));
 })();

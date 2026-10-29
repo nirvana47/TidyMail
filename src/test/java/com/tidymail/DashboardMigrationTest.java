@@ -40,7 +40,21 @@ class DashboardMigrationTest {
         String metadata=jdbc.queryForObject("SELECT md5(string_agg(provider_message_id||from_address||labels::text||received_at::text,',' ORDER BY id)) FROM message_metadata",String.class);
         String cursor=jdbc.queryForObject("SELECT row_to_json(s)::text FROM mailbox_sync_state s",String.class);
         String history=jdbc.queryForObject("SELECT json_agg(a ORDER BY id)::text FROM user_actions a",String.class);
+        assertThat(flyway("16").migrate().migrationsExecuted).isEqualTo(1);
+        java.util.UUID retainedPreview=java.util.UUID.randomUUID(),missingPreview=java.util.UUID.randomUUID();
+        for(var preview:java.util.List.of(retainedPreview,missingPreview))jdbc.update("""
+          INSERT INTO dashboard_previews(public_id,account_id,scope_id,grouping_revision,filter_snapshot,selected_count,effective_count,expires_at)
+          SELECT ?,account_id,id,0,'{}',1,1,now()+interval '1 hour' FROM action_scopes WHERE account_id=?
+          """,preview,account);
+        jdbc.update("""
+          INSERT INTO dashboard_preview_targets(preview_id,account_id,ordinal,message_id,effective,reason)
+          SELECT ?,account_id,0,dashboard_message_id,true,'Eligible' FROM message_metadata WHERE provider_message_id='retained-1'
+          """,retainedPreview);
+        jdbc.update("INSERT INTO dashboard_preview_targets(preview_id,account_id,ordinal,message_id,effective,reason) VALUES(?,?,0,?,true,'Eligible')",missingPreview,account,java.util.UUID.randomUUID());
         assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT provider_message_id FROM dashboard_preview_targets WHERE preview_id=?",String.class,retainedPreview)).isEqualTo("retained-1");
+        assertThat(jdbc.queryForObject("SELECT invalidated_at IS NOT NULL FROM dashboard_previews WHERE public_id=?",Boolean.class,missingPreview)).isTrue();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM cleanup_jobs",Long.class)).isZero();
         assertThat(flyway(null).validateWithResult().validationSuccessful).isTrue();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM message_metadata",Long.class)).isEqualTo(10000);
         assertThat(jdbc.queryForObject("SELECT md5(string_agg(provider_message_id||from_address||labels::text||received_at::text,',' ORDER BY id)) FROM message_metadata",String.class)).isEqualTo(metadata);
@@ -53,10 +67,10 @@ class DashboardMigrationTest {
         }
         assertThat(jdbc.queryForObject("SELECT count(*) FROM sender_units WHERE kind='MESSAGE'",Long.class)).isEqualTo(10000);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM message_metadata WHERE label_evidence_known",Long.class)).isEqualTo(8000);
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM dashboard_previews",Long.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM dashboard_previews",Long.class)).isEqualTo(2);
         assertThatThrownBy(()->jdbc.update("INSERT INTO sender_group_members VALUES(?,(SELECT min(id) FROM sender_units), (SELECT min(id) FROM sender_groups))",account+1)).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
-        // A fresh installation also reaches V16 with all new tables and constraints.
-        flyway(null).clean();assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(16);
+        // A fresh installation also reaches V17 with all new tables and constraints.
+        flyway(null).clean();assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(17);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM user_accounts",Long.class)).isZero();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM dashboard_domain_registry WHERE kind='SHARED'",Long.class)).isPositive();
     }

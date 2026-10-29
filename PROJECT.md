@@ -12,11 +12,13 @@ TidyMail is a self-hosted, non-LLM email cleanup application. It indexes Gmail m
 Phase 3 adds the landing dashboard at `/dashboard`: account-owned indexed
 Inbox/All received browsing, literal subject/sender search, timezone-aware dates,
 10-row group/message paging, conservative groups and manual corrections, and
-persisted exact previews with no-op/protection accounting. The dashboard's final
-execution control remains disabled until Phase 4 supplies durable background jobs.
-V16 is additive and has passed isolated fresh/retained fixtures; the retained
+persisted exact previews with no-op/protection accounting. Phase 4 adds durable
+Gmail Mark as Read jobs, bottom-dock progress, cancellation, restored history and
+read-only verification of uncertain results. Archive/Trash remain preview-only.
+V16/V17 are additive and have passed isolated fresh/retained fixtures; the retained
 development database has not been upgraded. See the
-[Phase 3 report](docs/PHASE-3-INDEXED-DASHBOARD.md). The inventory below describes
+[Phase 3 report](docs/PHASE-3-INDEXED-DASHBOARD.md) and
+[Phase 4 report](docs/PHASE-4-BACKGROUND-MARK-READ.md). The inventory below describes
 the retained legacy surfaces.
 
 The [2026-10-28 MVP plan](docs/MVP-PLAN.md) defines the next product direction:
@@ -44,9 +46,9 @@ The stack is Java 21, Maven, Spring Boot 3.5.16, PostgreSQL, Flyway, Spring Data
 
 Gmail reads use `METADATA` with a fixed header whitelist. Addresses, subject headers, labels, timestamps, unsubscribe evidence and message-size estimates can be stored; bodies, snippets and attachment contents are excluded. Attachment presence is separate membership evidence, not downloaded content.
 
-Ordinary logout ends the session and retains account data. Explicit deletion requires `DELETE` at `/logout/delete-data` and removes the owner's linked accounts and cascading records. Session expiry is not a data-retention timer. Housekeeping does not provide a complete mailbox purge after 24 hours.
+Ordinary logout ends the session and retains account data. Explicit deletion requires `DELETE` at `/logout/delete-data` and removes the owner's linked accounts and cascading records. Deletion first cancels dashboard work and waits for active requests and verification leases to settle. Session expiry is not a data-retention timer. Housekeeping does not provide a complete mailbox purge after 24 hours.
 
-Actions bind to materialized message IDs and record per-target results. Undo applies to successful targets of eligible Archive, Trash and Mark Read actions within the engine's ten-minute window. Protection removal has a separate compensation path. Unsubscribe is not reversible through mailbox undo.
+Actions bind to materialized message IDs and record per-target results. Legacy Undo applies to successful targets of eligible Archive, Trash and Mark Read actions within the engine's ten-minute window. Protection removal has a separate compensation path. Unsubscribe is not reversible through mailbox undo. Dashboard jobs do not create an Undo window.
 
 There is no LLM integration, Gmail filter-creation workflow, embedded trained classifier, billing or live export subsystem in the mapped source. Older plans for those features describe historical intent.
 

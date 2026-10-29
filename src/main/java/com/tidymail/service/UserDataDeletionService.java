@@ -14,14 +14,21 @@ import org.springframework.transaction.annotation.Transactional;
 public class UserDataDeletionService {
 
     private final UserAccountRepository accounts;
+    private final DashboardJobService jobs;
 
-    public UserDataDeletionService(UserAccountRepository accounts) {
+    public UserDataDeletionService(UserAccountRepository accounts,DashboardJobService jobs) {
         this.accounts = accounts;
+        this.jobs = jobs;
     }
 
     /** Deletes all accounts owned by the key and verifies removal. */
-    @Transactional
+    @Transactional(noRollbackFor=org.springframework.web.server.ResponseStatusException.class)
     public long deleteOwnerData(String ownerKey) {
+        accounts.lockOwnerForDeletion(ownerKey);
+        jobs.cancelOwner(ownerKey);
+        if(accounts.pendingCleanupForDeletion(ownerKey)>0)
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.CONFLICT,
+                "Remaining cleanup was cancelled. Wait for active requests and verification leases to settle before deleting local data.");
         long deleted = accounts.deleteByOwnerKey(ownerKey);
         accounts.flush();
         if (deleted == 0 || !accounts.findAllByOwnerKeyOrderByIdAsc(ownerKey).isEmpty()) {
