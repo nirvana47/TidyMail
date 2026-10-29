@@ -155,9 +155,9 @@ public class IncrementalSyncJob {
             .orElseThrow(() -> new IllegalArgumentException("Account does not exist"));
         states.ensureState(accountId, account.getProvider());
         LaneQueue queued = states.queueLane(accountId, lane);
-        if (queued.created()) {
-            submitLane(accountId, queued.progressId(), lane);
-        }
+        // A persisted QUEUED row may outlive its executor after an application restart.
+        // The lane lease fences duplicate submissions; re-dispatch it on every sync request.
+        submitLane(accountId, queued.progressId(), lane);
         return progress.findById(queued.progressId())
             .orElseThrow(() -> new IllegalStateException("Queued sync work disappeared"));
     }

@@ -1,5 +1,9 @@
 # Phase 5 — actions and resilience
 
+Subsequent real-account evidence: [live Gmail check](LIVE-GMAIL-CHECK.md). That
+check upgraded the retained database, verified eight user-selected Trash targets,
+and fixed a sync-restart defect after this phase’s synthetic acceptance.
+
 Implementation date: 2026-10-29. Scope: desktop dashboard Gmail Mark as Read,
 Archive and Move to Trash, with durable jobs and conservative provider recovery.
 Validation uses synthetic accounts, isolated PostgreSQL, and simulated Gmail.

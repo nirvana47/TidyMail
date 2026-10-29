@@ -1,5 +1,16 @@
 # Project status
 
+## Real Gmail core check — 2026-10-29
+
+The current app is now running against the retained Gmail connection and V18
+database. Eight messages explicitly selected by the user were moved to Trash,
+confirmed in the actual Gmail Trash view, and excluded from both dashboard scopes.
+A real sync-restart defect was fixed: pre-existing queued sync work now dispatches
+after restart. The metadata refresh reduced unrefreshed identities from 17,529
+to 84 and restored useful sender groups (largest observed group: 1,003 messages).
+See the [live check](LIVE-GMAIL-CHECK.md) for scope and remaining gaps. Other live
+actions and large-job/cancellation acceptance remain open.
+
 ## Dashboard Phase 5 — 2026-10-29
 
 Archive and Move to Trash now use the confirmed durable dashboard flow alongside

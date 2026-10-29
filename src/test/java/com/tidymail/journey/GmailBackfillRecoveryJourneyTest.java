@@ -71,7 +71,11 @@ class GmailBackfillRecoveryJourneyTest extends PostgresJourneyTest {
                 assertThat(states.findByAccountId(accountId).orElseThrow().backfillLeaseExpiresAt())
                     .isAfter(Instant.now().plusSeconds(30));
             };
+            // Simulate a queue row retained across a process restart with no executor task.
+            states.ensureState(accountId, "google");
+            states.queueLane(accountId, com.tidymail.repository.MailboxSyncStateRepository.Lane.BACKFILL);
             job.requestSync(accountId);
+            assertThat(backfill).hasSize(1);
             backfill.remove().run();
             assertThat(indexed(accountId)).isEqualTo(200);
             server.duringBatch = () -> {};
