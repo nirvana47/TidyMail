@@ -151,3 +151,17 @@ read failures without mutation replay, exact Gmail SDK requests, background/fres
 capacity sharing and V17 in-flight upgrade preservation. The explicit browser
 fixture supports all three simulated actions. See the
 [Phase 5 report](PHASE-5-ACTIONS-AND-RESILIENCE.md) for recorded results and limits.
+
+## Dashboard simplification — Phase 6
+
+See the [Phase 6 report](PHASE-6-SIMPLIFIED-EXPERIENCE.md) for 98 passing affected
+tests and authenticated desktop browser evidence. Production defaults to MVP
+mode; Maven retains legacy mode for historical feature tests. New MVP acceptance
+tests and the browser fixture explicitly set `app.mvp.enabled=true`.
+
+```sh
+JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home \
+DOCKER_HOST=unix:///Users/srt/.colima/default/docker.sock \
+TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock \
+mvn -o -Dtest='DashboardSimplificationTest,DashboardMigrationTest,DashboardJourneyTest,DashboardJobJourneyTest,DashboardResilienceTest,LogoutSemanticsTest,SecurityConfigIntegrationTest,Phase12UndoCompensationTest,Phase12ExecutionServiceTest,Phase11UnsubscribeExecutionTest,MailboxActivityJourneyTest' test
+```

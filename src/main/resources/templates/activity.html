@@ -9,9 +9,10 @@
 </head>
 <body>
 <a class="skip-link" href="#workspace-main">Skip to workspace content</a>
-<div th:replace="~{fragments/workspace-nav :: nav(${page.workspace})}"></div>
-<div class="workspace-shell activity-page">
-    <div th:replace="~{fragments/workspace-rail :: rail(${page.workspace})}"></div>
+<header th:if="${mvpEnabled}" class="page-header"><a href="/dashboard#activity">← Back to Activity</a><form th:action="@{/logout}" method="post"><button>Sign out</button></form></header>
+<div th:unless="${mvpEnabled}"><div th:replace="~{fragments/workspace-nav :: nav(${page.workspace})}"></div></div>
+<div class="workspace-shell activity-page" th:classappend="${mvpEnabled} ? 'mvp-activity'">
+    <div th:unless="${mvpEnabled}"><div th:replace="~{fragments/workspace-rail :: rail(${page.workspace})}"></div></div>
     <main id="workspace-main">
         <header class="page-header">
             <div class="page-title-stack">

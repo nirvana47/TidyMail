@@ -28,6 +28,14 @@ import org.springframework.web.server.ResponseStatusException;
  */
 @Service
 public class ExactScopeExecutor {
+    @org.springframework.beans.factory.annotation.Value("${app.mvp.enabled:true}")
+    private boolean mvpEnabled;
+
+    private void requireLegacyMode() {
+        if (mvpEnabled) throw new org.springframework.web.server.ResponseStatusException(
+            org.springframework.http.HttpStatus.GONE, "This action is unavailable in MVP mode. Use the dashboard.");
+    }
+
     private final ExecutionReservationService reservations;
     private final ExecutionCompletionService completions;
     private final ActionScopeService scopes;
@@ -72,6 +80,7 @@ public class ExactScopeExecutor {
     /** Executes a single action, returning its receipt. */
     public ExecutionReceipt execute(
             long accountId, UUID actionPublicId, UUID idempotencyToken) {
+        requireLegacyMode();
         if (TransactionSynchronizationManager.isActualTransactionActive()) {
             throw new IllegalStateException("Executor entry must not have a transaction");
         }
@@ -167,6 +176,7 @@ public class ExactScopeExecutor {
 
     /** Executes a batch of actions, returning their receipts. */
     public List<ExecutionReceipt> executeBatch(List<BatchAction> actions) {
+        requireLegacyMode();
         if (TransactionSynchronizationManager.isActualTransactionActive()) {
             throw new IllegalStateException("Executor entry must not have a transaction");
         }

@@ -246,6 +246,8 @@
                     <useModulePath>false</useModulePath>
                     <systemPropertyVariables>
                         <app.sync.initial-page-size>200</app.sync.initial-page-size>
+                        <!-- Historical feature tests retain their explicit legacy contract. -->
+                        <app.mvp.enabled>false</app.mvp.enabled>
                     </systemPropertyVariables>
                     <includes>
                         <include>**/*Test.java</include>

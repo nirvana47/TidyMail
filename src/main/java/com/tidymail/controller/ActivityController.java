@@ -22,6 +22,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 @Controller
 public class ActivityController {
 
+    @org.springframework.beans.factory.annotation.Value("${app.mvp.enabled:true}")
+    private boolean mvpEnabled;
     private final ActivityQueryService activity;
 
     public ActivityController(ActivityQueryService activity) {
@@ -37,8 +39,9 @@ public class ActivityController {
             @RequestParam(name = "account", required = false) String account,
             OAuth2AuthenticationToken authentication,
             Model model) {
-        ActivityPageModel page = activity.pageModel(account, authentication);
+        ActivityPageModel page = activity.pageModel(mvpEnabled ? "current" : account, authentication);
         model.addAttribute("page", page);
+        model.addAttribute("mvpEnabled", mvpEnabled);
         return "activity";
     }
 
@@ -53,7 +56,8 @@ public class ActivityController {
             @RequestParam(name = "account", required = false) String account,
             OAuth2AuthenticationToken authentication,
             Model model) {
-        ActivityPageModel page = activity.pageModel(account, authentication);
+        ActivityPageModel page = activity.pageModel(mvpEnabled ? "current" : account, authentication);
+        model.addAttribute("mvpEnabled", mvpEnabled);
         model.addAttribute("workspace", page.workspace());
         model.addAttribute("status", page.status());
         model.addAttribute("providerName", page.providerName());

@@ -22,6 +22,14 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class UnsubscribeExecutionService {
+    @org.springframework.beans.factory.annotation.Value("${app.mvp.enabled:true}")
+    private boolean mvpEnabled;
+
+    private void requireLegacyMode() {
+        if (mvpEnabled) throw new org.springframework.web.server.ResponseStatusException(
+            org.springframework.http.HttpStatus.GONE, "This action is unavailable in MVP mode. Use the dashboard.");
+    }
+
     private final UnsubscribeExecutionPreparationService preparation;
     private final UnsubscribeOutcomeService outcomes;
     private final DestinationResolver resolver;
@@ -44,6 +52,7 @@ public class UnsubscribeExecutionService {
             String candidateKey,
             UnsubscribeMethod method,
             String intent) {
+        requireLegacyMode();
         if (method == null || !method.automated()) {
             throw new ExecutionException(
                 HttpStatus.UNPROCESSABLE_ENTITY, UnsubscribeReasonCode.NO_SAFE_METHOD);
@@ -97,6 +106,7 @@ public class UnsubscribeExecutionService {
             UnsubscribeMethod method,
             String intent,
             boolean userConfirmed) {
+        requireLegacyMode();
         if (method == null || !method.manual() || method == UnsubscribeMethod.MANUAL) {
             throw new ExecutionException(
                 HttpStatus.UNPROCESSABLE_ENTITY, UnsubscribeReasonCode.NO_SAFE_METHOD);

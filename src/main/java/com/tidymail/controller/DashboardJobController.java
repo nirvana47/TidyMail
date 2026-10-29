@@ -26,6 +26,10 @@ public class DashboardJobController {
         return jobs.confirm(account(auth),request.preview());
     }
     @GetMapping public List<DashboardJobService.Progress> list(OAuth2AuthenticationToken auth){return jobs.list(account(auth));}
+    @GetMapping("/history") public DashboardJobService.History history(@RequestParam(defaultValue="0") int page,OAuth2AuthenticationToken auth){
+        if(page<0 || page>1_000_000)throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Invalid history page");
+        return jobs.history(account(auth),page);
+    }
     @GetMapping("/{id}") public DashboardJobService.Progress get(@PathVariable UUID id,OAuth2AuthenticationToken auth){return jobs.get(account(auth),id);}
     @PostMapping("/{id}/cancel") public DashboardJobService.Progress cancel(@PathVariable UUID id,OAuth2AuthenticationToken auth){return jobs.cancel(account(auth),id);}
     @ExceptionHandler(ResponseStatusException.class) public ResponseEntity<Map<String,String>> error(ResponseStatusException error){return ResponseEntity.status(error.getStatusCode()).body(Map.of("message",Objects.toString(error.getReason(),"Job request failed")));}

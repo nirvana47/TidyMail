@@ -36,7 +36,7 @@
               th:if="${status.action.post}">
             <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"
                    th:if="${_csrf != null}">
-            <input type="hidden" name="account" th:value="${workspace.selectedAccountQuery}">
+            <input type="hidden" name="account" th:value="${mvpEnabled == true} ? 'current' : ${workspace.selectedAccountQuery}">
             <input type="hidden" name="returnTo" value="/activity">
             <button id="activity-primary-action" class="primary-button" type="submit"
                     th:attr="aria-label=${status.action.accessibleName}"
@@ -44,7 +44,7 @@
         </form>
         <a id="activity-primary-action" class="primary-button"
            th:unless="${status.action.post}"
-           th:href="${status.action.href}"
+           th:href="${mvpEnabled == true and status.action.href.startsWith('/accounts/connect/')} ? '/oauth2/authorization/google' : (${mvpEnabled == true and status.action.href.startsWith('/senders')} ? '/dashboard' : ${status.action.href})"
            th:attr="aria-label=${status.action.accessibleName}"
            th:text="${status.action.label}">Open cleanup</a>
     </div>

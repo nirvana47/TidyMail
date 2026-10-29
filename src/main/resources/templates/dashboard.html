@@ -60,7 +60,7 @@
   <p class="muted" id="actionAvailability"></p>
   <div class="row spread"><button data-close="confirm">Back to selection</button><button id="confirmAction" class="primary" disabled></button></div>
 </dialog>
-<dialog id="activity" class="drawer" aria-labelledby="activityTitle"><div class="row spread"><h2 id="activityTitle">Activity</h2><button data-close="activity">Close</button></div><div id="activityContent"></div>
+<dialog id="activity" class="drawer" aria-labelledby="activityTitle"><div class="row spread"><h2 id="activityTitle">Activity</h2><button data-close="activity">Close</button></div><p>Cancel stops remaining work. Completed changes are not reversed. Unresolved outcomes have not been confirmed.</p><div id="activityContent"></div><p id="historySummary" class="muted"></p><button id="historyMore" hidden>Load older activity</button>
   <hr><p><a class="muted-link" href="/activity">View sync details</a></p><details><summary>Delete local account data</summary><p>This removes your locally indexed data and connection credentials for linked accounts. It does not delete Gmail messages.</p><form th:action="@{/logout/delete-data}" method="post"><label>Type DELETE <input name="confirmation" pattern="DELETE" required autocomplete="off"></label><button>Delete local data and sign out</button></form></details>
 </dialog>
 <dialog id="correction" aria-labelledby="correctionTitle"><div class="row spread"><h2 id="correctionTitle">Organize senders</h2><button data-close="correction">Close</button></div>

@@ -12,6 +12,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.mock.web.MockHttpSession;
 
 /** Explicit-only browser harness: authenticated MockMvc bridge over loopback, synthetic DB/provider. */
+@org.springframework.test.context.TestPropertySource(properties="app.mvp.enabled=true")
 class DashboardBrowserFixture extends PostgresJourneyTest {
     @org.springframework.beans.factory.annotation.Autowired com.tidymail.job.DashboardCleanupWorker cleanupWorker;
     private static java.util.Set<String> withUnread(java.util.Set<String> labels,boolean unread){var result=new java.util.HashSet<>(labels);if(unread)result.add("UNREAD");return result;}

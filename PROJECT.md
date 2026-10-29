@@ -17,8 +17,10 @@ Gmail Mark as Read jobs, bottom-dock progress, cancellation, restored history an
 read-only verification of uncertain results. Phase 5 extends that flow to
 Archive/Trash with bounded read retries, reconnect guidance and shared provider
 capacity; see the [Phase 5 report](docs/PHASE-5-ACTIONS-AND-RESILIENCE.md).
-V16–V18 are additive and have passed isolated fresh/retained fixtures; the retained
-development database has not been upgraded. See the
+Phase 6 desktop simplification is complete; see the
+[Phase 6 report](docs/PHASE-6-SIMPLIFIED-EXPERIENCE.md). Phase 7 remains next.
+V16–V19 are additive and have passed isolated fresh/retained fixtures. V19 has
+not been applied to the retained development database in Phase 6. See the
 [Phase 3 report](docs/PHASE-3-INDEXED-DASHBOARD.md) and
 [Phase 4 report](docs/PHASE-4-BACKGROUND-MARK-READ.md). The inventory below describes
 the retained legacy surfaces.

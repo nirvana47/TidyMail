@@ -94,9 +94,22 @@ public class DashboardJobService {
 
     public List<Progress> list(long account) {
         return transaction(()->jdbc.queryForList("""
-            SELECT public_id FROM cleanup_jobs WHERE account_id=:account
-            ORDER BY CASE WHEN EXISTS(SELECT 1 FROM cleanup_job_targets t WHERE t.job_id=cleanup_jobs.public_id AND t.state IN ('QUEUED','DISPATCH_INTENT','AWAITING_VERIFICATION')) THEN 0 ELSE 1 END,created_at DESC LIMIT 30
+            SELECT public_id FROM cleanup_jobs WHERE account_id=:account AND (
+              public_id IN (SELECT public_id FROM cleanup_jobs WHERE account_id=:account ORDER BY created_at DESC,public_id LIMIT 30)
+              OR EXISTS(SELECT 1 FROM cleanup_job_targets t WHERE t.job_id=cleanup_jobs.public_id AND t.state IN ('QUEUED','DISPATCH_INTENT','AWAITING_VERIFICATION')))
+            ORDER BY created_at DESC,public_id
             """,Map.of("account",account)).stream().map(row->progress(account,(UUID)row.get("public_id"))).toList());
+    }
+    public record History(List<Progress> rows,long total,int page) {}
+    public History history(long account,int page) {
+        if(page<0 || page>1_000_000) throw new IllegalArgumentException("Invalid history page");
+        return transaction(()->{
+            var p=new MapSqlParameterSource("account",account).addValue("offset",page*30L);
+            long total=jdbc.queryForObject("SELECT count(*) FROM cleanup_jobs WHERE account_id=:account",p,Long.class);
+            var rows=jdbc.queryForList("SELECT public_id FROM cleanup_jobs WHERE account_id=:account ORDER BY created_at DESC,public_id LIMIT 30 OFFSET :offset",p)
+                .stream().map(row->progress(account,(UUID)row.get("public_id"))).toList();
+            return new History(rows,total,page);
+        });
     }
     public Progress get(long account,UUID job) {return transaction(()->{lock(account,job);return progress(account,job);});}
     public Progress cancel(long account,UUID job) {

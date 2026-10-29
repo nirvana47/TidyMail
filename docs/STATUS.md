@@ -11,6 +11,18 @@ to 84 and restored useful sender groups (largest observed group: 1,003 messages)
 See the [live check](LIVE-GMAIL-CHECK.md) for scope and remaining gaps. Other live
 actions and large-job/cancellation acceptance remain open.
 
+## Dashboard Phase 6 — 2026-10-29
+
+Desktop simplification is complete: paged Activity history, settled-outcome
+progress, pending sender/message indicators, keyboard focus handling, and MVP
+restrictions on legacy navigation, action routes, queued execution, unsubscribe,
+and Undo. Sign out and confirmed local-data deletion remain accessible.
+
+98 affected tests pass; authenticated synthetic browser checks cover cancellation,
+reload, active-job browsing, and desktop dock/focus behavior. See the
+[Phase 6 report](PHASE-6-SIMPLIFIED-EXPERIENCE.md). The retained app/database and
+real Gmail account were untouched in this phase. Phase 7 validation is next.
+
 ## Dashboard Phase 5 — 2026-10-29
 
 Archive and Move to Trash now use the confirmed durable dashboard flow alongside
@@ -26,7 +38,7 @@ Phase 5 is complete for synthetic-provider and desktop acceptance. The full Java
 there were no errors/skips. After the final post-dispatch read-guidance refinement,
 all 87 focused checks passed, including 24 scenarios with 501 targets each. See the
 [Phase 5 report](PHASE-5-ACTIONS-AND-RESILIENCE.md) for exact evidence and limits.
-Phase 6 simplification is next. The retained database/application and live mailbox
+Phase 6 simplification was subsequently completed; see the report above. The retained database/application and live mailbox
 are unchanged. No commit, push or deployment was performed.
 
 ## Dashboard Phase 4 — 2026-10-28

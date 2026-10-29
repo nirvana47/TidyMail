@@ -203,7 +203,9 @@ Phase 4 background Mark as Read is implemented with simulated-provider and deskt
 browser evidence; see the [Phase 4 report](PHASE-4-BACKGROUND-MARK-READ.md).
 Phase 5 Archive/Trash and resilience are complete for synthetic-provider and
 desktop acceptance; see the [Phase 5 report](PHASE-5-ACTIONS-AND-RESILIENCE.md).
-Phases 6–7 remain not started. The two existing display/documentation assertions
+Phase 6 desktop simplification is complete; see the
+[Phase 6 report](PHASE-6-SIMPLIFIED-EXPERIENCE.md). Phase 7 remains not started.
+The two existing display/documentation assertions
 and later release gates remain open.
 
 ## Review refinements — 2026-10-28

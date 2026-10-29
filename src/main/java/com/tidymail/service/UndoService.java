@@ -49,6 +49,14 @@ import org.springframework.web.server.ResponseStatusException;
  * recently applied cleanup actions.
  */
 public class UndoService {
+    @org.springframework.beans.factory.annotation.Value("${app.mvp.enabled:true}")
+    private boolean mvpEnabled;
+
+    private void requireLegacyMode() {
+        if (mvpEnabled) throw new org.springframework.web.server.ResponseStatusException(
+            org.springframework.http.HttpStatus.GONE, "This action is unavailable in MVP mode. Use the dashboard.");
+    }
+
     private static final Duration INTENT_TTL = Duration.ofMinutes(5);
     private static final Duration LEASE = Duration.ofMinutes(2);
     private static final List<String> TYPES = List.of("ARCHIVE", "TRASH", "MARK_READ");
@@ -101,6 +109,7 @@ public class UndoService {
     /** Prepares an undo intent token for an eligible action. */
     public UndoConfirmation prepare(
             String ownerKey, long accountId, UUID actionPublicId) {
+        requireLegacyMode();
         return transactions.execute(status -> {
             UserAction action = eligibleAction(accountId, actionPublicId, clock.instant());
             List<ActionExecutionTarget> applied =
@@ -129,6 +138,7 @@ public class UndoService {
     /** Executes the undo, reserving, dispatching the inverse, and completing. */
     public UndoResult execute(
             String ownerKey, long accountId, UUID actionPublicId, String rawIntent) {
+        requireLegacyMode();
         UndoAttempt attempt = transactions.execute(status ->
             reserveOrRecover(ownerKey, accountId, actionPublicId, rawIntent));
         if (attempt.existingExecutionId() != null) {
@@ -150,6 +160,7 @@ public class UndoService {
     /** Reserves an undo execution or replays an existing one. */
     private UndoAttempt reserveOrRecover(
             String ownerKey, long accountId, UUID actionPublicId, String rawIntent) {
+        requireLegacyMode();
         Instant now = clock.instant();
         UserAction action = actions.findForUpdateByPublicIdAndAccountId(
             actionPublicId, accountId).orElseThrow(UndoService::notFound);

@@ -35,7 +35,12 @@ public class DashboardRepository {
        WITH filtered AS (
        SELECT m.*,g.public_id AS group_public_id,g.group_key,g.label AS group_label,
          u.public_id AS unit_public_id,u.kind AS unit_kind,u.canonical_key AS unit_key,u.evidence_reason,
-         COALESCE(m.dashboard_from_address,m.from_address,'Unknown sender') AS address
+         COALESCE(m.dashboard_from_address,m.from_address,'Unknown sender') AS address,
+         (SELECT t.state FROM cleanup_job_targets t WHERE t.account_id=m.account_id
+           AND t.message_id=m.dashboard_message_id
+           AND t.state IN ('QUEUED','DISPATCH_INTENT','AWAITING_VERIFICATION')
+           ORDER BY CASE t.state WHEN 'AWAITING_VERIFICATION' THEN 0 WHEN 'DISPATCH_INTENT' THEN 1 ELSE 2 END
+           LIMIT 1) AS pending_state
        FROM message_metadata m JOIN user_accounts a ON a.id=m.account_id
        JOIN message_sender_units link ON link.account_id=m.account_id AND link.metadata_id=m.id
        JOIN sender_units u ON u.account_id=link.account_id AND u.id=link.unit_id
@@ -63,10 +68,10 @@ public class DashboardRepository {
         var summary=jdbc.queryForMap(FILTERED+" SELECT count(*) messages,count(*) FILTER(WHERE unread) unread,count(DISTINCT group_public_id) groups,count(*) FILTER(WHERE received_at IS NULL) undated FROM filtered",p);
         var groups=jdbc.query(FILTERED+"""
           SELECT group_public_id,group_key,group_label,count(*) messages,count(*) FILTER(WHERE unread) unread,
-          max(received_at) latest,count(DISTINCT address) addresses
+          max(received_at) latest,count(DISTINCT address) addresses,count(*) FILTER(WHERE pending_state IS NOT NULL) pending
           FROM filtered GROUP BY group_public_id,group_key,group_label
           ORDER BY count(*) DESC,group_key LIMIT 10 OFFSET :offset
-          """,p,(r,n)->new Group(uuid(r,"group_public_id"),r.getString("group_label"),r.getLong("messages"),r.getLong("unread"),instant(r,"latest"),r.getLong("addresses"),groupingEvidence(r.getString("group_key"))));
+          """,p,(r,n)->new Group(uuid(r,"group_public_id"),r.getString("group_label"),r.getLong("messages"),r.getLong("unread"),instant(r,"latest"),r.getLong("addresses"),groupingEvidence(r.getString("group_key")),r.getLong("pending")));
         var coverage=jdbc.queryForMap("""
           SELECT count(*) indexed,min(m.received_at) oldest,max(m.received_at) newest,
             max(m.last_synced_at) as_of,
@@ -113,7 +118,7 @@ public class DashboardRepository {
     }
 
     public static Message message(ResultSet r) throws SQLException {
-        return new Message(uuid(r,"dashboard_message_id"),r.getString("subject_header"),r.getString("address"),instant(r,"received_at"),r.getBoolean("unread"),uuid(r,"group_public_id"));
+        return new Message(uuid(r,"dashboard_message_id"),r.getString("subject_header"),r.getString("address"),instant(r,"received_at"),r.getBoolean("unread"),uuid(r,"group_public_id"),r.getString("pending_state"));
     }
     public static UUID uuid(ResultSet r,String column) throws SQLException { return r.getObject(column,UUID.class); }
     public static Instant instant(ResultSet r,String column) throws SQLException { Timestamp v=r.getTimestamp(column);return v==null ? null : v.toInstant(); }
@@ -125,8 +130,8 @@ public class DashboardRepository {
         if(key.startsWith("list:"))return "Grouped by a single valid List-ID";
         return key.startsWith("address:") ? "Exact sender address; no domain merge inferred" : "Kept separate — identity evidence is incomplete";
     }
-    public record Group(UUID id,String label,long messages,long unread,Instant latest,long addresses,String evidence) {}
-    public record Message(UUID id,String subject,String address,Instant receivedAt,boolean unread,UUID groupId) {}
+    public record Group(UUID id,String label,long messages,long unread,Instant latest,long addresses,String evidence,long pending) {}
+    public record Message(UUID id,String subject,String address,Instant receivedAt,boolean unread,UUID groupId,String pendingState) {}
     public record Address(String address,long messages,long unread) {}
     public record Unit(UUID id,String kind,String key,String reason) {}
     public record Selected(UUID id,UUID groupId,String address) {}

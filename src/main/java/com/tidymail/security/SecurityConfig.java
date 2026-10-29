@@ -45,6 +45,9 @@ import static org.springframework.security.config.Customizer.withDefaults;
 @EnableWebSecurity
 @EnableMethodSecurity
 public class SecurityConfig {
+    @Value("${app.mvp.enabled:true}")
+    private boolean mvpEnabled;
+
 
     /**
      * Builds an OAuth2AuthorizedClientProvider that enables refresh-token renewal with
@@ -119,6 +122,16 @@ public class SecurityConfig {
                 // .oauth2Login() block below).  Allowing them in the matcher layer keeps the DSL
                 // to a single authorizeHttpRequests closure.
                 auth.requestMatchers("/oauth2/authorization/**", "/login/oauth2/code/**").permitAll();
+                if (mvpEnabled) {
+                    auth.requestMatchers("/senders", "/senders/**", "/unread", "/unread/**",
+                        "/unsubscribe", "/unsubscribe/**", "/review", "/review/**",
+                        "/analytics", "/analytics/**", "/accounts/**", "/workspace/**",
+                        "/reply-zero", "/reply-zero/**", "/api/actions/**",
+                        "/api/action-commands", "/api/cleanup-actions", "/api/selection-preview",
+                        "/api/sender-categories/**", "/api/senders", "/api/senders/**",
+                        "/api/reply-zero", "/senders-frag", "/domain-rollups-frag",
+                        "/reply-zero-frag", "/sync-progress-frag").denyAll();
+                }
                 auth.anyRequest().authenticated();
             })
             .formLogin(form -> form

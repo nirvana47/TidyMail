@@ -51,7 +51,7 @@ class DashboardMigrationTest {
           SELECT ?,account_id,0,dashboard_message_id,true,'Eligible' FROM message_metadata WHERE provider_message_id='retained-1'
           """,retainedPreview);
         jdbc.update("INSERT INTO dashboard_preview_targets(preview_id,account_id,ordinal,message_id,effective,reason) VALUES(?,?,0,?,true,'Eligible')",missingPreview,account,java.util.UUID.randomUUID());
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(2);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(3);
         assertThat(jdbc.queryForObject("SELECT provider_message_id FROM dashboard_preview_targets WHERE preview_id=?",String.class,retainedPreview)).isEqualTo("retained-1");
         assertThat(jdbc.queryForObject("SELECT invalidated_at IS NOT NULL FROM dashboard_previews WHERE public_id=?",Boolean.class,missingPreview)).isTrue();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM cleanup_jobs",Long.class)).isZero();
@@ -69,8 +69,8 @@ class DashboardMigrationTest {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM message_metadata WHERE label_evidence_known",Long.class)).isEqualTo(8000);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM dashboard_previews",Long.class)).isEqualTo(2);
         assertThatThrownBy(()->jdbc.update("INSERT INTO sender_group_members VALUES(?,(SELECT min(id) FROM sender_units), (SELECT min(id) FROM sender_groups))",account+1)).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
-        // A fresh installation also reaches V18 with all new tables and constraints.
-        flyway(null).clean();assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(18);
+        // A fresh installation also reaches V19 with all new tables and constraints.
+        flyway(null).clean();assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(19);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM user_accounts",Long.class)).isZero();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM dashboard_domain_registry WHERE kind='SHARED'",Long.class)).isPositive();
     }
@@ -85,7 +85,7 @@ class DashboardMigrationTest {
         jdbc.update("INSERT INTO cleanup_batches(public_id,job_id,account_id,generation,state) VALUES(?,?,?,3,'DISPATCH_INTENT')",batch,job,account);
         jdbc.update("INSERT INTO cleanup_job_targets(job_id,account_id,ordinal,provider_message_id,message_id,target_fingerprint,state,reason,pre_unread,batch_id) VALUES(?,?,0,'synthetic',?,repeat('c',64),'DISPATCH_INTENT','Request claimed',true,?)",job,account,message,batch);
         jdbc.update("INSERT INTO cleanup_active_targets(account_id,target_fingerprint,job_id) VALUES(?,repeat('c',64),?)",account,job);
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(2);
         assertThat(jdbc.queryForObject("SELECT pre_change_observed FROM cleanup_job_targets WHERE job_id=?",Boolean.class,job)).isTrue();
         assertThat(jdbc.queryForObject("SELECT state FROM cleanup_job_targets WHERE job_id=?",String.class,job)).isEqualTo("DISPATCH_INTENT");
         assertThat(jdbc.queryForObject("SELECT message_id FROM cleanup_job_targets WHERE job_id=?",java.util.UUID.class,job)).isEqualTo(message);
