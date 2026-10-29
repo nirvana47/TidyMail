@@ -1,8 +1,23 @@
 # TidyMail
 
+**MVP platform scope:** Desktop-first. Mobile implementation and testing are
+deferred unless the user explicitly requests them later. Existing mobile work
+may remain, but is not an acceptance requirement. See the
+[recorded scope decision](docs/MVP-PLAN.md#desktop-first-scope--2026-10-28).
+
 TidyMail is a self-hosted, non-LLM email cleanup application. It indexes Gmail metadata, groups messages by sender, and lets users preview, stage, approve and inspect bulk cleanup actions. This document describes source mapped on 2026-10-14; implemented does not mean verified against a live mailbox.
 
 ## Implemented product
+
+Phase 3 adds the landing dashboard at `/dashboard`: account-owned indexed
+Inbox/All received browsing, literal subject/sender search, timezone-aware dates,
+10-row group/message paging, conservative groups and manual corrections, and
+persisted exact previews with no-op/protection accounting. The dashboard's final
+execution control remains disabled until Phase 4 supplies durable background jobs.
+V16 is additive and has passed isolated fresh/retained fixtures; the retained
+development database has not been upgraded. See the
+[Phase 3 report](docs/PHASE-3-INDEXED-DASHBOARD.md). The inventory below describes
+the retained legacy surfaces.
 
 The [2026-10-28 MVP plan](docs/MVP-PLAN.md) defines the next product direction:
 one sender dashboard, Inbox by default, All received mail excluding Spam/Trash,

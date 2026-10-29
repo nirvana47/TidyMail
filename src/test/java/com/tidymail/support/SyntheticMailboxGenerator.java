@@ -34,11 +34,12 @@ public final class SyntheticMailboxGenerator {
             return_path_values, delivered_to_values, precedence_values,
             auto_submitted_values, message_id_values, feedback_id_values,
             unsubscribe_dkim_pass, unsubscribe_dkim_covers_list_unsubscribe,
-            unsubscribe_dkim_covers_list_unsubscribe_post, unsubscribe_auth_reason
+            unsubscribe_dkim_covers_list_unsubscribe_post, unsubscribe_auth_reason,
+            dashboard_message_id
         )
         VALUES (
             ?, 'google', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         )
         """;
 
@@ -160,7 +161,10 @@ public final class SyntheticMailboxGenerator {
                 statement.setBoolean(parameter++, bulk);
                 statement.setBoolean(parameter++, bulk);
                 statement.setBoolean(parameter++, bulk);
-                statement.setString(parameter, bulk ? "TRUSTED_PASS" : null);
+                statement.setString(parameter++, bulk ? "TRUSTED_PASS" : null);
+                // Opaque IDs are random in production, deterministic in seeded fixtures.
+                statement.setObject(parameter, UUID.nameUUIDFromBytes(
+                    ("message-" + seed + "-" + providerId).getBytes(StandardCharsets.US_ASCII)));
                 statement.addBatch();
 
                 if ((row + 1) % BATCH_SIZE == 0) {

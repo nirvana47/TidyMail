@@ -1,5 +1,15 @@
 # Sender dashboard MVP
 
+## Desktop-first scope — 2026-10-28
+
+The user confirmed that TidyMail is a desktop-first application. Mobile layouts,
+mobile browser checks, narrow-screen acceptance and a mobile version are outside
+the MVP. Do not spend further implementation or testing effort on mobile unless
+the user explicitly brings it back into scope. Preserve the work already done;
+it creates no continuing mobile requirement. Desktop keyboard/accessibility checks
+remain in scope. This decision supersedes earlier mobile/responsive requirements,
+including those in the approved wireframe and historical phase documents.
+
 Agreed product direction, 2026-10-28. Planning only: this document does not claim
 the new dashboard or background cleanup workflow is implemented. It supersedes
 older product priorities where they conflict; current implementation evidence
@@ -72,7 +82,7 @@ not requirements or authorization to mutate mail. Phase 1 review was approved on
 | Action dock | Persistent bottom selection count, Clear selection, mutually exclusive action choice, then Review and confirm. Choosing an action does not execute it. |
 | Confirmation | On-dashboard modal with exact targets, effective/no-op counts and explicit action-specific confirmation. No separate Review navigation. |
 | Job feedback | Compact progress row beneath the selection bar; Cancel remains reachable, with full outcome accounting in Activity. The job and current draft selection are separate. |
-| Small screens | Detail pane stacks below the list or occupies a dedicated detail view; dock reflows without covering rows or focused controls. |
+| Small screens | Deferred; no MVP implementation or acceptance requirement unless the user explicitly requests it later. |
 
 Use mixed-state parent checkboxes: 438 selected means all 438 targets, not a partially
 checked child list. Deselecting an address/message updates every representation and

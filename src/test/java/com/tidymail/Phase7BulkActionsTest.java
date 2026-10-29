@@ -825,16 +825,16 @@ class Phase7BulkActionsTest {
 
         @Test
         @Order(1)
-        @DisplayName("T7_d_01 GET /dashboard redirects to the workspace senders route")
+        @DisplayName("T7_d_01 GET /dashboard renders indexed browsing without provider calls")
         void T7_d_01_dashboardLayout() throws Exception {
             insertMeAccount();
 
             MvcResult res = mockMvc.perform(get("/dashboard")
                     .with(authentication(buildAuthToken("me-t7d@example.com", "google"))))
-                .andExpect(status().is3xxRedirection())
+                .andExpect(status().isOk())
                 .andReturn();
 
-            assertThat(res.getResponse().getRedirectedUrl()).isEqualTo("/senders");
+            assertThat(res.getModelAndView().getViewName()).isEqualTo("dashboard");
             verify(gmailProvider, times(0)).listMessages(any(), any(), anyInt());
         }
 

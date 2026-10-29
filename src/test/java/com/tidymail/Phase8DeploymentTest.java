@@ -27,6 +27,7 @@ import java.io.File;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -459,9 +460,9 @@ class Phase8DeploymentTest {
 
             MvcResult dashRes = mockMvc.perform(get("/dashboard")
                     .with(authentication(buildAuthToken("me-t8c02@example.com", "google"))))
-                .andExpect(status().is3xxRedirection())
+                .andExpect(status().isOk())
                 .andReturn();
-            assertThat(dashRes.getResponse().getRedirectedUrl()).isEqualTo("/senders");
+            assertThat(dashRes.getModelAndView().getViewName()).isEqualTo("dashboard");
         }
 
         @Test
@@ -485,9 +486,9 @@ class Phase8DeploymentTest {
 
             MvcResult dashRes = mockMvc.perform(get("/dashboard")
                     .with(authentication(buildAuthToken("me-t8c03@example.com", "google"))))
-                .andExpect(status().is3xxRedirection())
+                .andExpect(status().isOk())
                 .andReturn();
-            assertThat(dashRes.getResponse().getRedirectedUrl()).isEqualTo("/senders");
+            assertThat(dashRes.getModelAndView().getViewName()).isEqualTo("dashboard");
         }
     }
 
@@ -516,7 +517,8 @@ class Phase8DeploymentTest {
         void T8d_02_cssBreakpoints() throws Exception {
             File dashboard = new File("src/main/resources/templates/dashboard.html");
             assertTrue(dashboard.exists(), "dashboard.html exists");
-            String dashContents = Files.readString(dashboard.toPath());
+            assertThat(Files.readString(dashboard.toPath())).contains("/static/css/dashboard.css");
+            String dashContents = Files.readString(Path.of("src/main/resources/static/css/dashboard.css"));
             assertThat(dashContents).contains("@media");
             assertThat(dashContents).contains("375px");
             assertThat(dashContents).contains("min-height: 44px");

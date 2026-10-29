@@ -34,6 +34,33 @@ import org.hibernate.type.descriptor.jdbc.NumericJdbcType;
 )
 public class MessageMetadata {
 
+    @Column(name = "raw_from_values", nullable = false)
+    @JdbcTypeCode(SqlTypes.ARRAY)
+    private List<String> rawFromValues = new ArrayList<>();
+    @Column(name = "label_evidence_known", nullable = false)
+    private boolean labelEvidenceKnown;
+    @Column(name = "dashboard_from_address")
+    private String dashboardFromAddress;
+    @Column(name = "dashboard_unit_kind")
+    private String dashboardUnitKind;
+    @Column(name = "dashboard_unit_key")
+    private String dashboardUnitKey;
+    @Column(name = "dashboard_identity_reason")
+    private String dashboardIdentityReason;
+
+    public List<String> getRawFromValues() { return List.copyOf(rawFromValues); }
+    public void setRawFromValues(List<String> value) { rawFromValues = copy(value); }
+    public boolean isLabelEvidenceKnown() { return labelEvidenceKnown; }
+    public void setLabelEvidenceKnown(boolean value) { labelEvidenceKnown=value; }
+    public String getDashboardFromAddress() { return dashboardFromAddress; }
+    public void setDashboardFromAddress(String value) { dashboardFromAddress=value; }
+    public String getDashboardUnitKind() { return dashboardUnitKind; }
+    public void setDashboardUnitKind(String value) { dashboardUnitKind=value; }
+    public String getDashboardUnitKey() { return dashboardUnitKey; }
+    public void setDashboardUnitKey(String value) { dashboardUnitKey=value; }
+    public String getDashboardIdentityReason() { return dashboardIdentityReason; }
+    public void setDashboardIdentityReason(String value) { dashboardIdentityReason=value; }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;

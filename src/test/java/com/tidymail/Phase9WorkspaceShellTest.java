@@ -213,8 +213,8 @@ class Phase9WorkspaceShellTest {
         OAuth2AuthenticationToken authentication = auth(EMAIL, "google");
 
         mockMvc.perform(get("/dashboard").with(authentication(authentication)))
-            .andExpect(status().is3xxRedirection())
-            .andExpect(redirectedUrl("/senders"));
+            .andExpect(status().isOk())
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.view().name("dashboard"));
 
         String fragment = mockMvc.perform(get("/workspace/state")
                 .param("route", "senders")

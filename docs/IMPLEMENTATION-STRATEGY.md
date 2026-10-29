@@ -5,6 +5,12 @@ This document defines planned work, not implemented or verified behavior.
 
 ## Working agreement
 
+**Scope update, 2026-10-28:** TidyMail is desktop-first. Mobile implementation,
+narrow-screen checks and mobile acceptance are deferred indefinitely unless the
+user explicitly reintroduces them. Retain existing mobile work without expanding
+or testing it further. This overrides earlier responsive/mobile wording here and
+in historical plans. Desktop keyboard/accessibility requirements still apply.
+
 Complete phases sequentially. Within each phase, work through its tasks in order,
 run the relevant checks, and record results before advancing. If a gate fails,
 resolve it or explicitly document an agreed scope change; do not mark it passed.
@@ -27,7 +33,7 @@ mutations. Subsequent implementation can proceed within the agreed phase scope.
 The first wireframe was rejected on 2026-10-28. Use the supplied dashboard image
 and the revised [MVP visual direction](MVP-PLAN.md#visual-direction--reference-led-revision-2026-10-28).
 The seven phases remain appropriate. The incremental work is a synchronized
-list/detail interface, shared selection state, and responsive bottom action/progress
+list/detail interface, shared selection state, and desktop bottom action/progress
 dock. Body previews, external logo services, company enrichment and account
 switching are deferred. No new service or infrastructure is prescribed.
 
@@ -78,8 +84,8 @@ Implement a shared scope/filter contract used by summaries, groups, previews,
 selection materialization, and action eligibility. Implement server-side grouping,
 paging, on-demand expansion, and account-owned merge/separate corrections.
 Add the reviewed browsing interface, account identity, scope toggle, date/search
-controls, and coverage indicators. Build the desktop split view and responsive
-fallback with shared selection IDs across table, expanded addresses and detail tabs.
+controls, and coverage indicators. Build the desktop split view with shared
+selection IDs across table, expanded addresses and detail tabs.
 Keep row focus/expansion independent of selection; support mixed parent checkboxes.
 Use initial badges and indexed subject/sender/date previews, without body fetching
 or remote logo discovery. Include selected-action state and exact review modal.
@@ -142,8 +148,8 @@ success or blind replay. These are simulated-provider results, not live throughp
 ## Phase 6 — Complete the simplified experience
 
 Finish Activity history, progress details, cancellation/results messages, pending
-row indicators, and responsive/keyboard behavior. Verify the bottom dock never
-obscures rows/focus, the narrow-screen detail pane remains usable, and confirmation
+row indicators, and desktop keyboard behavior. Verify the bottom dock never
+obscures rows/focus at supported desktop sizes, and confirmation
 and Activity restore focus correctly. Remove Unread Only, Unsubscribe,
 multi-account management, separate Review, and standalone analytics navigation.
 Keep Sign out and confirmed local-data deletion accessible.
@@ -190,7 +196,11 @@ next phase. Phase 1 is complete: the current revised wireframe was approved and 
 [Phase 1 experience and review gate](PHASE-1-EXPERIENCE.md) and the
 [dashboard wireframe](wireframes/sender-dashboard.html). Phase 2 verification and
 persistence design is complete; see the [baseline report](PHASE-2-BASELINE-AND-PERSISTENCE.md)
-for measurements, open baseline failures and migration contracts. Phases 3–7 remain not started.
+for measurements, open baseline failures and migration contracts. Phase 3 indexed
+browsing and exact selections are complete; see the
+[implementation and verification report](PHASE-3-INDEXED-DASHBOARD.md).
+Phases 4–7 remain not started. The two existing display/documentation assertions
+and later release gates remain open.
 
 ## Review refinements — 2026-10-28
 

@@ -26,6 +26,7 @@ public class MessageMetadataSyncRepository {
         requireOwnedRow(row);
         return jdbc.update("""
             INSERT INTO message_metadata(
+                raw_from_values, label_evidence_known, dashboard_from_address, dashboard_unit_kind, dashboard_unit_key, dashboard_identity_reason,
                 account_id, provider, provider_message_id, provider_thread_id,
                 from_address, from_display_name, from_domain, subject_header,
                 received_at, first_seen_at, last_synced_at, unread,
@@ -41,6 +42,7 @@ public class MessageMetadataSyncRepository {
                 unsubscribe_dkim_covers_list_unsubscribe_post,
                 unsubscribe_auth_reason
             ) VALUES (
+                :raw_from_values, :label_evidence_known, :dashboard_from_address, :dashboard_unit_kind, :dashboard_unit_key, :dashboard_identity_reason,
                 :account_id, :provider, :provider_message_id, :provider_thread_id,
                 :from_address, :from_display_name, :from_domain, :subject_header,
                 :received_at, :first_seen_at, :last_synced_at, :unread,
@@ -57,7 +59,13 @@ public class MessageMetadataSyncRepository {
                 :unsubscribe_auth_reason
             )
             ON CONFLICT (account_id, provider_message_id) DO UPDATE
-               SET provider = EXCLUDED.provider,
+               SET raw_from_values=EXCLUDED.raw_from_values,
+                   label_evidence_known=EXCLUDED.label_evidence_known,
+                   dashboard_from_address=EXCLUDED.dashboard_from_address,
+                   dashboard_unit_kind=EXCLUDED.dashboard_unit_kind,
+                   dashboard_unit_key=EXCLUDED.dashboard_unit_key,
+                   dashboard_identity_reason=EXCLUDED.dashboard_identity_reason,
+                   provider = EXCLUDED.provider,
                    provider_thread_id = EXCLUDED.provider_thread_id,
                    from_address = EXCLUDED.from_address,
                    from_display_name = EXCLUDED.from_display_name,
@@ -141,6 +149,12 @@ public class MessageMetadataSyncRepository {
 
     private static MapSqlParameterSource parameters(MessageMetadata row) {
         return new MapSqlParameterSource()
+            .addValue("raw_from_values", array(row.getRawFromValues()))
+            .addValue("label_evidence_known", row.isLabelEvidenceKnown())
+            .addValue("dashboard_from_address", row.getDashboardFromAddress())
+            .addValue("dashboard_unit_kind", row.getDashboardUnitKind())
+            .addValue("dashboard_unit_key", row.getDashboardUnitKey())
+            .addValue("dashboard_identity_reason", row.getDashboardIdentityReason())
             .addValue("account_id", row.getAccountId())
             .addValue("provider", row.getProvider())
             .addValue("provider_message_id", row.getProviderMessageId())

@@ -872,7 +872,10 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
 
         java.util.List<String> rawLabelIds = gmailMessage.getLabelIds();
         java.util.Set<String> labelIds;
-        if (rawLabelIds == null || rawLabelIds.isEmpty()) {
+        if (rawLabelIds == null) {
+            // Unknown membership must not become known empty (archived received mail).
+            labelIds = null;
+        } else if (rawLabelIds.isEmpty()) {
             labelIds = java.util.Set.of();
         } else {
             labelIds = java.util.Set.copyOf(new java.util.HashSet<>(rawLabelIds));

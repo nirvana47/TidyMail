@@ -25,9 +25,6 @@ public record ActionScopeRiskSummary(
         if (protectedCount < 0 || highRiskCount < 0) {
             throw new IllegalArgumentException("Risk counts must be non-negative");
         }
-        if (protectedCount > 1000 || highRiskCount > 1000) {
-            throw new IllegalArgumentException("Risk counts must not exceed 1000");
-        }
         warningCodes = warningCodes == null ? List.of() : List.copyOf(warningCodes);
         if (warningCodes.size() > 16) {
             throw new IllegalArgumentException("At most 16 warning codes are allowed");

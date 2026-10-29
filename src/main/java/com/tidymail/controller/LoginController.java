@@ -6,9 +6,8 @@ import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 
 /**
- * MVC controller for authentication-related views: /login (provider buttons, conditional on env var
- * presence) and /dashboard (initial landing page post-OAuth, minimal stub to prove login worked —
- * real inbox cards come in Phases 4-7).
+ * Renders login provider buttons conditionally on configured credentials.
+ * The authenticated dashboard is owned by DashboardController.
  */
 @Controller
 public class LoginController {
@@ -38,12 +37,4 @@ public class LoginController {
         return "login";
     }
 
-    /**
-     * Post-login landing page; currently redirects straight to the Senders
-     * dashboard.
-     */
-    @GetMapping("/dashboard")
-    public String dashboard() {
-        return "redirect:/senders";
-    }
 }

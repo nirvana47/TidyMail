@@ -7,7 +7,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  * address, domain, and how many targets were selected.
  *
  * <p>Product functionality supported: the <em>Bulk Actions</em> preview and
- * Review UI. Bounds and trims string fields (and caps the target count) so the
+ * Review UI. Bounds and trims string fields and validates nonnegative counts so the
  * values are safe to display and persist.</p>
  */
 @JsonIgnoreProperties(ignoreUnknown = false)
@@ -21,8 +21,8 @@ public record ActionScopeTargetSummary(
         displayLabel = bounded(displayLabel, 512, "displayLabel");
         senderAddress = bounded(senderAddress, 320, "senderAddress");
         senderDomain = bounded(senderDomain, 253, "senderDomain");
-        if (selectedTargetCount < 0 || selectedTargetCount > 1000) {
-            throw new IllegalArgumentException("selectedTargetCount must be between 0 and 1000");
+        if (selectedTargetCount < 0) {
+            throw new IllegalArgumentException("selectedTargetCount must be non-negative");
         }
     }
 

@@ -2,6 +2,15 @@
 
 Mapped on 2026-10-14. Java paths below are relative to `src/main/java/com/tidymail/`. This guide describes source behavior, not release certification.
 
+Updated 2026-10-28 for [Phase 3 indexed browsing](PHASE-3-INDEXED-DASHBOARD.md).
+`DashboardController` owns `/dashboard` and `/dashboard/api/**`; `DashboardService`
+and `DashboardRepository` share the scope/filter queries, `DashboardIdentity`
+derives conservative unit keys, `DashboardGroupingService` persists corrections,
+and `DashboardPreviewService` freezes exact targets using the existing scope hash
+and records. UI assets are `dashboard.html`, `dashboard.css` and `dashboard.js`.
+`MessageMetadataMapper` and the bulk sync repository retain the new evidence;
+V16's trigger maintains derived memberships for all metadata insert paths.
+
 ## Layout
 
 | Path | Responsibility |
@@ -18,7 +27,7 @@ Mapped on 2026-10-14. Java paths below are relative to `src/main/java/com/tidyma
 | `job/`, `config/`, `util/` | Scheduling/executors, provider settings, cursor/RFC helpers |
 | `src/main/resources/templates/` | Thymeleaf pages and reusable fragments |
 | `src/main/resources/static/` | `workspace.css`, `htmx-lite.js`, `cleanup-categories.js` |
-| `src/main/resources/db/migration/` | Fifteen production Flyway migrations, V1–V15 |
+| `src/main/resources/db/migration/` | Sixteen production Flyway migrations, V1–V16; V16 not yet applied to the retained development index |
 | `src/test/java/` | Unit, web, PostgreSQL journey, contract, security and performance tests |
 | `tidymail-ux-rehaul/`, `tidymail-ux-rehaul-draft/` | Design references and mock HTML, not served application templates |
 | `target/` | Ignored build artifacts; regenerate for current evidence |
@@ -27,7 +36,8 @@ Mapped on 2026-10-14. Java paths below are relative to `src/main/java/com/tidyma
 
 | Route family | Controller / services |
 |---|---|
-| `/`, `/login`, `/dashboard` | `HomeController`, `LoginController` |
+| `/`, `/login` | `HomeController`, `LoginController` |
+| `/dashboard`, `/dashboard/api/**` | `DashboardController`, dashboard query/grouping/preview services |
 | `/accounts/connect/{provider}`, `/logout/delete-data` | `AccountController`, `AccountSessionService`, `UserDataDeletionService` |
 | `/senders`, results and category fragments | `WorkspaceController`, `SenderDecisionQueryService`, `SenderCategoryService` |
 | `/unread`, `/unread/results` | `WorkspaceController`, `UnreadDecisionQueryService` |

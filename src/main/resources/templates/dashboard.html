@@ -1,148 +1,73 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en" xmlns:th="http://www.thymeleaf.org">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>TidyMail — Dashboard</title>
-        <script th:src="@{/static/js/htmx-lite.js}"></script>
-        <style>
-            * { box-sizing: border-box; margin: 0; padding: 0; }
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: #f8fafc; color: #1a202c; min-height: 100vh; }
-            .app { min-height: 100vh; display: flex; flex-direction: column; }
-            nav.top-nav { background: #ffffff; border-bottom: 1px solid #e2e8f0; padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; }
-            .nav-brand { display: flex; align-items: center; gap: 10px; }
-            .nav-logo { width: 30px; height: 30px; border-radius: 8px; background: linear-gradient(135deg, #4f46e5, #7c3aed); display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 14px; }
-            .nav-brand-text { font-size: 16px; font-weight: 700; color: #0f172a; }
-            .nav-links { display: flex; gap: 4px; margin-left: 24px; }
-            .nav-link { padding: 8px 14px; border-radius: 8px; font-size: 14px; font-weight: 500; color: #475569; text-decoration: none; transition: all 0.12s; }
-            .nav-link:hover { background: #f1f5f9; color: #0f172a; }
-            .nav-link.active { background: #eef2ff; color: #4338ca; }
-            .nav-right { display: flex; align-items: center; gap: 16px; }
-            .user-pill { display: flex; align-items: center; gap: 10px; padding: 4px 4px 4px 12px; border-radius: 9999px; background: #f8fafc; border: 1px solid #e2e8f0; }
-            .avatar { width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; }
-            .user-email { font-size: 13px; font-weight: 500; color: #334155; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-            .logout-btn { padding: 6px 14px; border-radius: 8px; background: #f1f5f9; border: 1px solid #e2e8f0; color: #334155; font-size: 13px; font-weight: 500; cursor: pointer; text-decoration: none; transition: background 0.12s; }
-            .logout-btn:hover { background: #e2e8f0; }
-            .sync-status-slot { display: flex; align-items: center; }
-            .sync-badge { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 9999px; font-size: 12px; font-weight: 600; }
-            .sync-never { background: #f1f5f9; color: #64748b; }
-            .sync-running { background: #fef3c7; color: #92400e; }
-            .sync-success { background: #d1fae5; color: #065f46; }
-            .sync-failed { background: #fee2e2; color: #991b1b; }
-            main { flex: 1; padding: 24px; }
-            .layout-grid { display: grid; grid-template-columns: 280px 1fr; gap: 24px; max-width: 1280px; margin: 0 auto; }
-            .sidebar { display: flex; flex-direction: column; gap: 16px; }
-            .panel { background: white; border-radius: 12px; border: 1px solid #e2e8f0; padding: 20px; }
-            .panel-title { font-size: 13px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 14px; }
-            .domain-list { list-style: none; display: flex; flex-direction: column; gap: 10px; }
-            .domain-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 13px; }
-            .domain-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #334155; }
-            .domain-count { color: #64748b; white-space: nowrap; font-variant-numeric: tabular-nums; }
-            .domain-empty { font-size: 13px; color: #94a3b8; line-height: 1.5; }
-            .main-area { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-            .page-header { display: flex; justify-content: space-between; align-items: flex-end; }
-            .page-title-group { display: flex; align-items: center; gap: 12px; }
-            .page-title { font-size: 24px; font-weight: 700; color: #0f172a; }
-            .provider-tag { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 6px; background: #eef2ff; color: #4338ca; font-size: 12px; font-weight: 600; }
-            footer { padding: 24px; text-align: center; font-size: 12px; color: #94a3b8; }
-            .empty-state { background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 48px 32px; text-align: center; color: #64748b; }
-            .empty-state.empty-senders { color: #64748b; }
-            .sender-table { width: 100%; border-collapse: separate; border-spacing: 0; background: white; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; }
-            .sender-table thead { background: #f8fafc; }
-            .sender-table th { padding: 14px 16px; text-align: left; font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #e2e8f0; }
-            .sender-table td { padding: 14px 16px; border-bottom: 1px solid #f1f5f9; font-size: 14px; vertical-align: middle; }
-            .sender-table tbody tr:last-child td { border-bottom: none; }
-            .sender-table tbody tr:hover { background: #fafbfc; }
-            .from-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-            .from-display { font-weight: 600; color: #0f172a; }
-            .from-addr { font-size: 12px; color: #64748b; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-            .badge { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; padding: 3px 8px; border-radius: 9999px; font-size: 12px; font-weight: 600; }
-            .badge-count { background: #e0e7ff; color: #3730a3; }
-            .badge-unread { background: #fee2e2; color: #991b1b; }
-            .score-0 { color: #94a3b8; }
-            .score-1 { color: #f59e0b; }
-            .score-2 { color: #ef4444; }
-            .score-3 { color: #b91c1c; font-weight: 700; }
-            .action-buttons { display: flex; gap: 6px; flex-wrap: wrap; }
-            .action-btn { padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; border: 1px solid; cursor: pointer; transition: all 0.12s; background: white; }
-            .action-btn.archive { color: #1d4ed8; border-color: #bfdbfe; }
-            .action-btn.archive:hover { background: #eff6ff; }
-            .action-btn.mark-read { color: #166534; border-color: #bbf7d0; }
-            .action-btn.mark-read:hover { background: #f0fdf4; }
-            .action-btn.trash { color: #991b1b; border-color: #fecaca; }
-            .action-btn.trash:hover { background: #fef2f2; }
-            .undo-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 20px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 10px; }
-            .undo-banner-text { font-size: 14px; color: #065f46; font-weight: 500; }
-            .undo-btn { padding: 6px 14px; border-radius: 6px; background: #059669; color: white; border: none; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.12s; }
-            .undo-btn:hover { background: #047857; }
-            .action-feedback { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; padding: 13px 16px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; color: #1e3a8a; font-size: 14px; }
-            .action-feedback a { color: #1d4ed8; font-weight: 700; margin-left: 6px; }
-            .rz-card { background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px 20px; margin-bottom: 12px; }
-            .rz-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 10px; }
-            .rz-from { font-weight: 600; color: #0f172a; font-size: 15px; }
-            .rz-age { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 9999px; font-size: 12px; font-weight: 500; background: #fef3c7; color: #92400e; }
-            .rz-subject { font-size: 14px; color: #334155; margin-bottom: 8px; }
-            .rz-meta { display: flex; gap: 12px; align-items: center; font-size: 12px; color: #64748b; }
-            .bulkSender { display: inline-flex; padding: 2px 8px; border-radius: 4px; background: #fee2e2; color: #991b1b; font-size: 11px; font-weight: 600; }
-            h1.rz-title { font-size: 28px; font-weight: 700; color: #0f172a; margin-bottom: 8px; }
-            p.lead { font-size: 16px; color: #64748b; margin-bottom: 24px; line-height: 1.5; }
-            @media (max-width: 960px) { .layout-grid { grid-template-columns: 1fr; } .user-email { display: none; } }
-            @media (max-width: 640px) { .layout-grid { grid-template-columns: 1fr !important; } .layout-sidebar { order: 2; } .sender-table { display: block; } .sender-table thead { display: none; } .sender-table tbody { display: block; } .sender-table tr { display: block; border-bottom: 1px solid #ddd; margin-bottom: 0.75rem; padding-bottom: 0.5rem; } .sender-table td { display: block; padding: 0.25rem 0; text-align: left; font-size: 0.9rem; } .sender-table td::before { content: attr(data-label); font-weight: 600; margin-right: 0.5rem; color: #555; } }
-            @media (max-width: 375px) { body { padding: 0 0.5rem; } h1 { font-size: 1.2rem; } .btn, .undo-btn, button.undo-btn { min-height: 44px; padding: 0.6rem 0.9rem; font-size: 1rem; min-width: 44px; } .rz-card button, .sender-bulk-actions button { min-height: 44px; } .rz-age, .count-badge, .unread-badge { font-size: 0.75rem; padding: 0.2rem 0.4rem; } }
-        </style>
-    </head>
-    <body>
-        <div class="app">
-            <nav class="top-nav">
-                <div style="display: flex; align-items: center;">
-                    <div class="nav-brand">
-                        <div class="nav-logo">TM</div>
-                        <div class="nav-brand-text">TidyMail</div>
-                    </div>
-                    <div class="nav-links">
-                        <a class="nav-link active" href="/dashboard">Senders</a>
-                        <a class="nav-link" href="/review">Review actions</a>
-                    </div>
-                </div>
-                <div class="nav-right">
-                    <div id="sync-status-slot" class="sync-status-slot" hx-get="/sync-progress-frag" hx-trigger="load, every 15s" hx-swap="innerHTML">Loading…</div>
-                    <div class="user-pill">
-                        <div class="avatar" th:text="${#strings.substring(email != null ? email : 'JD', 0, 1) != null ? #strings.toUpperCase(#strings.substring(email != null ? email : 'JD', 0, 1)) : 'JD'}">JD</div>
-                        <span class="user-email" th:text="${email}">user@example.com</span>
-                    </div>
-                    <form th:action="@{/logout}" method="post" style="margin: 0;">
-                        <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}" th:if="${_csrf != null}">
-                        <button type="submit" class="logout-btn">Sign out</button>
-                    </form>
-                </div>
-            </nav>
-            <main>
-                <div class="layout-grid">
-                    <aside class="sidebar">
-                        <div class="panel">
-                            <div class="panel-title">Domains</div>
-                            <div id="domain-rollups-slot" hx-get="/domain-rollups-frag" hx-trigger="load" hx-swap="outerHTML">
-                                <p style="font-size: 13px; color: #94a3b8;">Loading domain rollups…</p>
-                            </div>
-                        </div>
-                    </aside>
-                    <section class="main-area">
-                        <div class="page-header">
-                            <div class="page-title-group">
-                                <h1 class="page-title">Dashboard</h1>
-                                <span class="provider-tag" th:text="${#strings.equals(providerId, 'google') ? 'Gmail' : ( #strings.equals(providerId, 'microsoft') ? 'Outlook' : providerName )}">Gmail</span>
-                            </div>
-                        </div>
-                        <div id="action-feedback-slot"></div>
-                        <div id="senders-slot" hx-get="/senders-frag" hx-trigger="load" hx-swap="innerHTML">
-                            <div class="empty-state">Loading senders…</div>
-                        </div>
-                    </section>
-                </div>
-            </main>
-            <footer>
-                Signed in as <span th:text="${email}">user@example.com</span> · © 2026 TidyMail · All processing runs locally.
-            </footer>
-        </div>
-    </body>
-</html>
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="_csrf" th:content="${_csrf.token}"><meta name="_csrf_header" th:content="${_csrf.headerName}">
+  <title>TidyMail — Inbox cleanup</title>
+  <link rel="stylesheet" th:href="@{/static/css/dashboard.css}">
+  <script defer th:src="@{/static/js/dashboard.js}"></script>
+</head>
+<body>
+<a href="#senderTable" class="muted-link" style="margin:12px;display:inline-block">Skip to senders</a>
+<main class="app">
+  <header class="row spread">
+    <div><h1>TidyMail</h1><p class="muted">Clean up your inbox.</p></div>
+    <div class="identity">
+      <div class="row"><span class="avatar" aria-hidden="true">@</span><span id="accountEmail">Loading account…</span>
+        <form th:action="@{/logout}" method="post"><button>Sign out</button></form></div>
+      <div class="row" style="margin-top:10px"><span id="syncStatus" class="sync-line" role="status">Checking sync…</span><button id="activityOpen">Activity</button></div>
+    </div>
+  </header>
+  <section class="surface filters" aria-label="Mailbox filters">
+    <div class="row">
+      <div class="scope" role="group" aria-label="Mail scope"><button class="active" data-scope="inbox" aria-pressed="true">Inbox</button><button data-scope="all" aria-pressed="false">All received mail</button></div>
+      <label class="search"><input id="search" type="search" aria-label="Search senders or messages" placeholder="Search senders or messages…" maxlength="200"></label>
+      <label class="date"><select id="date" aria-label="Date range"><option value="all">Any time</option><option value="7">Last 7 days</option><option value="custom">Custom dates</option></select></label>
+    </div>
+    <div class="date-fields"><label id="startLabel" hidden>From <input type="date" id="start"></label><label id="endLabel" hidden>Through <input type="date" id="end"></label>
+      <label>Timezone <select id="zone" aria-label="Displayed account timezone"><option value="UTC">UTC</option><option value="America/Los_Angeles">Pacific</option><option value="America/New_York">Eastern</option><option value="Europe/London">London</option><option value="Asia/Kolkata">India</option></select></label></div>
+    <div class="metrics"><div class="metric"><b id="matching">—</b><span class="muted">Matching messages</span></div><div class="metric"><b id="unreadCount">—</b><span class="muted">Unread messages</span></div><div class="metric"><b id="groupCount">—</b><span class="muted">Sender groups</span></div></div>
+    <p class="coverage" id="coverage">Coverage is unavailable until indexed metadata arrives.</p>
+  </section>
+  <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+  <section class="workspace">
+    <div class="list">
+      <div class="tablewrap"><table id="senderTable" tabindex="-1"><thead><tr>
+        <th><input id="selectPage" type="checkbox" aria-label="Select groups on this page" disabled></th><th>Sender</th><th>Messages</th><th>Unread</th><th>Latest message</th><th></th>
+      </tr></thead><tbody id="senders"></tbody></table></div>
+      <div id="empty" class="empty" role="status">Loading indexed mail…</div>
+      <div class="paging muted"><span>Sorted by message count</span><button id="prevPage" aria-label="Previous sender page" disabled>‹</button><span id="pageLabel">0 of 0</span><button id="nextPage" aria-label="Next sender page" disabled>›</button></div>
+    </div>
+    <aside class="detail" id="detail" aria-label="Sender details" hidden>
+      <div class="detail-head row"><span class="brand" id="detailBadge" aria-hidden="true"></span><div><h2 id="detailTitle"></h2><p class="muted" id="detailCounts"></p></div></div>
+      <div class="tabs" role="tablist" aria-label="Sender detail"><button class="active" role="tab" id="messagesTab" aria-controls="detailContent" aria-selected="true" data-tab="messages">Messages</button><button role="tab" id="addressesTab" aria-controls="detailContent" aria-selected="false" data-tab="addresses" tabindex="-1">Sender addresses</button></div>
+      <div id="detailContent" class="tab-content" role="tabpanel" aria-labelledby="messagesTab"></div>
+    </aside>
+  </section>
+  <section class="dock" id="dock" hidden aria-label="Selected messages">
+    <div class="selection row" id="selectionRow"><div><strong id="selectionCount"></strong><p class="muted" id="selectionDescription">Selection stays while paging.</p></div><button class="ghost" id="clear">Clear selection</button>
+      <div class="actions row" role="group" aria-label="Choose cleanup action"><button data-action="MARK_READ" aria-pressed="false">Mark as read</button><button class="active" data-action="ARCHIVE" aria-pressed="true">Archive</button><button class="trash" data-action="TRASH" aria-pressed="false">Move to Trash</button><button id="review" class="primary">Review and confirm →</button></div>
+    </div>
+  </section>
+  <noscript>Enable JavaScript to browse indexed messages and inspect selections.</noscript>
+</main>
+<dialog id="confirm" aria-labelledby="confirmTitle">
+  <div class="row spread"><h2 id="confirmTitle">Review selected messages</h2><button data-close="confirm" aria-label="Close confirmation">×</button></div>
+  <p id="confirmScope"></p><p id="confirmCounts"></p><p id="confirmCoverage" class="muted"></p>
+  <details open><summary>Inspect exact targets</summary><div id="exactTargets"></div><div class="paging"><button id="targetPrev" aria-label="Previous exact targets">‹</button><span id="targetRange"></span><button id="targetNext" aria-label="Next exact targets">›</button></div></details>
+  <p id="actionExplanation"></p><p>This applies only to these selected messages, not future mail. Cancel stops remaining work; completed changes are not reversed.</p>
+  <p class="muted">Background actions are not available yet. You can inspect the exact selection.</p>
+  <div class="row spread"><button data-close="confirm">Back to selection</button><button id="confirmAction" class="primary" disabled></button></div>
+</dialog>
+<dialog id="activity" class="drawer" aria-labelledby="activityTitle"><div class="row spread"><h2 id="activityTitle">Activity</h2><button data-close="activity">Close</button></div><div id="activityContent"></div>
+  <hr><p><a class="muted-link" href="/activity">View sync details</a></p><details><summary>Delete local account data</summary><p>This removes your locally indexed data and connection credentials for linked accounts. It does not delete Gmail messages.</p><form th:action="@{/logout/delete-data}" method="post"><label>Type DELETE <input name="confirmation" pattern="DELETE" required autocomplete="off"></label><button>Delete local data and sign out</button></form></details>
+</dialog>
+<dialog id="correction" aria-labelledby="correctionTitle"><div class="row spread"><h2 id="correctionTitle">Organize senders</h2><button data-close="correction">Close</button></div>
+  <p>Grouping organizes your dashboard. It does not select or change mail.</p>
+  <label>Action <select id="correctionKind"><option value="MERGE">Merge groups</option><option value="SEPARATE">Keep one unit separate</option><option value="RESET">Reset a correction</option></select></label>
+  <label id="unitLabel">Address or mailing-list unit <select id="correctionUnit"></select></label>
+  <div id="mergeFields"><label>Find another group <input id="mergeSearch" type="search" maxlength="200" placeholder="Sender address, list or group"></label><button id="findGroups">Find groups</button><label>Merge with <select id="mergeGroup"></select></label><div class="row"><button id="mergePrev">Previous</button><span id="mergeRange"></span><button id="mergeNext">Next</button></div><label>Group label <input id="mergeLabel" maxlength="160" placeholder="Merged senders"></label></div>
+  <label id="resetLabel" hidden>Correction to reset <select id="resetCorrection"></select></label>
+  <button id="previewCorrection">Preview grouping change</button><div id="correctionAffected"></div><button class="primary" id="applyCorrection" disabled>Apply grouping change</button>
+</dialog>
+</body></html>

@@ -44,6 +44,14 @@ public class MessageMetadataMapper {
             entity.setFirstSeenAt(syncedAt);
         }
 
+        List<String> rawFrom = values(message.headers(), "From");
+        DashboardIdentity identity = DashboardIdentity.parse(rawFrom, values(message.headers(), "List-Id"), message.id());
+        entity.setRawFromValues(rawFrom);
+        entity.setLabelEvidenceKnown(message.labelIds() != null);
+        entity.setDashboardFromAddress(identity.address());
+        entity.setDashboardUnitKind(identity.kind());
+        entity.setDashboardUnitKey(identity.key());
+        entity.setDashboardIdentityReason(identity.reason());
         String from = first(message.headers(), "From");
         entity.setProvider(message.provider());
         entity.setProviderThreadId(message.threadId());

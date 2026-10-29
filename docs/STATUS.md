@@ -1,5 +1,25 @@
 # Project status
 
+## Dashboard Phase 3 — 2026-10-28
+
+Indexed browsing and exact-selection previews are implemented at `/dashboard`.
+The shared received/date/search predicate, ten-row sender/message paging,
+account-owned grouping corrections, selection state and persisted target previews
+passed functional and synthetic browser checks. Fresh and 10k-row retained upgrade
+fixtures passed. New browsing paths met the Phase 2 performance budgets at 10k/50k
+messages with concurrent writes; the slowest measured new browsing response/query
+in the fresh Java 21 run was 347.15 ms. This is local synthetic evidence.
+
+The full fresh run had 463 tests: 460 passed, three failed, no errors/skips.
+A fixture/index assertion was fixed and passed in the final 36-test targeted run,
+along with the final provider-label and grouping guards. The two pre-existing
+sender-label/deployment-command assertions remain open; the full suite was not
+repeated after those bounded fixes. See the
+[Phase 3 report](PHASE-3-INDEXED-DASHBOARD.md) for exact evidence and screenshots.
+Phase 4 durable background actions are next; dashboard execution is disabled.
+The retained database/application and live mailbox were not changed or restarted.
+No commit, push or deployment was performed.
+
 ## Dashboard Phase 2 — 2026-10-28
 
 Baseline verification and persistence design are complete. The existing suite ran

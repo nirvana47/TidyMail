@@ -1,5 +1,10 @@
 # Testing and acceptance
 
+**MVP scope update — 2026-10-28:** Test TidyMail on desktop. Do not run mobile,
+narrow-screen or responsive-mobile checks unless the user explicitly requests
+them later. Earlier mobile references below are historical; desktop keyboard and
+accessibility checks remain required.
+
 The Maven suite uses JUnit 5, Spring Boot Test, Spring Security Test, MockMvc and Testcontainers PostgreSQL 16. There is no H2 dependency or alternate test migration tree. Production Flyway migrations are used for Spring integration tests.
 
 ## Harness and commands
@@ -93,3 +98,23 @@ No real OAuth account or provider is used. The prototype does not establish the
 future dashboard's received/grouping semantics or browser rendering performance.
 Results, targets and the full-suite baseline are recorded in the
 [Phase 2 report](PHASE-2-BASELINE-AND-PERSISTENCE.md).
+
+## Implemented dashboard — Phase 3
+
+```sh
+mvn -o -Dtest='DashboardJourneyTest,DashboardIdentityTest,DashboardMigrationTest,DashboardPerformanceTest' test
+```
+
+These cover the shared received/date/search contract, identity/grouping corrections,
+exact preview snapshots, cross-owner/CSRF boundaries, fresh and 10k-row retained
+upgrades, ten-row paging, and real dashboard query/response budgets with concurrent
+metadata writes. `SyntheticMailboxGenerator` assigns deterministic opaque IDs only
+to synthetic fixtures; production IDs remain random UUIDs.
+
+For manual browser acceptance, run `mvn -o -Dtest=DashboardBrowserFixture test`.
+It prints a temporary loopback URL, serves the actual Thymeleaf/MockMvc routes
+with a synthetic authenticated account/session and mocked providers, and stops
+after 15 minutes or when `/tmp/tidymail-phase3-browser-done` exists. Startup removes
+an earlier completion marker. This explicitly selected harness is excluded from
+the normal `*Test` suite. It does not log in to or mutate a real mailbox.
+See the [Phase 3 report](PHASE-3-INDEXED-DASHBOARD.md) for evidence and limitations.
