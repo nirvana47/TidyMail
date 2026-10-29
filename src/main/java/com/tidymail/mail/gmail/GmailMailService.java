@@ -479,16 +479,30 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
     // ---------------------------------------------------------------------
     @Override
     public void markReadOnce(UserAccount account, List<String> messageIds) {
+        cleanupOnce(account,messageIds,BulkActionType.MARK_READ);
+    }
+
+    @Override
+    public void cleanupOnce(UserAccount account,List<String> messageIds,BulkActionType action) {
+        if(messageIds==null||messageIds.isEmpty()||messageIds.size()>50||messageIds.stream().anyMatch(id->id==null||id.isBlank()))
+            throw new IllegalArgumentException("Cleanup requires 1–50 exact IDs");
+        if(!java.util.Set.of(BulkActionType.MARK_READ,BulkActionType.ARCHIVE,BulkActionType.TRASH).contains(action))
+            throw new IllegalArgumentException("Unsupported dashboard action");
         Gmail gmail=clientFactory.buildFor(account);
-        rateLimiter.supplyWithPermit(() -> {
+        rateLimiter.supplyWithCleanupPermit(() -> {
             try {
-                var request=gmail.users().messages().batchModify(USER_ID_ME,
-                    new BatchModifyMessagesRequest().setIds(List.copyOf(messageIds)).setRemoveLabelIds(List.of("UNREAD")));
+                var body=new BatchModifyMessagesRequest().setIds(List.copyOf(messageIds));
+                if(action==BulkActionType.TRASH)body.setAddLabelIds(List.of("TRASH"));
+                else body.setRemoveLabelIds(List.of(action==BulkActionType.ARCHIVE?"INBOX":"UNREAD"));
+                var request=gmail.users().messages().batchModify(USER_ID_ME,body);
                 var http=request.buildHttpRequest();
                 http.setNumberOfRetries(0);
+                http.setConnectTimeout(5000);http.setReadTimeout(15000);
                 http.setIOExceptionHandler(null);
                 http.execute().disconnect();
                 return null;
+            } catch(com.google.api.client.http.HttpResponseException error) {
+                throw new com.tidymail.mail.CleanupProviderException(error.getStatusCode(),error.getHeaders().getRetryAfter());
             } catch(IOException error) {
                 // Never convert transport failure into a definite per-target rejection.
                 throw new IllegalStateException("Dashboard mutation needs label verification",error);
@@ -655,6 +669,17 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
     // Internal helpers
     // =====================================================================
 
+    @Override
+    public List<MailMessage> getCleanupMetadata(UserAccount account,List<String> ids) {
+        if(ids==null||ids.isEmpty()||ids.size()>50||ids.stream().anyMatch(id->id==null||id.isBlank()))
+            throw new IllegalArgumentException("Cleanup metadata requires 1–50 exact IDs");
+        return rateLimiter.supplyWithCleanupPermit(()->{
+            try{return fetchMetadata(clientFactory.buildFor(account),ids,account.getProvider(),true,false);}
+            catch(com.google.api.client.http.HttpResponseException error){throw new com.tidymail.mail.CleanupProviderException(error.getStatusCode(),error.getHeaders().getRetryAfter());}
+            catch(IOException error){throw new IllegalStateException("Cleanup metadata unavailable",error);}
+        });
+    }
+
     private static final int MAX_SYNC_RETRIES = 5;
 
     private List<MailMessage> fetchMetadata(
@@ -662,6 +687,10 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
             List<String> requestedIds,
             String provider,
             boolean ignoreNotFound) throws IOException {
+        return fetchMetadata(gmail,requestedIds,provider,ignoreNotFound,true);
+    }
+
+    private List<MailMessage> fetchMetadata(Gmail gmail,List<String> requestedIds,String provider,boolean ignoreNotFound,boolean retryReads) throws IOException {
         if (requestedIds == null || requestedIds.isEmpty()) {
             return List.of();
         }
@@ -673,7 +702,11 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
             int end = Math.min(start + metadataBatchSize, uniqueIds.size());
             List<String> pending = List.copyOf(uniqueIds.subList(start, end));
             for (int attempt = 0; !pending.isEmpty(); attempt++) {
-                BatchRequest batch = gmail.batch();
+                BatchRequest batch = retryReads?gmail.batch():gmail.batch(request->{
+                    var initializer=gmail.getRequestFactory().getInitializer();if(initializer!=null)initializer.initialize(request);
+                    request.setNumberOfRetries(0);request.setIOExceptionHandler(null);
+                    request.setConnectTimeout(5000);request.setReadTimeout(15000);
+                });
                 List<String> retryIds = Collections.synchronizedList(new ArrayList<>());
                 List<MetadataFailure> failures = Collections.synchronizedList(new ArrayList<>());
                 for (String messageId : pending) {
@@ -700,7 +733,7 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
                 try {
                     batch.execute();
                 } catch (GoogleJsonResponseException exception) {
-                    if (!retryableReadFailure(exception.getStatusCode(), exception.getDetails())
+                    if (!retryReads || !retryableReadFailure(exception.getStatusCode(), exception.getDetails())
                             || attempt >= MAX_SYNC_RETRIES) {
                         throw exception;
                     }
@@ -708,6 +741,12 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
                     pending = pending.stream()
                         .filter(id -> !fetchedById.containsKey(id)).toList();
                     continue;
+                }
+                if(!retryReads&&!failures.isEmpty()) {
+                    var failure=failures.stream().filter(f->f.status()==401||f.status()==403).findFirst().orElse(failures.getFirst());
+                    var guidance=failures.stream().map(MetadataFailure::headers).filter(h->h!=null&&h.getRetryAfter()!=null)
+                        .max(java.util.Comparator.comparingLong(GmailMailService::retryAfterSeconds)).orElse(null);
+                    throw new com.tidymail.mail.CleanupProviderException(failure.status(),guidance==null?null:guidance.getRetryAfter());
                 }
                 MetadataFailure fatal = failures.stream()
                     .filter(failure -> !failure.retryable()).findFirst().orElse(null);

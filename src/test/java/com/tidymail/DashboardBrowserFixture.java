@@ -14,6 +14,7 @@ import org.springframework.mock.web.MockHttpSession;
 /** Explicit-only browser harness: authenticated MockMvc bridge over loopback, synthetic DB/provider. */
 class DashboardBrowserFixture extends PostgresJourneyTest {
     @org.springframework.beans.factory.annotation.Autowired com.tidymail.job.DashboardCleanupWorker cleanupWorker;
+    private static java.util.Set<String> withUnread(java.util.Set<String> labels,boolean unread){var result=new java.util.HashSet<>(labels);if(unread)result.add("UNREAD");return result;}
     @Test void serveSyntheticDashboardForBrowserAcceptance() throws Exception {
         long account=userAccounts.createAccount("browser-fixture@example.test");
         jdbc.update("""
@@ -29,13 +30,20 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
         jdbc.update("INSERT INTO mailbox_sync_state(account_id,provider,lifecycle,backfill_status,initial_batch_completed_at,incremental_last_success_at) VALUES(?,'google','ACTIVE','COMPLETE',now(),now())",account);
         var providerUnread=java.util.concurrent.ConcurrentHashMap.<String>newKeySet();
         providerUnread.addAll(jdbc.queryForList("SELECT provider_message_id FROM message_metadata WHERE account_id=? AND unread",String.class,account));
-        org.mockito.Mockito.when(gmailProvider.getCurrentMetadata(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.anyList())).thenAnswer(call->{
+        var providerLabels=new java.util.concurrent.ConcurrentHashMap<String,java.util.Set<String>>();
+        jdbc.queryForList("SELECT provider_message_id,labels FROM message_metadata WHERE account_id=?",account).forEach(row->{
+            try{providerLabels.put(row.get("provider_message_id").toString(),new java.util.HashSet<>(java.util.Arrays.asList((String[])((java.sql.Array)row.get("labels")).getArray())));}catch(Exception error){throw new RuntimeException(error);}
+        });
+        org.mockito.Mockito.when(gmailProvider.getCleanupMetadata(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.anyList())).thenAnswer(call->{
             java.util.List<String> ids=call.getArgument(1);
             return ids.stream().map(id->new com.tidymail.mail.MailMessage(id,"synthetic-thread","google",java.time.Instant.now(),java.util.Map.of(),
-                providerUnread.contains(id)?java.util.Set.of("INBOX","UNREAD"):java.util.Set.of("INBOX"))).toList();
+                withUnread(providerLabels.get(id),providerUnread.contains(id)))).toList();
         });
         org.mockito.Mockito.doAnswer(call->{Thread.sleep(1500);providerUnread.removeAll(call.getArgument(1));return null;})
             .when(gmailProvider).markReadOnce(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.anyList());
+        org.mockito.Mockito.doAnswer(call->{Thread.sleep(1500);java.util.List<String> ids=call.getArgument(1);com.tidymail.mail.BulkActionType action=call.getArgument(2);
+            for(String id:ids)providerLabels.compute(id,(key,old)->{var next=new java.util.HashSet<>(old);if(action==com.tidymail.mail.BulkActionType.ARCHIVE)next.remove("INBOX");else next.add("TRASH");return next;});return null;
+        }).when(gmailProvider).cleanupOnce(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.anyList(),org.mockito.ArgumentMatchers.any());
         var cleanup=java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
         cleanup.scheduleWithFixedDelay(cleanupWorker::tick,1,1,java.util.concurrent.TimeUnit.SECONDS);
         var session=new MockHttpSession();

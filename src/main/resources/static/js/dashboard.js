@@ -4,6 +4,7 @@
   const state = {scope:'inbox',page:0,messagePage:0,tab:'messages',data:null,focused:null,details:null,action:'MARK_READ',preview:null,targetPage:0,revision:0};
   const selected = new Map(), expanded = new Map();
   let jobs=[], confirming=false, jobsRequest=0;
+  const actionName=action=>({MARK_READ:'Mark as Read',ARCHIVE:'Archive',TRASH:'Move to Trash'}[action]||action);
   const activeJob=j=>j.remaining>0||j.unresolved>0;
   const jobCounts=j=>`${fmt(j.changed)} changed · ${fmt(j.failed)} failed · ${fmt(j.skipped)} skipped · ${fmt(j.unresolved)} unresolved · ${fmt(j.cancelled)} cancelled before dispatch · ${fmt(j.remaining)} remaining of ${fmt(j.total)}`;
   function renderJobs() {
@@ -11,7 +12,7 @@
     $('jobProgress').replaceChildren();
     for(const job of jobs.filter(activeJob).slice(0,3)) {
       const row=node('div',undefined,'job-progress'),copy=node('div');
-      copy.append(node('strong',job.cancelRequested?(job.remaining?'Cancellation pending — claimed requests may finish':'Cancelled — verification continues'):'Mark as Read · '+job.status.toLowerCase().replaceAll('_',' ')),node('p',jobCounts(job),'muted'));
+      copy.append(node('strong',job.cancelRequested?(job.remaining?'Cancellation pending — claimed requests may finish':(job.retryReason?.includes('limit reached')?'Cancelled — unresolved outcomes retained':'Cancelled — verification continues')):actionName(job.action)+' · '+job.status.toLowerCase().replaceAll('_',' ')),node('p',jobCounts(job)+(job.retryReason?' · '+job.retryReason:''),'muted'));
       row.append(copy);if(!job.cancelRequested){const cancel=node('button','Cancel');cancel.dataset.cancelJob=job.id;cancel.onclick=()=>cancelJob(job.id,cancel);row.append(cancel);}$('jobProgress').append(row);
     }
     updateSelection();if($('activity').open)renderActivity();
@@ -20,19 +21,19 @@
   function renderActivity() {
     const focused=document.activeElement?.dataset?.cancelJob;
     $('activityContent').replaceChildren(node('p',$('syncStatus').textContent),node('p',$('coverage').textContent));
-    for(const job of jobs){const item=node('div',undefined,'target');item.append(node('strong',`Mark as Read · ${job.status.toLowerCase().replaceAll('_',' ')}`),node('p',jobCounts(job)),node('small',`Confirmed ${dateText(job.createdAt)} · Completed changes stay.`,'muted'));if(activeJob(job)&&!job.cancelRequested){const cancel=node('button','Cancel remaining work');cancel.dataset.cancelJob=job.id;cancel.onclick=()=>cancelJob(job.id,cancel);item.append(cancel);}$('activityContent').append(item);}
+    for(const job of jobs){const item=node('div',undefined,'target');item.append(node('strong',`${actionName(job.action)} · ${job.status.toLowerCase().replaceAll('_',' ')}`),node('p',jobCounts(job)+(job.retryReason?' · '+job.retryReason:'')),node('small',`Confirmed ${dateText(job.createdAt)} · Completed changes stay.`,'muted'));if(activeJob(job)&&!job.cancelRequested){const cancel=node('button','Cancel remaining work');cancel.dataset.cancelJob=job.id;cancel.onclick=()=>cancelJob(job.id,cancel);item.append(cancel);}$('activityContent').append(item);}
     if(!jobs.length)$('activityContent').append(node('p','No cleanup jobs yet.'));
     if(focused&&$('activity').open){const next=[...$('activityContent').querySelectorAll('button')].find(b=>b.dataset.cancelJob===focused);(next||$('activity').querySelector('[data-close]')).focus();}
-    const sync=state.data?.sync||{};if(sync.oauth_status==='REAUTH_REQUIRED'||sync.lifecycle==='REAUTH_REQUIRED'){const link=node('a','Reconnect Gmail');link.href='/oauth2/authorization/google';$('activityContent').append(link);}
+    const sync=state.data?.sync||{};if(jobs.some(j=>j.retryReason?.startsWith('Reconnect'))||sync.oauth_status==='REAUTH_REQUIRED'||sync.lifecycle==='REAUTH_REQUIRED'){const link=node('a','Reconnect Gmail');link.href='/oauth2/authorization/google';$('activityContent').append(link);}
   }
   async function cancelJob(id,button) {button.disabled=true;try{await api(`jobs/${id}/cancel`,{});await pollJobs();}catch(error){notice(error.message);button.disabled=false;}}
   async function pollJobs() {
     const request=++jobsRequest;try{const latest=await api('jobs');if(request!==jobsRequest)return;const prior=new Map(jobs.map(j=>[j.id,j]));if(latest.length===jobs.length&&latest.every(j=>prior.get(j.id)?.version===j.version))return;const changed=latest.some(j=>prior.has(j.id)&&prior.get(j.id).version!==j.version);jobs=latest;renderJobs();if(changed){await loadPage();if(jobs.some(j=>prior.has(j.id)&&activeJob(prior.get(j.id))&&!activeJob(j)))notice('Cleanup settled. '+jobCounts(jobs.find(j=>prior.has(j.id)&&activeJob(prior.get(j.id))&&!activeJob(j))));}}catch(error){notice('Job status unavailable. Saved work continues. '+error.message);}
   }
   async function confirmJob() {
-    if(confirming||!state.preview||state.preview.action!=='MARK_READ')return;
+    if(confirming||!state.preview)return;
     confirming=true;$('confirmAction').disabled=true;const preview=state.preview;
-    try{const job=await api('jobs',{preview:preview.id});state.preview=null;selected.clear();$('confirm').close();renderSelectionControls();notice('Mark as Read saved. You can close this page; work continues.');await pollJobs();if(!jobs.some(j=>j.id===job.id)){jobs.unshift(job);renderJobs();}}catch(error){notice(error.message);}finally{confirming=false;$('confirmAction').disabled=!state.preview||state.preview.action!=='MARK_READ'||!state.preview.effective;}
+    try{const job=await api('jobs',{preview:preview.id});state.preview=null;selected.clear();$('confirm').close();renderSelectionControls();notice(actionName(preview.action)+' saved. You can close this page; work continues.');await pollJobs();if(!jobs.some(j=>j.id===job.id)){jobs.unshift(job);renderJobs();}}catch(error){notice(error.message);}finally{confirming=false;$('confirmAction').disabled=!state.preview||!state.preview.effective;}
   }
   let filterEpoch=0, listRequest=0, detailRequest=0, selectionBusy=0, mergePage=0, correctionDraft=null;
   const fmt = number => Number(number).toLocaleString();
@@ -102,6 +103,13 @@
     try {
       const data=await api('page?'+query());if(request!==listRequest||epoch!==filterEpoch)return;
       if(state.data&&state.revision!==data.revision) {selected.clear();expanded.clear();invalidatePreview();notice('Grouping changed. Draft selection was cleared.');}
+      const lastPage=Math.max(0,Math.ceil(Number(data.summary.groups)/10)-1);
+      if(state.page>lastPage){state.page=lastPage;return loadPage();}
+      const updates=await Promise.all(data.groups.filter(g=>expanded.has(g.id)).map(async g=>{
+        try{return [g.id,(await api(`groups/${g.id}?${query()}`)).addresses];}catch(_){return [g.id,null];}
+      }));
+      if(request!==listRequest||epoch!==filterEpoch)return;
+      for(const [id,addresses] of updates){if(addresses)expanded.set(id,addresses);else expanded.delete(id);}
       state.data=data;state.revision=data.revision;
       $('accountEmail').textContent=data.sync.email;
       $('matching').textContent=fmt(data.summary.messages);$('unreadCount').textContent=fmt(data.summary.unread);$('groupCount').textContent=fmt(data.summary.groups);
@@ -172,8 +180,8 @@
     const epoch=filterEpoch,ids=[...selected.keys()];$('review').disabled=true;
     try {const preview=await api('previews',{filter:filter(),ids,action:state.action,revision:state.revision});if(epoch!==filterEpoch||ids.length!==selected.size||ids.some(id=>!selected.has(id))){api(`previews/${preview.id}/invalidate`,{});return;}
       state.preview=preview;state.targetPage=0;
-      $('confirmAction').disabled=confirming||preview.action!=='MARK_READ'||!preview.effective;
-      $('actionAvailability').textContent=preview.action==='MARK_READ'?'Work is saved before processing. Closing this page does not cancel it.':'This action becomes available in Phase 5.';
+      $('confirmAction').disabled=confirming||!preview.effective;
+      $('actionAvailability').textContent='Work is saved before processing. Closing this page does not cancel it.';
       const action=preview.action==='MARK_READ'?`Mark ${fmt(preview.effective)} as read`:preview.action==='ARCHIVE'?`Archive ${fmt(preview.effective)} messages`:`Move ${fmt(preview.effective)} to Trash`;
       $('confirmTitle').textContent=action+'?';$('confirmAction').textContent=action;
       $('confirmScope').textContent=`${preview.filter.scope==='inbox'?'Inbox':'All received mail'} · ${preview.filter.start||'All indexed dates'}${preview.filter.end?' through '+preview.filter.end:''} · ${preview.filter.zone}${preview.filter.q?' · Search: '+preview.filter.q:''}`;

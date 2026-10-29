@@ -33,7 +33,7 @@ class DashboardJobJourneyTest extends PostgresJourneyTest {
     final Set<String> unread=ConcurrentHashMap.newKeySet();
     @BeforeEach void setupAccount() {
         account=userAccounts.createAccount(OWNER);unread.clear();
-        when(gmailProvider.getCurrentMetadata(any(),anyList())).thenAnswer(call->{
+        when(gmailProvider.getCleanupMetadata(any(),anyList())).thenAnswer(call->{
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
             List<String> ids=call.getArgument(1);
             return ids.stream().map(id->mail(id,unread.contains(id))).toList();
@@ -159,7 +159,7 @@ class DashboardJobJourneyTest extends PostgresJourneyTest {
     }
     @Test void readFailureDefersWithoutMutationAndCancellationBypassesTheDelay() {
         var preview=preview(2);var job=jobs.confirm(account,preview.id());
-        when(gmailProvider.getCurrentMetadata(any(),anyList())).thenThrow(new IllegalStateException("simulated unavailable"));
+        when(gmailProvider.getCleanupMetadata(any(),anyList())).thenThrow(new IllegalStateException("simulated unavailable"));
         worker.runOnce();assertThat(invariant(job.id()).remaining()).isEqualTo(2);
         jobs.cancel(account,job.id());assertThat(invariant(job.id()).remaining()).isZero();assertThat(invariant(job.id()).cancelled()).isEqualTo(2);
         verify(gmailProvider,never()).markReadOnce(any(),anyList());
@@ -175,7 +175,7 @@ class DashboardJobJourneyTest extends PostgresJourneyTest {
         jobs.cancel(account,job.id());
         var ids=jdbc.queryForList("SELECT dashboard_message_id FROM message_metadata",UUID.class);
         var archive=previews.create(account,new DashboardPreviewService.Request(new DashboardFilter("inbox","","","","UTC",0),ids,"ARCHIVE",0));
-        assertThatThrownBy(()->jobs.confirm(account,archive.id())).hasMessageContaining("Only Gmail Mark as Read");
+        assertThat(jobs.confirm(account,archive.id()).action()).isEqualTo("ARCHIVE");
         var expired=previews.create(account,new DashboardPreviewService.Request(new DashboardFilter("inbox","","","","UTC",0),ids,"MARK_READ",0));
         jdbc.update("UPDATE dashboard_previews SET expires_at=now()-interval '1 second' WHERE public_id=?",expired.id());
         assertThatThrownBy(()->jobs.confirm(account,expired.id())).hasMessageContaining("expired or unavailable");

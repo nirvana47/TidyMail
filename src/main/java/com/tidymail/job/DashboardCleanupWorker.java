@@ -44,23 +44,28 @@ public class DashboardCleanupWorker {
             provider=providers.get("gmailMailService");
             if(!account.getProvider().equals("google")||!(provider instanceof MailboxSyncProvider))throw new IllegalStateException("Gmail metadata provider unavailable");
             reader=(MailboxSyncProvider)provider;
-        } catch(RuntimeException error){jobs.defer(claim);return;}
+        } catch(RuntimeException error){jobs.defer(claim,error);return;}
         if(claim.verification()) {
-            jobs.complete(claim,null,claim.targets(),observe(reader,account,claim.targets()));return;
+            Map<String,MailMessage> observations;RuntimeException failure=null;
+            try{observations=read(reader,account,claim.targets());}
+            catch(RuntimeException error){observations=Map.of();failure=error;}
+            jobs.complete(claim,null,claim.targets(),observations,failure);return;
         }
         Map<String,MailMessage> before;
-        try{before=read(reader,account,claim.targets());}catch(RuntimeException error){jobs.defer(claim);return;}
+        try{before=read(reader,account,claim.targets());}catch(RuntimeException error){jobs.defer(claim,error);return;}
         var dispatch=jobs.dispatch(claim,before);if(dispatch==null)return;
-        try{provider.markReadOnce(account,dispatch.targets().stream().map(Target::providerId).toList());}
-        catch(RuntimeException ambiguous){/* Read-only reconciliation also runs after uncertain sends. Never retry mutations. */}
-        jobs.complete(claim,dispatch.batch(),dispatch.targets(),observe(reader,account,dispatch.targets()));
-    }
-    private Map<String,MailMessage> observe(MailboxSyncProvider reader,UserAccount account,List<Target> targets) {
-        try{return read(reader,account,targets);}catch(RuntimeException error){return Map.of();}
+        RuntimeException failure=null;
+        try{
+            if(claim.action().equals("MARK_READ"))provider.markReadOnce(account,dispatch.targets().stream().map(Target::providerId).toList());
+            else provider.cleanupOnce(account,dispatch.targets().stream().map(Target::providerId).toList(),BulkActionType.valueOf(claim.action()));
+        } catch(RuntimeException error){failure=error;}
+        Map<String,MailMessage> after;RuntimeException readFailure=null;
+        try{after=read(reader,account,dispatch.targets());}catch(RuntimeException error){after=Map.of();readFailure=error;}
+        jobs.complete(claim,dispatch.batch(),dispatch.targets(),after,failure,readFailure);
     }
     private Map<String,MailMessage> read(MailboxSyncProvider reader,UserAccount account,List<Target> targets) {
         var ids=targets.stream().map(Target::providerId).toList();
-        var messages=reader.getCurrentMetadata(account,ids);
+        var messages=reader.getCleanupMetadata(account,ids);
         if(messages==null)throw new IllegalStateException("Missing metadata response");
         Map<String,MailMessage> result=new HashMap<>();
         for(var message:messages) {

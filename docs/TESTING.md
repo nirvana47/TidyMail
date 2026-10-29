@@ -136,3 +136,18 @@ and verifies one exact mutation attempt without automatic replay.
 a timer driving the real worker tick. It supports desktop confirmation, progress,
 reload, cancellation, history and reconciliation checks. See the
 [Phase 4 report](PHASE-4-BACKGROUND-MARK-READ.md) for evidence and limitations.
+
+## Dashboard actions and resilience — Phase 5
+
+```sh
+mvn -o -Dtest='DashboardResilienceTest,DashboardJobJourneyTest,DashboardGmailDispatchTest,DashboardJourneyTest,DashboardMigrationTest,Phase15PostgresMigrationTest,LogoutSemanticsTest,GmailSynchronizationContractTest,GmailBackfillRecoveryJourneyTest' test
+```
+
+Use Java 21 and the Docker environment above. Each resilience scenario uses 501
+fixed targets for Mark as Read, Archive and Trash: multi-batch success, partial
+ambiguous outcomes, read throttling/Retry-After, reconnect, read exhaustion,
+worker replacement and cancellation races. Additional checks exercise post-dispatch
+read failures without mutation replay, exact Gmail SDK requests, background/freshness
+capacity sharing and V17 in-flight upgrade preservation. The explicit browser
+fixture supports all three simulated actions. See the
+[Phase 5 report](PHASE-5-ACTIONS-AND-RESILIENCE.md) for recorded results and limits.

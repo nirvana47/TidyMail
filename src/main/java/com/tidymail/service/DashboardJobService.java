@@ -19,6 +19,7 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class DashboardJobService {
     public static final int BATCH_SIZE=50;
+    public static final int MAX_READ_ATTEMPTS=6;
     private final DashboardRepository repository;
     private final NamedParameterJdbcTemplate jdbc;
     private final ActionScopeService scopes;
@@ -28,9 +29,9 @@ public class DashboardJobService {
         this.repository=repository;this.jdbc=repository.jdbc();this.scopes=scopes;this.json=json;this.tx=new TransactionTemplate(manager);
     }
     public record Progress(UUID id,String action,String status,int total,int changed,int failed,int skipped,
-        int unresolved,int cancelled,int remaining,boolean cancelRequested,Instant createdAt,long version) {}
-    public record Target(int ordinal,String providerId,UUID messageId,boolean preUnread) {}
-    public record Claim(UUID job,long account,UUID worker,long generation,DashboardFilter filter,List<Target> targets,boolean verification) {}
+        int unresolved,int cancelled,int remaining,boolean cancelRequested,Instant createdAt,long version,String retryReason) {}
+    public record Target(int ordinal,String providerId,UUID messageId,boolean preChangeObserved) {}
+    public record Claim(UUID job,long account,UUID worker,long generation,DashboardFilter filter,List<Target> targets,boolean verification,String action) {}
     public record Dispatch(Claim claim,UUID batch,List<Target> targets) {}
 
     private <T> T transaction(Supplier<T> work) {return tx.execute(status->work.get());}
@@ -57,7 +58,7 @@ public class DashboardJobService {
                 """,p);
             if(rows.isEmpty())throw new ResponseStatusException(HttpStatus.NOT_FOUND,"Preview expired or unavailable");
             var row=rows.getFirst();
-            if(!row.get("action_type").equals("MARK_READ")||!row.get("provider").equals("google"))throw conflict("Only Gmail Mark as Read is available in this phase");
+            if(!Set.of("MARK_READ","ARCHIVE","TRASH").contains(row.get("action_type"))||!row.get("provider").equals("google"))throw conflict("Only supported Gmail cleanup actions are available");
             if(((Number)row.get("grouping_revision")).longValue()!=repository.revision(account))throw conflict("Grouping changed. Create a new preview.");
             if(((Number)row.get("effective_count")).intValue()==0)throw conflict("No eligible changes. Create a new selection.");
             var targets=jdbc.queryForList("SELECT * FROM dashboard_preview_targets WHERE preview_id=:preview AND account_id=:account ORDER BY ordinal",p);
@@ -72,10 +73,10 @@ public class DashboardJobService {
                 WHERE c.account_id=:account AND t.provider_message_id IN (:ids)
                 """,p,Long.class)>0)throw conflict("Selected messages already belong to active or unresolved work");
             UUID job=UUID.randomUUID();p.addValue("job",job).addValue("scope",row.get("scope_id"))
-                .addValue("total",targets.size()).addValue("snapshot",row.get("filter_snapshot").toString());
+                .addValue("action",row.get("action_type")).addValue("total",targets.size()).addValue("snapshot",row.get("filter_snapshot").toString());
             jdbc.update("""
                 INSERT INTO cleanup_jobs(public_id,account_id,preview_id,scope_id,action_type,selected_count,snapshot)
-                VALUES(:job,:account,:preview,:scope,'MARK_READ',:total,CAST(:snapshot AS jsonb))
+                VALUES(:job,:account,:preview,:scope,:action,:total,CAST(:snapshot AS jsonb))
                 """,p);
             jdbc.update("""
                 INSERT INTO cleanup_job_targets(job_id,account_id,ordinal,provider_message_id,message_id,target_fingerprint,state,reason)
@@ -119,7 +120,7 @@ public class DashboardJobService {
         return transaction(()->{
             var rows=jdbc.queryForList("""
                 SELECT * FROM cleanup_jobs j WHERE next_attempt_at<=now() AND (worker_id IS NULL OR lease_expires_at<now())
-                AND EXISTS(SELECT 1 FROM cleanup_job_targets t WHERE t.job_id=j.public_id AND t.state IN ('QUEUED','DISPATCH_INTENT','AWAITING_VERIFICATION'))
+                AND EXISTS(SELECT 1 FROM cleanup_job_targets t WHERE t.job_id=j.public_id AND (t.state IN ('QUEUED','DISPATCH_INTENT') OR (t.state='AWAITING_VERIFICATION' AND t.verification_attempts<6)))
                 ORDER BY next_attempt_at,created_at FOR UPDATE SKIP LOCKED LIMIT 1
                 """,Map.of());
             if(rows.isEmpty())return null;
@@ -136,11 +137,11 @@ public class DashboardJobService {
             try{filter=json.treeToValue(json.readTree(row.get("snapshot").toString()).get("filter"),DashboardFilter.class);}
             catch(Exception error){throw new IllegalStateException("Invalid persisted filter",error);}
             event(account,job);
-            return new Claim(job,account,worker,generation,filter,targets,verification);
+            return new Claim(job,account,worker,generation,filter,targets,verification,row.get("action_type").toString());
         });
     }
     private List<Target> targets(UUID job,String state) {
-        return jdbc.query("SELECT ordinal,provider_message_id,message_id,pre_unread FROM cleanup_job_targets WHERE job_id=:job AND state=:state ORDER BY observed_at NULLS FIRST,ordinal LIMIT "+BATCH_SIZE,
+        return jdbc.query("SELECT ordinal,provider_message_id,message_id,pre_change_observed FROM cleanup_job_targets WHERE job_id=:job AND state=:state AND (state<>'AWAITING_VERIFICATION' OR verification_attempts<6) ORDER BY observed_at NULLS FIRST,ordinal LIMIT "+BATCH_SIZE,
             Map.of("job",job,"state",state),(r,n)->new Target(r.getInt(1),r.getString(2),r.getObject(3,UUID.class),r.getBoolean(4)));
     }
     private boolean owns(Map<String,Object> row,Claim claim) {
@@ -152,9 +153,10 @@ public class DashboardJobService {
         return transaction(()->{
             var row=lock(claim.account(),claim.job());if(!owns(row,claim))return null;
             if(row.get("cancel_requested_at")!=null){release(claim);settle(claim.account(),claim.job());return null;}
-            var p=repository.parameters(claim.account(),claim.filter()).addValue("ids",claim.targets().stream().map(Target::messageId).toList());
+            var p=repository.parameters(claim.account(),claim.filter()).addValue("ids",claim.targets().stream().map(Target::messageId).toList()).addValue("action",claim.action());
             Set<UUID> eligible=new HashSet<>(jdbc.queryForList(DashboardRepository.FILTERED+"""
-                SELECT dashboard_message_id FROM filtered f WHERE dashboard_message_id IN (:ids) AND unread
+                SELECT dashboard_message_id FROM filtered f WHERE dashboard_message_id IN (:ids)
+                AND (:action<>'MARK_READ' OR unread) AND (:action<>'ARCHIVE' OR 'INBOX'=ANY(labels))
                 AND NOT EXISTS(SELECT 1 FROM protected_senders s WHERE s.account_id=f.account_id AND s.sender_address=lower(f.address))
                 """,p,UUID.class));
             Set<String> recipients=new HashSet<>(jdbc.queryForList("""
@@ -165,15 +167,15 @@ public class DashboardJobService {
             for(var target:claim.targets()) {
                 var observed=observations.get(target.providerId());
                 String reason=!eligible.contains(target.messageId())?"No longer eligible or protected":observed==null?"Message missing before dispatch":
-                    !observed.isUnread()?"Already read before dispatch":!received(observed,claim.filter(),recipients)?"Provider labels no longer eligible":null;
+                    desired(claim.action(),observed)?"Already in requested state before dispatch":!received(observed,claim.filter(),recipients)?"Provider labels no longer eligible":null;
                 if(reason==null)sending.add(new Target(target.ordinal(),target.providerId(),target.messageId(),true));
-                else {outcome(claim,target,"SKIPPED",reason);if(observed!=null&&!observed.isUnread())reconcile(claim.account(),observed);}
+                else {outcome(claim,target,"SKIPPED",reason);if(observed!=null&&desired(claim.action(),observed))reconcile(claim.account(),observed,claim.action());}
             }
             if(sending.isEmpty()){release(claim);settle(claim.account(),claim.job());return null;}
             UUID batch=UUID.randomUUID();p=params(claim.account(),claim.job()).addValue("batch",batch).addValue("generation",claim.generation());
             jdbc.update("INSERT INTO cleanup_batches(public_id,job_id,account_id,generation,state) VALUES(:batch,:job,:account,:generation,'DISPATCH_INTENT')",p);
             p.addValue("ordinals",sending.stream().map(Target::ordinal).toList());
-            jdbc.update("UPDATE cleanup_job_targets SET state='DISPATCH_INTENT',batch_id=:batch,pre_unread=true,reason='Request claimed for dispatch' WHERE job_id=:job AND ordinal IN (:ordinals) AND state='QUEUED'",p);
+            jdbc.update("UPDATE cleanup_job_targets SET state='DISPATCH_INTENT',batch_id=:batch,pre_change_observed=true,reason='Request claimed for dispatch' WHERE job_id=:job AND ordinal IN (:ordinals) AND state='QUEUED'",p);
             event(claim.account(),claim.job());return new Dispatch(claim,batch,List.copyOf(sending));
         });
     }
@@ -187,33 +189,87 @@ public class DashboardJobService {
     }
     /** Post-dispatch labels, never an HTTP acknowledgement alone, determine changed counts. */
     public void complete(Claim claim,UUID batch,List<Target> targets,Map<String,MailMessage> observations) {
+        complete(claim,batch,targets,observations,null);
+    }
+    public void complete(Claim claim,UUID batch,List<Target> targets,Map<String,MailMessage> observations,RuntimeException failure) {
+        complete(claim,batch,targets,observations,failure,null);
+    }
+    public void complete(Claim claim,UUID batch,List<Target> targets,Map<String,MailMessage> observations,RuntimeException failure,RuntimeException readFailure) {
         transaction(()->{
             var row=lock(claim.account(),claim.job());if(!owns(row,claim))return null;
             for(var target:targets) {
                 var observed=observations.get(target.providerId());
-                if(observed!=null&&observed.labelIds()!=null&&!observed.isUnread()) {
-                    outcome(claim,target,target.preUnread()?"CHANGED":"SKIPPED",target.preUnread()?"Unread before dispatch; read confirmed afterward":"Read state observed without change attribution");
-                    reconcile(claim.account(),observed);
-                } else outcome(claim,target,"AWAITING_VERIFICATION","Dispatch outcome unresolved; mutation will not be replayed");
+                if(observed!=null&&observed.labelIds()!=null&&desired(claim.action(),observed)) {
+                    outcome(claim,target,target.preChangeObserved()?"CHANGED":"SKIPPED",target.preChangeObserved()?"Requested label change confirmed afterward":"Requested state observed without change attribution");
+                    reconcile(claim.account(),observed,claim.action());
+                } else if(batch!=null && failure instanceof com.tidymail.mail.CleanupProviderException rejected && rejected.rejected()) {
+                    outcome(claim,target,"FAILED","Provider rejected mutation; requested change not confirmed");
+                } else {
+                    outcome(claim,target,"AWAITING_VERIFICATION","Dispatch outcome unresolved; mutation will not be replayed");
+                    jdbc.update("UPDATE cleanup_job_targets SET verification_attempts=verification_attempts+1 WHERE job_id=:job AND ordinal=:ordinal",
+                        params(claim.account(),claim.job()).addValue("ordinal",target.ordinal()));
+                }
             }
             if(batch!=null)jdbc.update("UPDATE cleanup_batches SET state='SETTLED',completed_at=now() WHERE public_id=:batch",Map.of("batch",batch));
-            release(claim);settle(claim.account(),claim.job());return null;
+            release(claim);
+            scheduleRetry(claim,readFailure==null?failure:readFailure,claim.verification(),failure);
+            settle(claim.account(),claim.job());return null;
         });
     }
     /** Failed read before dispatch leaves queued work intact, with a persisted delay; cancel bypasses it. */
-    public void defer(Claim claim) {
-        transaction(()->{var row=lock(claim.account(),claim.job());if(owns(row,claim)){release(claim);settle(claim.account(),claim.job());}return null;});
+    public void defer(Claim claim) {defer(claim,null);}
+    public void defer(Claim claim,RuntimeException error) {
+        if(claim.verification()){complete(claim,null,claim.targets(),Map.of(),error);return;}
+        transaction(()->{
+            var row=lock(claim.account(),claim.job());if(!owns(row,claim))return null;
+            var p=params(claim.account(),claim.job()).addValue("ordinals",claim.targets().stream().map(Target::ordinal).toList());
+            if(!claim.targets().isEmpty()) {
+                jdbc.update("UPDATE cleanup_job_targets SET read_attempts=read_attempts+1 WHERE job_id=:job AND ordinal IN (:ordinals) AND state='QUEUED'",p);
+                jdbc.update("UPDATE cleanup_job_targets SET state='FAILED',reason='Read retry budget exhausted before dispatch' WHERE job_id=:job AND state='QUEUED' AND read_attempts>=6",p);
+            }
+            release(claim);scheduleRetry(claim,error,false);settle(claim.account(),claim.job());return null;
+        });
+    }
+    /** Persist the wait, release all capacity, and let cancellation bypass it. No sleeping worker. */
+    private void scheduleRetry(Claim claim,RuntimeException error,boolean verification) {scheduleRetry(claim,error,verification,null);}
+    private void scheduleRetry(Claim claim,RuntimeException error,boolean verification,RuntimeException earlier) {
+        var p=params(claim.account(),claim.job());
+        int attempts=jdbc.queryForObject("SELECT COALESCE(max(GREATEST(read_attempts,verification_attempts)),0) FROM cleanup_job_targets WHERE job_id=:job",p,Integer.class);
+        boolean exhausted=jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM cleanup_job_targets WHERE job_id=:job AND state='AWAITING_VERIFICATION' AND verification_attempts>=6)",p,Boolean.class);
+        boolean waiting=jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM cleanup_job_targets WHERE job_id=:job AND state IN ('QUEUED','AWAITING_VERIFICATION'))",p,Boolean.class);
+        boolean unresolved=jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM cleanup_job_targets WHERE job_id=:job AND state='AWAITING_VERIFICATION')",p,Boolean.class);
+        String reason=exhausted?"Verification limit reached; unresolved outcomes retained":waiting&&(error!=null||verification||unresolved)?"Waiting to retry provider reads":null;
+        long delay=Math.min(64000L,1000L<<Math.min(attempts,6))+java.util.concurrent.ThreadLocalRandom.current().nextLong(251);
+        Instant next=Instant.now().plusMillis(delay);
+        if(error instanceof com.tidymail.mail.CleanupProviderException provider) {
+            if(provider.status()==401){reason="Reconnect Gmail to continue; read retries are bounded";next=Instant.now().plusSeconds(60);}
+            if(provider.retryAt()!=null&&provider.retryAt().isAfter(next))next=provider.retryAt();
+        }
+        if(error instanceof com.tidymail.security.oauth2.ManagedGoogleCredentialService.CredentialAuthorizationException credentials
+            && credentials.getCode()==com.tidymail.security.oauth2.ManagedGoogleCredentialService.FailureCode.REAUTH_REQUIRED) {
+            reason="Reconnect Gmail to continue; read retries are bounded";next=Instant.now().plusSeconds(60);
+        }
+        if(earlier instanceof com.tidymail.mail.CleanupProviderException prior && prior.retryAt()!=null&&prior.retryAt().isAfter(next))next=prior.retryAt();
+        p.addValue("next",DashboardRepository.timestamp(next)).addValue("reason",reason);
+        jdbc.update("UPDATE cleanup_jobs SET next_attempt_at=:next,retry_reason=:reason WHERE public_id=:job",p);
+    }
+    private static boolean desired(String action,MailMessage observed) {
+        if(observed.labelIds()==null)return false;
+        return switch(action){case "MARK_READ"->!observed.isUnread();case "ARCHIVE"->!observed.labelIds().contains("INBOX");case "TRASH"->observed.labelIds().contains("TRASH");default->false;};
     }
     private void outcome(Claim claim,Target target,String state,String reason) {
         var p=params(claim.account(),claim.job()).addValue("ordinal",target.ordinal()).addValue("state",state).addValue("reason",reason);
         jdbc.update("UPDATE cleanup_job_targets SET state=:state,reason=:reason,observed_at=now() WHERE job_id=:job AND ordinal=:ordinal AND state IN ('QUEUED','DISPATCH_INTENT','AWAITING_VERIFICATION')",p);
     }
-    private void reconcile(long account,MailMessage observed) {
+    private void reconcile(long account,MailMessage observed,String action) {
         // Fence an older read against concurrent sync using Gmail's message history revision.
-        var p=new MapSqlParameterSource("account",account).addValue("id",observed.id())
+        var p=new MapSqlParameterSource("account",account).addValue("id",observed.id()).addValue("action",action)
             .addValue("revision",observed.providerRevision()==null?null:new java.math.BigDecimal(observed.providerRevision()));
         jdbc.update("""
-            UPDATE message_metadata SET unread=false,labels=array_remove(labels,'UNREAD'),
+            UPDATE message_metadata SET unread=CASE WHEN :action='MARK_READ' THEN false ELSE unread END,
+            labels=CASE :action WHEN 'MARK_READ' THEN array_remove(labels,'UNREAD')
+              WHEN 'ARCHIVE' THEN array_remove(labels,'INBOX')
+              WHEN 'TRASH' THEN CASE WHEN 'TRASH'=ANY(labels) THEN labels ELSE array_append(labels,'TRASH') END END,
             provider_revision=GREATEST(provider_revision,CAST(:revision AS numeric))
             WHERE account_id=:account AND provider_message_id=:id
             AND COALESCE(provider_revision,-1)<=COALESCE(CAST(:revision AS numeric),-1)
@@ -249,7 +305,7 @@ public class DashboardJobService {
             """,params(account,job),(r,n)->{
                 int total=r.getInt("selected_count");
                 if(total!=r.getInt("actual"))throw new IllegalStateException("Fixed cleanup target count violated");
-                return new Progress(job,r.getString("action_type"),r.getString("status"),total,r.getInt("changed"),r.getInt("failed"),r.getInt("skipped"),r.getInt("unresolved"),r.getInt("cancelled"),r.getInt("remaining"),r.getTimestamp("cancel_requested_at")!=null,r.getTimestamp("created_at").toInstant(),r.getLong("version"));
+                return new Progress(job,r.getString("action_type"),r.getString("status"),total,r.getInt("changed"),r.getInt("failed"),r.getInt("skipped"),r.getInt("unresolved"),r.getInt("cancelled"),r.getInt("remaining"),r.getTimestamp("cancel_requested_at")!=null,r.getTimestamp("created_at").toInstant(),r.getLong("version"),r.getString("retry_reason"));
             });
     }
     private void event(long account,UUID job) {

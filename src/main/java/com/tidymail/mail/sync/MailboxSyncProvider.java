@@ -28,5 +28,10 @@ public interface MailboxSyncProvider {
 
     List<MailMessage> getCurrentMetadata(UserAccount account, List<String> messageIds);
 
+    /** Cleanup reads use their own capacity and persisted retries where supported. */
+    default List<MailMessage> getCleanupMetadata(UserAccount account, List<String> messageIds) {
+        return getCurrentMetadata(account,messageIds);
+    }
+
     AttachmentMembershipPage listAttachmentMembership(UserAccount account, String pageToken);
 }

@@ -17,6 +17,10 @@ public interface MailProvider {
     default void markReadOnce(UserAccount account, List<String> messageIds) {
         throw new UnsupportedOperationException("Durable Mark as Read is unavailable for this provider");
     }
+    default void cleanupOnce(UserAccount account, List<String> messageIds, BulkActionType action) {
+        if(action==BulkActionType.MARK_READ)markReadOnce(account,messageIds);
+        else throw new UnsupportedOperationException("Durable cleanup unavailable for this provider");
+    }
     /**
      * Describes what this provider can report reliably; unknown by default.
      */

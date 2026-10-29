@@ -14,8 +14,10 @@ Inbox/All received browsing, literal subject/sender search, timezone-aware dates
 10-row group/message paging, conservative groups and manual corrections, and
 persisted exact previews with no-op/protection accounting. Phase 4 adds durable
 Gmail Mark as Read jobs, bottom-dock progress, cancellation, restored history and
-read-only verification of uncertain results. Archive/Trash remain preview-only.
-V16/V17 are additive and have passed isolated fresh/retained fixtures; the retained
+read-only verification of uncertain results. Phase 5 extends that flow to
+Archive/Trash with bounded read retries, reconnect guidance and shared provider
+capacity; see the [Phase 5 report](docs/PHASE-5-ACTIONS-AND-RESILIENCE.md).
+V16–V18 are additive and have passed isolated fresh/retained fixtures; the retained
 development database has not been upgraded. See the
 [Phase 3 report](docs/PHASE-3-INDEXED-DASHBOARD.md) and
 [Phase 4 report](docs/PHASE-4-BACKGROUND-MARK-READ.md). The inventory below describes

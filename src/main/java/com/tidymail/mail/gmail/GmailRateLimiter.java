@@ -46,7 +46,7 @@ public class GmailRateLimiter {
 
         if (concurrency > 10) {
             logger.warn(
-                "Gmail API concurrency set to {} (>10) — risk 429 from Google's 250 reqs/sec quota;"
+                "Gmail API concurrency set to {} (>10) — risk of Gmail concurrency throttling;"
                     + " prefer 5 or lower unless you know your project quota",
                 concurrency);
         }
@@ -119,6 +119,11 @@ public class GmailRateLimiter {
         }
         delayOrRelease(totalCapacity, backfillCapacity);
         return new Permit(totalCapacity, backfillCapacity);
+    }
+
+    /** Cleanup and verification share the background lane, preserving freshness capacity. */
+    public <T> T supplyWithCleanupPermit(Supplier<T> supplier) {
+        return supplyWithBackfillRescanPermit(supplier);
     }
 
     public <T> T supplyWithPermit(Supplier<T> supplier) {

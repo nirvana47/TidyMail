@@ -1,5 +1,23 @@
 # Project status
 
+## Dashboard Phase 5 — 2026-10-29
+
+Archive and Move to Trash now use the confirmed durable dashboard flow alongside
+Mark as Read. V18 adds bounded read/verification retries and preserves retained
+V17 dispatch preconditions. Cleanup shares background Gmail capacity with backfill,
+preserving freshness capacity; delayed work remains cancellable. Confirmed labels
+reconcile both dashboard scopes without guessing uncertain outcomes or replaying
+mutations. Desktop synthetic browser checks passed action confirmation, reload,
+history, scope/count reconciliation and last-page contraction.
+
+Phase 5 is complete for synthetic-provider and desktop acceptance. The full Java
+21 suite ran 515 tests: 513 passed, the same two baseline assertions failed, and
+there were no errors/skips. After the final post-dispatch read-guidance refinement,
+all 87 focused checks passed, including 24 scenarios with 501 targets each. See the
+[Phase 5 report](PHASE-5-ACTIONS-AND-RESILIENCE.md) for exact evidence and limits.
+Phase 6 simplification is next. The retained database/application and live mailbox
+are unchanged. No commit, push or deployment was performed.
+
 ## Dashboard Phase 4 — 2026-10-28
 
 Durable Gmail Mark as Read is implemented at `/dashboard`: exact preview and
