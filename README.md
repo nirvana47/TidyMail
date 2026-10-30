@@ -1,6 +1,8 @@
 # TidyMail
 
-Self-hosted Gmail cleanup: browse senders, review exact selections, and run Mark as Read, Archive or Move to Trash in the background. Java 21 + Spring Boot + PostgreSQL; no LLM integration.
+Self-hosted Gmail cleanup: browse senders, review exact selections, and run Mark as Read, Archive or Move to Trash in the background. Java 21 + Spring Boot + PostgreSQL, with optional metadata-only Jev classification through OpenRouter.
+
+Optional [Jev classification](docs/JEV-CLASSIFICATION.md) adds message categories and service-aware grouping using `OPENROUTER_API_KEY` in `.env`. It never performs mailbox actions automatically.
 
 Start with [local setup](DEPLOY.md). Read [PROJECT.md](PROJECT.md) for product and privacy behavior.
 

@@ -187,3 +187,22 @@ at the retained-index scale used in Phase 7. The writer commits 200-row batches
 with 100 ms gaps; provider calls are simulated and paced to keep cleanup active.
 These timings do not establish live Gmail throughput. No additional small test
 cases were added for Phase 7.
+
+## Optional Jev classification
+
+`JevClassifierTest` uses a mock HTTP transport; `DashboardClassificationTest` uses
+isolated PostgreSQL with simulated model responses. They verify provider/ZDR
+pinning, bounded metadata, validation/uncertainty, stable categories, individual
+addresses, Google service boundaries, manual overrides, category-consistent exact
+selection/preview, caching/stale inputs, cancellation, retry limits, ownership,
+CSRF and fixed confirmed cleanup targets. No API key or live mailbox is used.
+The browser fixture also mocks Jev, even if a real key exists in local `.env`.
+
+Run with the documented Java 21 / Docker environment:
+
+```sh
+mvn -o -Dtest='JevClassifierTest,DashboardClassificationTest,DashboardJourneyTest,DashboardMigrationTest,DashboardIdentityTest' test
+```
+
+See [architecture and setup](JEV-CLASSIFICATION.md) for privacy configuration and
+the accuracy evaluation still needed on a representative user-labeled sample.

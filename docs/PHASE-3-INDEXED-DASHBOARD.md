@@ -1,3 +1,8 @@
+> Current optional classification: V21 adds Jev via OpenRouter, per-message category
+> filters and corrections, and service-aware automatic grouping. See
+> [classification architecture and privacy](JEV-CLASSIFICATION.md). It supersedes
+> earlier non-AI and domain-only grouping statements for users who start a run.
+
 # Phase 3 — Indexed browsing and exact selections
 
 **Subsequent scope decision — 2026-10-28:** The user confirmed desktop-first MVP
@@ -47,12 +52,35 @@ case-insensitive substring matching, including punctuation such as `%_!`.
 It deliberately rejects ambiguous/unsupported From or List-ID syntax into isolated
 message units. Grouping corrections require stable ADDRESS/LIST evidence;
 unverified message fallback groups remain separate until fresh metadata arrives.
-Valid lists form separate atomic units. Known shared domains are
-seeded in a versioned registry; unknown domains use exact addresses. The dedicated
-domain registry starts empty and accepts only explicitly reviewed server-side
-entries; the application does not infer a company from domain/name similarity.
-Tests add synthetic dedicated domains. No external logo, enrichment, classifier,
-message-body download or new full-mailbox fetch was introduced.
+Valid lists form separate atomic units. V20 supersedes the original exact-domain
+allowlist: addresses now share an organization group across subdomains using a
+bundled Public Suffix List (including private hosting boundaries). For example,
+`chase.com`, `e.chase.com`, and `notify.chase.com` form `chase.com`; independent
+`alice.github.io` and `bob.github.io` tenants stay apart. Known personal mailbox,
+tenant, newsletter-hosting and relay services remain exact-address groups via a
+shared-domain registry. Unknown suffixes stay separate; reviewed dedicated-domain
+entries still support internal/test domains. Display-name similarity and lookalike
+domains never merge senders. This is a browsing heuristic, not sender authentication.
+
+V20 regroups already-indexed ADDRESS units without refetching mail, preserving
+atomic IDs and saved manual membership. It advances grouping revisions so stale
+selections/previews must reload; confirmed job targets remain fixed. LIST and
+uncertain MESSAGE units retain their existing boundaries. Group evidence explains
+the organization-domain rule. Public suffix data is pinned in the migration with
+source/version/license attribution; updates need a new migration. Shared providers
+missing from the registry can still need manual separation and a registry addition.
+No external logo, enrichment, classifier, message-body download or new full-mailbox
+fetch was introduced.
+
+V20 validation (2026-10-29): 55 distinct focused tests passed across identity,
+dashboard journeys, retained/fresh migrations, cleanup jobs and resilience. The
+Java 21 package build, JavaScript syntax and diff checks passed. The Chase fixture
+asserts 117 messages, two unread, five addresses and one organization group, with
+exact address/group selections and manual separation surviving new mail. Boundary
+fixtures cover multi-label suffixes, private tenants, wildcard/exception rules,
+IDNA and shared providers. The retained application/database has not been upgraded;
+these checks use isolated synthetic databases. The full suite and fresh browser
+acceptance were not run for this change.
 
 The Gmail projection preserves missing labels as unknown, separately from an
 observed empty set; a direct provider-to-mapper regression test covers this.

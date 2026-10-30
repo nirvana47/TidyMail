@@ -5,7 +5,7 @@ deferred unless the user explicitly requests them later. Existing mobile work
 may remain, but is not an acceptance requirement. See the
 [recorded scope decision](docs/MVP-PLAN.md#desktop-first-scope--2026-10-28).
 
-TidyMail is a self-hosted, non-LLM email cleanup application. It indexes Gmail metadata, groups messages by sender, and lets users preview, stage, approve and inspect bulk cleanup actions. This document describes source mapped on 2026-10-14; implemented does not mean verified against a live mailbox.
+TidyMail is a self-hosted email cleanup application with optional Jev classification. It indexes Gmail metadata, groups messages by sender, and lets users preview, stage, approve and inspect bulk cleanup actions. This document describes source mapped on 2026-10-14; implemented does not mean verified against a live mailbox.
 
 ## Implemented product
 
@@ -62,7 +62,7 @@ Ordinary logout ends the session and retains account data. Explicit deletion req
 
 Actions bind to materialized message IDs and record per-target results. Legacy Undo applies to successful targets of eligible Archive, Trash and Mark Read actions within the engine's ten-minute window. Protection removal has a separate compensation path. Unsubscribe is not reversible through mailbox undo. Dashboard jobs do not create an Undo window.
 
-There is no LLM integration, Gmail filter-creation workflow, embedded trained classifier, billing or live export subsystem in the mapped source. Older plans for those features describe historical intent.
+User-authorized optional hosted Jev classification is now implemented; see [architecture and privacy](docs/JEV-CLASSIFICATION.md). Earlier non-AI scope statements are superseded for this feature. No local model, Gmail filter-creation workflow, billing or live export subsystem is included.
 
 ## Documentation authority
 

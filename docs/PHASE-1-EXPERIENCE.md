@@ -101,6 +101,9 @@ a full mailbox download.
 
 ## Deterministic grouping proposal
 
+The V20 organization-domain rules in [the implementation report](PHASE-3-INDEXED-DASHBOARD.md)
+supersede the original exact-domain proposal in items 3–4 below.
+
 Grouping is an organizational aid, not a verified identity or trust signal. Display
 addresses and an evidence explanation on expansion. Use a versioned rule set:
 

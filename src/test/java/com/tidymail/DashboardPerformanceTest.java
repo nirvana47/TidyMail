@@ -87,6 +87,12 @@ class DashboardPerformanceTest extends PostgresJourneyTest {
                     System.out.printf("DASHBOARD_PERFORMANCE rows=%d concurrent=%s write_batches=%d%n",size,concurrent,writes.get());
                 }
             }
+            // Exercise category predicates over a fully classified index as well as the legacy/unclassified path.
+            jdbc.update("UPDATE message_metadata SET classification_category=CASE WHEN id%5=0 THEN 'MARKETING' ELSE 'PERSONAL' END,classification_kind='PERSON',classification_stream='GENERAL',classification_confidence=.99,classification_hash=classification_evidence_hash,classification_version=?,classified_at=now() WHERE account_id=?",com.tidymail.service.JevClassifier.VERSION,account);
+            jdbc.execute("ANALYZE message_metadata");
+            var category=new DashboardFilter("all","","","","UTC",0,"MARKETING");
+            assertThat(dashboard.page(account,category).summary().get("messages")).isEqualTo((long)size/5);
+            measure(size,false,"classified_category_page",size==10000?500:2000,()->dashboard.page(account,category));
         }
         verifyNoInteractions(outlookProvider);
         } finally {dataSource.setMaximumPoolSize(priorPool);}

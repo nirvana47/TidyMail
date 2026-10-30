@@ -1,5 +1,16 @@
 # Project status
 
+## Optional Jev classification — 2026-10-30
+
+Implemented locally with metadata-only Jev via OpenRouter, strict ZDR/provider
+routing, fixed message categories, category filters/corrections and sender/service
+classification. Saved manual grouping corrections and confirmed cleanup targets
+remain authoritative. V21 adds persisted batches and evidence-version caching.
+The package build passed 72 focused tests and isolated desktop checks; live model
+accuracy and the retained application upgrade remain unverified. Add
+`OPENROUTER_API_KEY` locally and follow the
+[architecture/setup guide](JEV-CLASSIFICATION.md). No local model is needed.
+
 ## Dashboard Phase 7 — 2026-10-29
 
 Complete within the recorded desktop/upgrade/live-action gates. Fixed a blank

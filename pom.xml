@@ -17,7 +17,7 @@
     <packaging>jar</packaging>
 
     <name>TidyMail</name>
-    <description>Self-hosted non-AI Gmail and Outlook bulk cleanup web app</description>
+    <description>Self-hosted Gmail cleanup with optional hosted metadata classification</description>
     <url>https://github.com/yourusername/tidymail</url>
 
     <properties>

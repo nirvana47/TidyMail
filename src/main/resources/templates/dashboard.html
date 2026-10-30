@@ -1,74 +1,228 @@
 <!doctype html>
 <html lang="en" xmlns:th="http://www.thymeleaf.org">
+
 <head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="_csrf" th:content="${_csrf.token}"><meta name="_csrf_header" th:content="${_csrf.headerName}">
-  <title>TidyMail — Inbox cleanup</title>
-  <link rel="stylesheet" th:href="@{/static/css/dashboard.css}">
-  <script defer th:src="@{/static/js/dashboard.js}"></script>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="_csrf" th:content="${_csrf.token}">
+    <meta name="_csrf_header" th:content="${_csrf.headerName}">
+    <title>TidyMail — Inbox cleanup</title>
+    <link rel="stylesheet" th:href="@{/static/css/dashboard.css}">
+    <script defer th:src="@{/static/js/dashboard.js}"></script>
 </head>
+
 <body>
-<a href="#senderTable" class="muted-link" style="margin:12px;display:inline-block">Skip to senders</a>
-<main class="app">
-  <header class="row spread">
-    <div><h1>TidyMail</h1><p class="muted">Clean up your inbox.</p></div>
-    <div class="identity">
-      <div class="row"><span class="avatar" aria-hidden="true">@</span><span id="accountEmail">Loading account…</span>
-        <form th:action="@{/logout}" method="post"><button>Sign out</button></form></div>
-      <div class="row" style="margin-top:10px"><span id="syncStatus" class="sync-line" role="status">Checking sync…</span><button id="activityOpen">Activity</button></div>
-    </div>
-  </header>
-  <section class="surface filters" aria-label="Mailbox filters">
-    <div class="row">
-      <div class="scope" role="group" aria-label="Mail scope"><button class="active" data-scope="inbox" aria-pressed="true">Inbox</button><button data-scope="all" aria-pressed="false">All received mail</button></div>
-      <label class="search"><input id="search" type="search" aria-label="Search senders or messages" placeholder="Search senders or messages…" maxlength="200"></label>
-      <label class="date"><select id="date" aria-label="Date range"><option value="all">Any time</option><option value="7">Last 7 days</option><option value="custom">Custom dates</option></select></label>
-    </div>
-    <div class="date-fields"><label id="startLabel" hidden>From <input type="date" id="start"></label><label id="endLabel" hidden>Through <input type="date" id="end"></label>
-      <label>Timezone <select id="zone" aria-label="Displayed account timezone"><option value="UTC">UTC</option><option value="America/Los_Angeles">Pacific</option><option value="America/New_York">Eastern</option><option value="Europe/London">London</option><option value="Asia/Kolkata">India</option></select></label></div>
-    <div class="metrics"><div class="metric"><b id="matching">—</b><span class="muted">Matching messages</span></div><div class="metric"><b id="unreadCount">—</b><span class="muted">Unread messages</span></div><div class="metric"><b id="groupCount">—</b><span class="muted">Sender groups</span></div></div>
-    <p class="coverage" id="coverage">Coverage is unavailable until indexed metadata arrives.</p>
-  </section>
-  <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
-  <section class="workspace">
-    <div class="list">
-      <div class="tablewrap"><table id="senderTable" tabindex="-1"><thead><tr>
-        <th><input id="selectPage" type="checkbox" aria-label="Select groups on this page" disabled></th><th>Sender</th><th>Messages</th><th>Unread</th><th>Latest message</th><th></th>
-      </tr></thead><tbody id="senders"></tbody></table></div>
-      <div id="empty" class="empty" role="status">Loading indexed mail…</div>
-      <div class="paging muted"><span>Sorted by message count</span><button id="prevPage" aria-label="Previous sender page" disabled>‹</button><span id="pageLabel">0 of 0</span><button id="nextPage" aria-label="Next sender page" disabled>›</button></div>
-    </div>
-    <aside class="detail" id="detail" aria-label="Sender details" hidden>
-      <div class="detail-head row"><span class="brand" id="detailBadge" aria-hidden="true"></span><div><h2 id="detailTitle"></h2><p class="muted" id="detailCounts"></p></div></div>
-      <div class="tabs" role="tablist" aria-label="Sender detail"><button class="active" role="tab" id="messagesTab" aria-controls="detailContent" aria-selected="true" data-tab="messages">Messages</button><button role="tab" id="addressesTab" aria-controls="detailContent" aria-selected="false" data-tab="addresses" tabindex="-1">Sender addresses</button></div>
-      <div id="detailContent" class="tab-content" role="tabpanel" aria-labelledby="messagesTab"></div>
-    </aside>
-  </section>
-  <section class="dock" id="dock" hidden aria-label="Selected messages">
-    <div class="selection row" id="selectionRow"><div><strong id="selectionCount"></strong><p class="muted" id="selectionDescription">Selection stays while paging.</p></div><button class="ghost" id="clear">Clear selection</button>
-      <div class="actions row" role="group" aria-label="Choose cleanup action"><button class="active" data-action="MARK_READ" aria-pressed="true">Mark as read</button><button data-action="ARCHIVE" aria-pressed="false">Archive</button><button class="trash" data-action="TRASH" aria-pressed="false">Move to Trash</button><button id="review" class="primary">Review and confirm →</button></div>
-    </div>
-    <div id="jobProgress" role="status" aria-live="polite"></div>
-  </section>
-  <noscript>Enable JavaScript to browse indexed messages and inspect selections.</noscript>
-</main>
-<dialog id="confirm" aria-labelledby="confirmTitle">
-  <div class="row spread"><h2 id="confirmTitle">Review selected messages</h2><button data-close="confirm" aria-label="Close confirmation">×</button></div>
-  <p id="confirmScope"></p><p id="confirmCounts"></p><p id="confirmCoverage" class="muted"></p>
-  <details open><summary>Inspect exact targets</summary><div id="exactTargets"></div><div class="paging"><button id="targetPrev" aria-label="Previous exact targets">‹</button><span id="targetRange"></span><button id="targetNext" aria-label="Next exact targets">›</button></div></details>
-  <p id="actionExplanation"></p><p>This applies only to these selected messages, not future mail. Cancel stops remaining work; completed changes are not reversed.</p>
-  <p class="muted" id="actionAvailability"></p>
-  <div class="row spread"><button data-close="confirm">Back to selection</button><button id="confirmAction" class="primary" disabled></button></div>
-</dialog>
-<dialog id="activity" class="drawer" aria-labelledby="activityTitle"><div class="row spread"><h2 id="activityTitle">Activity</h2><button data-close="activity">Close</button></div><p>Cancel stops remaining work. Completed changes are not reversed. Unresolved outcomes have not been confirmed.</p><div id="activityContent"></div><p id="historySummary" class="muted"></p><button id="historyMore" hidden>Load older activity</button>
-  <hr><p><a class="muted-link" href="/activity">View sync details</a></p><details><summary>Delete local account data</summary><p>This removes your locally indexed data and connection credentials for linked accounts. It does not delete Gmail messages.</p><form th:action="@{/logout/delete-data}" method="post"><label>Type DELETE <input name="confirmation" pattern="DELETE" required autocomplete="off"></label><button>Delete local data and sign out</button></form></details>
-</dialog>
-<dialog id="correction" aria-labelledby="correctionTitle"><div class="row spread"><h2 id="correctionTitle">Organize senders</h2><button data-close="correction">Close</button></div>
-  <p>Grouping organizes your dashboard. It does not select or change mail.</p>
-  <label>Action <select id="correctionKind"><option value="MERGE">Merge groups</option><option value="SEPARATE">Keep one unit separate</option><option value="RESET">Reset a correction</option></select></label>
-  <label id="unitLabel">Address or mailing-list unit <select id="correctionUnit"></select></label>
-  <div id="mergeFields"><label>Find another group <input id="mergeSearch" type="search" maxlength="200" placeholder="Sender address, list or group"></label><button id="findGroups">Find groups</button><label>Merge with <select id="mergeGroup"></select></label><div class="row"><button id="mergePrev">Previous</button><span id="mergeRange"></span><button id="mergeNext">Next</button></div><label>Group label <input id="mergeLabel" maxlength="160" placeholder="Merged senders"></label></div>
-  <label id="resetLabel" hidden>Correction to reset <select id="resetCorrection"></select></label>
-  <button id="previewCorrection">Preview grouping change</button><div id="correctionAffected"></div><button class="primary" id="applyCorrection" disabled>Apply grouping change</button>
-</dialog>
-</body></html>
+    <a href="#senderTable" class="muted-link" style="margin:12px;display:inline-block">Skip to senders</a>
+    <main class="app">
+        <header class="row spread">
+            <div>
+                <h1>TidyMail</h1>
+                <p class="muted">Clean up your inbox.</p>
+            </div>
+            <div class="identity">
+                <div class="row"><span class="avatar" aria-hidden="true">@</span><span id="accountEmail">Loading
+                        account…</span>
+                    <form th:action="@{/logout}" method="post"><button>Sign out</button></form>
+                </div>
+                <div class="row" style="margin-top:10px"><span id="syncStatus" class="sync-line" role="status">Checking
+                        sync…</span><button id="activityOpen">Activity</button></div>
+            </div>
+        </header>
+        <section class="surface filters" aria-label="Mailbox filters">
+            <div class="row">
+                <div class="scope" role="group" aria-label="Mail scope"><button class="active" data-scope="inbox"
+                        aria-pressed="true">Inbox</button><button data-scope="all" aria-pressed="false">All received
+                        mail</button></div>
+                <label class="search"><input id="search" type="search" aria-label="Search senders or messages"
+                        placeholder="Search senders or messages…" maxlength="200"></label>
+                <label class="date"><select id="date" aria-label="Date range">
+                        <option value="all">Any time</option>
+                        <option value="7">Last 7 days</option>
+                        <option value="custom">Custom dates</option>
+                    </select></label>
+            </div>
+            <div class="date-fields"><label id="startLabel" hidden>From <input type="date" id="start"></label><label
+                    id="endLabel" hidden>Through <input type="date" id="end"></label>
+                <label>Timezone <select id="zone" aria-label="Displayed account timezone">
+                        <option value="UTC">UTC</option>
+                        <option value="America/Los_Angeles">Pacific</option>
+                        <option value="America/New_York">Eastern</option>
+                        <option value="Europe/London">London</option>
+                        <option value="Asia/Kolkata">India</option>
+                    </select></label>
+                <label>Category <select id="category" aria-label="Message category">
+                        <option value="">All categories</option>
+                        <option value="PERSONAL">Personal</option>
+                        <option value="MARKETING">Marketing</option>
+                        <option value="NEWSLETTER">Newsletters</option>
+                        <option value="RECEIPT">Receipts</option>
+                        <option value="SECURITY">Security</option>
+                        <option value="NOTIFICATION">Notifications</option>
+                        <option value="OTHER">Other</option>
+                        <option value="UNCERTAIN">Uncertain</option>
+                        <option value="UNCLASSIFIED">Unclassified</option>
+                    </select></label>
+                <button id="classificationOpen">Classify mail</button><span id="classificationSummary" class="muted"
+                    role="status"></span>
+            </div>
+            <div class="metrics">
+                <div class="metric"><b id="matching">—</b><span class="muted">Matching messages</span></div>
+                <div class="metric"><b id="unreadCount">—</b><span class="muted">Unread messages</span></div>
+                <div class="metric"><b id="groupCount">—</b><span class="muted">Sender groups</span></div>
+            </div>
+            <p class="coverage" id="coverage">Coverage is unavailable until indexed metadata arrives.</p>
+        </section>
+        <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+        <section class="workspace">
+            <div class="list">
+                <div class="tablewrap">
+                    <table id="senderTable" tabindex="-1">
+                        <thead>
+                            <tr>
+                                <th><input id="selectPage" type="checkbox" aria-label="Select groups on this page"
+                                        disabled></th>
+                                <th>Sender</th>
+                                <th>Messages</th>
+                                <th>Unread</th>
+                                <th>Latest message</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="senders"></tbody>
+                    </table>
+                </div>
+                <div id="empty" class="empty" role="status">Loading indexed mail…</div>
+                <div class="paging muted"><span>Sorted by message count</span><button id="prevPage"
+                        aria-label="Previous sender page" disabled>‹</button><span id="pageLabel">0 of 0</span><button
+                        id="nextPage" aria-label="Next sender page" disabled>›</button></div>
+            </div>
+            <aside class="detail" id="detail" aria-label="Sender details" hidden>
+                <div class="detail-head row"><span class="brand" id="detailBadge" aria-hidden="true"></span>
+                    <div>
+                        <h2 id="detailTitle"></h2>
+                        <p class="muted" id="detailCounts"></p>
+                    </div>
+                </div>
+                <div class="tabs" role="tablist" aria-label="Sender detail"><button class="active" role="tab"
+                        id="messagesTab" aria-controls="detailContent" aria-selected="true"
+                        data-tab="messages">Messages</button><button role="tab" id="addressesTab"
+                        aria-controls="detailContent" aria-selected="false" data-tab="addresses" tabindex="-1">Sender
+                        addresses</button></div>
+                <div id="detailContent" class="tab-content" role="tabpanel" aria-labelledby="messagesTab"></div>
+            </aside>
+        </section>
+        <section class="dock" id="dock" hidden aria-label="Selected messages">
+            <div class="selection row" id="selectionRow">
+                <div><strong id="selectionCount"></strong>
+                    <p class="muted" id="selectionDescription">Selection stays while paging.</p>
+                </div><button class="ghost" id="clear">Clear selection</button>
+                <div class="actions row" role="group" aria-label="Choose cleanup action"><button class="active"
+                        data-action="MARK_READ" aria-pressed="true">Mark as read</button><button data-action="ARCHIVE"
+                        aria-pressed="false">Archive</button><button class="trash" data-action="TRASH"
+                        aria-pressed="false">Move to Trash</button><button id="review" class="primary">Review and
+                        confirm →</button></div>
+            </div>
+            <div id="jobProgress" role="status" aria-live="polite"></div>
+        </section>
+        <noscript>Enable JavaScript to browse indexed messages and inspect selections.</noscript>
+    </main>
+    <dialog id="classification" aria-labelledby="classificationTitle">
+        <div class="row spread">
+            <h2 id="classificationTitle">Classify indexed mail</h2><button data-close="classification"
+                aria-label="Close classification">×</button>
+        </div>
+        <p>Jev suggests a category for each message and improves automatic sender grouping. Personal addresses stay
+            separate. Saved grouping and category corrections take priority.</p>
+        <p>Sender addresses, names, subjects, and category/list/reply hints are sent to Jev through OpenRouter. Bodies,
+            attachments, recipients, and account credentials are never sent. This does not change mail in Gmail.</p>
+        <p>In OpenRouter, keep input/output logging and data sharing off and enable zero data retention. TidyMail
+            requires a zero-retention provider and disables response caching. Usage metadata is still retained; legal
+            screening exceptions can apply.</p>
+        <p>Classification covers indexed received mail, including archived mail, excluding Spam and Trash. Unchanged
+            saved results are reused. New or changed mail can be classified on a later run. Work continues if you close
+            this page.</p>
+        <p id="classificationStatus" role="status" aria-live="polite"></p><progress id="classificationProgress"
+            aria-label="Classification progress" hidden></progress>
+        <div class="row"><button id="classificationStart" class="primary">Start classification</button><button
+                id="classificationCancel" hidden>Cancel remaining classification</button></div>
+        <hr>
+        <h3>Correct selected messages</h3>
+        <p id="categoryCorrectionCount">Select messages to correct their category.</p>
+        <div class="row"><label>Category <select id="categoryCorrection">
+                    <option value="PERSONAL">Personal</option>
+                    <option value="MARKETING">Marketing</option>
+                    <option value="NEWSLETTER">Newsletters</option>
+                    <option value="RECEIPT">Receipts</option>
+                    <option value="SECURITY">Security</option>
+                    <option value="NOTIFICATION">Notifications</option>
+                    <option value="OTHER">Other</option>
+                    <option value="UNCERTAIN">Uncertain</option>
+                    <option value="RESET">Use Jev's category again</option>
+                </select></label><button id="categoryCorrectionApply" disabled>Save category</button></div>
+    </dialog>
+    <dialog id="confirm" aria-labelledby="confirmTitle">
+        <div class="row spread">
+            <h2 id="confirmTitle">Review selected messages</h2><button data-close="confirm"
+                aria-label="Close confirmation">×</button>
+        </div>
+        <p id="confirmScope"></p>
+        <p id="confirmCounts"></p>
+        <p id="confirmCoverage" class="muted"></p>
+        <details open>
+            <summary>Inspect exact targets</summary>
+            <div id="exactTargets"></div>
+            <div class="paging"><button id="targetPrev" aria-label="Previous exact targets">‹</button><span
+                    id="targetRange"></span><button id="targetNext" aria-label="Next exact targets">›</button></div>
+        </details>
+        <p id="actionExplanation"></p>
+        <p>This applies only to these selected messages, not future mail. Cancel stops remaining work; completed changes
+            are not reversed.</p>
+        <p class="muted" id="actionAvailability"></p>
+        <div class="row spread"><button data-close="confirm">Back to selection</button><button id="confirmAction"
+                class="primary" disabled></button></div>
+    </dialog>
+    <dialog id="activity" class="drawer" aria-labelledby="activityTitle">
+        <div class="row spread">
+            <h2 id="activityTitle">Activity</h2><button data-close="activity">Close</button>
+        </div>
+        <p>Cancel stops remaining work. Completed changes are not reversed. Unresolved outcomes have not been confirmed.
+        </p>
+        <div id="activityContent"></div>
+        <p id="historySummary" class="muted"></p><button id="historyMore" hidden>Load older activity</button>
+        <hr>
+        <p><a class="muted-link" href="/activity">View sync details</a></p>
+        <details>
+            <summary>Delete local account data</summary>
+            <p>This removes your locally indexed data and connection credentials for linked accounts. It does not delete
+                Gmail messages.</p>
+            <form th:action="@{/logout/delete-data}" method="post"><label>Type DELETE <input name="confirmation"
+                        pattern="DELETE" required autocomplete="off"></label><button>Delete local data and sign
+                    out</button></form>
+        </details>
+    </dialog>
+    <dialog id="correction" aria-labelledby="correctionTitle">
+        <div class="row spread">
+            <h2 id="correctionTitle">Organize senders</h2><button data-close="correction">Close</button>
+        </div>
+        <p>Grouping organizes your dashboard. It does not select or change mail.</p>
+        <label>Action <select id="correctionKind">
+                <option value="MERGE">Merge groups</option>
+                <option value="SEPARATE">Keep one unit separate</option>
+                <option value="RESET">Reset a correction</option>
+            </select></label>
+        <label id="unitLabel">Address or mailing-list unit <select id="correctionUnit"></select></label>
+        <div id="mergeFields"><label>Find another group <input id="mergeSearch" type="search" maxlength="200"
+                    placeholder="Sender address, list or group"></label><button id="findGroups">Find
+                groups</button><label>Merge with <select id="mergeGroup"></select></label>
+            <div class="row"><button id="mergePrev">Previous</button><span id="mergeRange"></span><button
+                    id="mergeNext">Next</button></div><label>Group label <input id="mergeLabel" maxlength="160"
+                    placeholder="Merged senders"></label>
+        </div>
+        <label id="resetLabel" hidden>Correction to reset <select id="resetCorrection"></select></label>
+        <button id="previewCorrection">Preview grouping change</button>
+        <div id="correctionAffected"></div><button class="primary" id="applyCorrection" disabled>Apply grouping
+            change</button>
+    </dialog>
+</body>
+
+</html>
