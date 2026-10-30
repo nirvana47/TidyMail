@@ -64,7 +64,7 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
         server.setExecutor(java.util.concurrent.Executors.newCachedThreadPool());server.start();
         Path done=Path.of("/tmp/tidymail-phase3-browser-done");Files.deleteIfExists(done);
         System.out.printf("DASHBOARD_BROWSER_FIXTURE http://127.0.0.1:%d/dashboard%n",server.getAddress().getPort());
-        try {long deadline=System.nanoTime()+java.time.Duration.ofMinutes(15).toNanos();while(!Files.exists(done)&&System.nanoTime()<deadline)Thread.sleep(500);}
+        try {long deadline=System.nanoTime()+java.time.Duration.ofMinutes(Long.getLong("dashboard.browser.minutes",30)).toNanos();while(!Files.exists(done)&&System.nanoTime()<deadline)Thread.sleep(500);}
         finally {cleanup.shutdownNow();server.stop(0);((java.util.concurrent.ExecutorService)server.getExecutor()).shutdownNow();}
     }
 }

@@ -91,14 +91,18 @@ class MailboxFreshnessJourneyTest extends PostgresJourneyTest {
         Instant startedAt = Instant.now();
         bootstrap.bootstrap(
             accounts.findById(accountId).orElseThrow(), gmailProvider, "bootstrap-worker");
-        String body = mockMvc.perform(get("/senders")
-                .param("account", Long.toString(accountId))
+        String body = mockMvc.perform(get("/dashboard/api/page")
+                .param("scope", "inbox")
                 .with(authenticatedAs(email)))
             .andExpect(status().isOk())
             .andReturn().getResponse().getContentAsString();
 
         assertThat(Duration.between(startedAt, Instant.now())).isLessThan(Duration.ofSeconds(10));
-        assertThat(body).contains("Batch Sender");
+        var page = new com.fasterxml.jackson.databind.ObjectMapper().readTree(body);
+        assertThat(page.path("summary").path("messages").asInt()).isEqualTo(200);
+        assertThat(page.path("groups").get(0).path("messages").asInt()).isEqualTo(200);
+        assertThat(page.path("groups").get(0).path("label").asText()).isEqualTo("sender@example.test");
+        assertThat(page.path("sync").path("backfill_status").asText()).isEqualTo("RUNNING");
         assertThat(metadata.countByAccountIdIn(List.of(accountId))).isEqualTo(200);
         var state = states.findByAccountId(accountId).orElseThrow();
         assertThat(state.initialBatchCompletedAt()).isNotNull();

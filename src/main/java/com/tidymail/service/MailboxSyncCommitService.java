@@ -143,6 +143,11 @@ public class MailboxSyncCommitService {
         Set<String> uniqueDeletes = new LinkedHashSet<>(unit.deletedProviderMessageIds());
         uniqueDeletes.removeAll(uniqueMessages.keySet());
 
+        Set<String> touched = new LinkedHashSet<>(uniqueMessages.keySet());
+        touched.addAll(uniqueDeletes);
+        if (lane == Lane.RESCAN && unit.sweepCompletedGeneration()) metadata.lockAccountRows(unit.accountId());
+        metadata.lockMessages(unit.accountId(), touched);
+
         int upserted = upsertMessages(
             unit.accountId(), uniqueMessages.values().stream().toList(),
             unit.fullScanGeneration(), unit.completedAt());
@@ -187,6 +192,9 @@ public class MailboxSyncCommitService {
             if (message == null || message.id() == null || message.id().isBlank()) {
                 throw new IllegalArgumentException("Every metadata change needs an identity");
             }
+        }
+        metadata.lockMessages(accountId, messages.stream().map(MailMessage::id).toList());
+        for (MailMessage message : messages) {
             MessageMetadata row = mapper.apply(accountId, message, null, completedAt);
             row.setFullScanGeneration(generation);
             upserted += metadata.upsertMetadata(row);

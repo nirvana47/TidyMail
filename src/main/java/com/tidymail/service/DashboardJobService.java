@@ -176,6 +176,7 @@ public class DashboardJobService {
                 SELECT lower(email) FROM user_accounts WHERE id=:account
                 UNION SELECT lower(address) FROM dashboard_verified_aliases WHERE account_id=:account
                 """,p,String.class));
+            lockMetadata(claim.account(),claim.targets());
             List<Target> sending=new ArrayList<>();
             for(var target:claim.targets()) {
                 var observed=observations.get(target.providerId());
@@ -210,6 +211,7 @@ public class DashboardJobService {
     public void complete(Claim claim,UUID batch,List<Target> targets,Map<String,MailMessage> observations,RuntimeException failure,RuntimeException readFailure) {
         transaction(()->{
             var row=lock(claim.account(),claim.job());if(!owns(row,claim))return null;
+            lockMetadata(claim.account(),targets);
             for(var target:targets) {
                 var observed=observations.get(target.providerId());
                 if(observed!=null&&observed.labelIds()!=null&&desired(claim.action(),observed)) {
@@ -273,6 +275,11 @@ public class DashboardJobService {
     private void outcome(Claim claim,Target target,String state,String reason) {
         var p=params(claim.account(),claim.job()).addValue("ordinal",target.ordinal()).addValue("state",state).addValue("reason",reason);
         jdbc.update("UPDATE cleanup_job_targets SET state=:state,reason=:reason,observed_at=now() WHERE job_id=:job AND ordinal=:ordinal AND state IN ('QUEUED','DISPATCH_INTENT','AWAITING_VERIFICATION')",p);
+    }
+    private void lockMetadata(long account,List<Target> targets) {
+        if(targets.isEmpty())return;
+        jdbc.queryForList("SELECT id FROM message_metadata WHERE account_id=:account AND provider_message_id IN (:ids) ORDER BY provider_message_id FOR UPDATE",
+            new MapSqlParameterSource("account",account).addValue("ids",targets.stream().map(Target::providerId).toList()),Long.class);
     }
     private void reconcile(long account,MailMessage observed,String action) {
         // Fence an older read against concurrent sync using Gmail's message history revision.

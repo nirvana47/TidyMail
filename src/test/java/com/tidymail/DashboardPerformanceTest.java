@@ -2,6 +2,10 @@ package com.tidymail;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import com.tidymail.dto.DashboardFilter;
@@ -17,9 +21,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 class DashboardPerformanceTest extends PostgresJourneyTest {
     @Autowired DashboardService dashboard;
     @Autowired DashboardPreviewService previews;
+    @Autowired com.tidymail.service.DashboardJobService jobs;
+    @Autowired com.tidymail.job.DashboardCleanupWorker cleanup;
+    @Autowired com.zaxxer.hikari.HikariDataSource dataSource;
     @Test void realDashboardPathsMeetPhaseTwoBudgetsDuringMetadataWrites() throws Exception {
+        int priorPool=dataSource.getMaximumPoolSize();
+        dataSource.setMaximumPoolSize(20); // Match the application's default, rather than the two-connection shared harness.
+        try {
         String owner="dashboard-perf@example.test";long account=userAccounts.createAccount(owner);
-        for(int size:new int[]{10000,50000}) {
+        for(int size:new int[]{10000,Integer.getInteger("dashboard.performance.large-size",50000)}) {
             jdbc.update("DELETE FROM message_metadata WHERE account_id=?",account);
             jdbc.update("""
               INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,from_display_name,subject_header,
@@ -38,9 +48,26 @@ class DashboardPerformanceTest extends PostgresJourneyTest {
             assertThat(dashboard.page(account,all).summary().get("messages")).isEqualTo((long)size);
             for(boolean concurrent:new boolean[]{false,true}) {
                 var stop=new AtomicBoolean();var writes=new AtomicInteger();
-                try(var executor=Executors.newSingleThreadExecutor()) {
-                    var worker=executor.submit(()->{while(concurrent&&!stop.get()){jdbc.update("UPDATE message_metadata SET last_synced_at=clock_timestamp() WHERE account_id=? AND provider_message_id IN (SELECT provider_message_id FROM message_metadata WHERE account_id=? ORDER BY id LIMIT 200)",account,account);writes.incrementAndGet();}});
+                var marked=ConcurrentHashMap.<String>newKeySet();
+                var dispatched=new CountDownLatch(1);
+                when(gmailProvider.getCleanupMetadata(any(),anyList())).thenAnswer(call->{
+                    List<String> ids=call.getArgument(1);
+                    return ids.stream().map(id->{
+                        int index=Integer.parseInt(id.substring("synthetic-".length()));
+                        var labels=new HashSet<String>();if(index%4!=0)labels.add("INBOX");
+                        if(index%2==0&&!marked.contains(id))labels.add("UNREAD");
+                        return new com.tidymail.mail.MailMessage(id,"synthetic-thread","google",java.time.Instant.now(),Map.of(),labels);
+                    }).toList();
+                });
+                doAnswer(call->{dispatched.countDown();Thread.sleep(1000);marked.addAll(call.getArgument(1));return null;})
+                    .when(gmailProvider).markReadOnce(any(),anyList());
+                UUID job=concurrent?jobs.confirm(account,previews.create(account,new DashboardPreviewService.Request(all,
+                    jdbc.queryForList("SELECT dashboard_message_id FROM message_metadata WHERE account_id=? ORDER BY id LIMIT 5000",UUID.class,account),"MARK_READ",0)).id()).id():null;
+                try(var executor=Executors.newFixedThreadPool(2)) {
+                    var worker=executor.submit(()->{while(concurrent&&!stop.get()){jdbc.update("WITH locked AS MATERIALIZED (SELECT id FROM message_metadata WHERE account_id=? ORDER BY provider_message_id LIMIT 200 FOR UPDATE) UPDATE message_metadata m SET last_synced_at=clock_timestamp() FROM locked WHERE m.id=locked.id",account);writes.incrementAndGet();try{Thread.sleep(100);}catch(InterruptedException error){Thread.currentThread().interrupt();throw new RuntimeException(error);}}});
+                    var cleaner=executor.submit(()->{while(concurrent&&!stop.get()){jdbc.update("UPDATE cleanup_jobs SET next_attempt_at=now() WHERE public_id=?",job);cleanup.runOnce();}});
                     try {
+                        if(concurrent)assertThat(dispatched.await(10,TimeUnit.SECONDS)).isTrue();
                         double pageBudget=size==10000?500:2000, detailBudget=size==10000?250:500;
                         measure(size,concurrent,"summary_page",pageBudget,()->dashboard.page(account,all));
                         measure(size,concurrent,"search_date",pageBudget,()->dashboard.page(account,filtered));
@@ -53,13 +80,16 @@ class DashboardPerformanceTest extends PostgresJourneyTest {
                             assertThat(preview.selected()).isEqualTo(count);
                             System.out.printf(Locale.ROOT,"DASHBOARD_PERFORMANCE rows=%d concurrent=%s preview_ids=%d elapsed_ms=%.2f%n",size,concurrent,count,(System.nanoTime()-start)/1e6);
                         }
-                    } finally {stop.set(true);worker.get(30,TimeUnit.SECONDS);}
+                        if(concurrent)assertThat(jobs.get(account,job).remaining()).as("Cleanup still active during measurements").isPositive();
+                    } finally {stop.set(true);if(concurrent)jobs.cancel(account,job);worker.get(30,TimeUnit.SECONDS);cleaner.get(30,TimeUnit.SECONDS);}
                     if(concurrent)assertThat(writes.get()).isPositive();
+                    if(concurrent){var result=jobs.get(account,job);assertThat(result.changed()).isPositive();assertThat(result.remaining()+result.failed()+result.unresolved()).isZero();assertThat(result.changed()+result.skipped()+result.cancelled()).isEqualTo(5000);System.out.printf("DASHBOARD_PERFORMANCE rows=%d cleanup_changed=%d cleanup_skipped=%d cleanup_cancelled=%d%n",size,result.changed(),result.skipped(),result.cancelled());}
                     System.out.printf("DASHBOARD_PERFORMANCE rows=%d concurrent=%s write_batches=%d%n",size,concurrent,writes.get());
                 }
             }
         }
-        verifyNoInteractions(gmailProvider,outlookProvider);
+        verifyNoInteractions(outlookProvider);
+        } finally {dataSource.setMaximumPoolSize(priorPool);}
     }
     static void measure(int size,boolean concurrent,String operation,double budget,Runnable work) {
         work.run();double[] values=new double[10];

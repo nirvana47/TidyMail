@@ -31,16 +31,21 @@ public class DashboardRepository {
        AND (m.label_evidence_known OR cardinality(m.labels)>0)
        AND ('INBOX'=ANY(m.labels) OR NOT('SENT'=ANY(m.labels)) OR
        """+DELIVERY+")";
+    // Read pending state once. A scalar initplan keeps its map out of the row joins
+    // and avoids a correlated target query for every matching message.
     public static final String FILTERED = """
-       WITH filtered AS (
+       WITH pending AS MATERIALIZED (
+       SELECT COALESCE(jsonb_object_agg(message_id,state),'{}'::jsonb) AS states FROM (
+         SELECT message_id,CASE min(CASE state WHEN 'AWAITING_VERIFICATION' THEN 0 WHEN 'DISPATCH_INTENT' THEN 1 ELSE 2 END)
+           WHEN 0 THEN 'AWAITING_VERIFICATION' WHEN 1 THEN 'DISPATCH_INTENT' ELSE 'QUEUED' END AS state
+         FROM cleanup_job_targets WHERE account_id=:account
+           AND state IN ('QUEUED','DISPATCH_INTENT','AWAITING_VERIFICATION') GROUP BY message_id
+       ) outcomes
+       ), filtered AS (
        SELECT m.*,g.public_id AS group_public_id,g.group_key,g.label AS group_label,
          u.public_id AS unit_public_id,u.kind AS unit_kind,u.canonical_key AS unit_key,u.evidence_reason,
          COALESCE(m.dashboard_from_address,m.from_address,'Unknown sender') AS address,
-         (SELECT t.state FROM cleanup_job_targets t WHERE t.account_id=m.account_id
-           AND t.message_id=m.dashboard_message_id
-           AND t.state IN ('QUEUED','DISPATCH_INTENT','AWAITING_VERIFICATION')
-           ORDER BY CASE t.state WHEN 'AWAITING_VERIFICATION' THEN 0 WHEN 'DISPATCH_INTENT' THEN 1 ELSE 2 END
-           LIMIT 1) AS pending_state
+         (SELECT states FROM pending)->>m.dashboard_message_id::text AS pending_state
        FROM message_metadata m JOIN user_accounts a ON a.id=m.account_id
        JOIN message_sender_units link ON link.account_id=m.account_id AND link.metadata_id=m.id
        JOIN sender_units u ON u.account_id=link.account_id AND u.id=link.unit_id

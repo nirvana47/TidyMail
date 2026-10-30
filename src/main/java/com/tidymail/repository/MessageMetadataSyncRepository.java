@@ -22,6 +22,19 @@ public class MessageMetadataSyncRepository {
         this.jdbc = jdbc;
     }
 
+    /** Match cleanup's lock order before any bounded sync unit updates its rows. */
+    public void lockMessages(long accountId, java.util.Collection<String> providerIds) {
+        if (providerIds.isEmpty()) return;
+        jdbc.queryForList("SELECT id FROM message_metadata WHERE account_id=:account AND provider_message_id IN (:ids) ORDER BY provider_message_id FOR UPDATE",
+            new MapSqlParameterSource("account", accountId).addValue("ids", providerIds), Long.class);
+    }
+
+    /** A final rescan sweep must take its complete lock set before its bounded upserts. */
+    public void lockAccountRows(long accountId) {
+        jdbc.query("SELECT id FROM message_metadata WHERE account_id=:account ORDER BY provider_message_id FOR UPDATE",
+            new MapSqlParameterSource("account", accountId), (org.springframework.jdbc.core.RowCallbackHandler) row -> {});
+    }
+
     public int upsertMetadata(MessageMetadata row) {
         requireOwnedRow(row);
         return jdbc.update("""
@@ -136,6 +149,12 @@ public class MessageMetadataSyncRepository {
         if (accountId <= 0 || completedGeneration == null || rescanStartedAt == null) {
             throw new IllegalArgumentException("Owned rescan identity is required");
         }
+        jdbc.queryForList("""
+            SELECT id FROM message_metadata WHERE account_id=:account_id
+              AND full_scan_generation IS DISTINCT FROM :generation AND last_synced_at<:rescan_started_at
+            ORDER BY provider_message_id FOR UPDATE
+            """, new MapSqlParameterSource("account_id", accountId).addValue("generation", completedGeneration)
+                .addValue("rescan_started_at", Timestamp.from(rescanStartedAt)), Long.class);
         return jdbc.update("""
             DELETE FROM message_metadata
              WHERE account_id = :account_id

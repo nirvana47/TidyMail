@@ -104,9 +104,8 @@ flyway.locations
 *.p12
 *.pfx
 *.jks
-docs/evidence/
-docs/screenshots/
-docs/wireframes/
+
+### Planning & Demo Folders ###
 docs/
 tidymail-ux-rehaul/
 tidymail-ux-rehaul-draft/

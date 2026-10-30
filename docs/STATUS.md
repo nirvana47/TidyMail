@@ -1,9 +1,32 @@
 # Project status
 
+## Dashboard Phase 7 — 2026-10-29
+
+Complete within the recorded desktop/upgrade/live-action gates. Fixed a blank
+fresh dashboard, stale background-sync display, a
+filter/paging selection race, message-page contraction, and concurrent metadata
+lock/pending-query problems. Reused Phase 5 resilience coverage and checked whole
+desktop cleanup journeys. The combined browsing/metadata-write/cleanup workload
+passed at 10k and 80k messages. The retained V18→V19 upgrade preserved all 80,018
+indexed messages and compared fingerprints after a verified encrypted-backup
+restore and copy rehearsal. The updated app is running locally.
+
+See the [Phase 7 acceptance matrix](PHASE-7-UPGRADE-AND-ACCEPTANCE.md). The final
+regression passed with zero failures/errors/skips. The user confirmed an
+81-target live Archive: 81 changed,
+zero failed/unresolved/remaining; exact target metadata excludes Inbox and remains
+eligible for All received following Gmail post-dispatch observations. The user
+then confirmed Mark as Read on 37 targets: nine changed, 28 already-read skips,
+zero failed/unresolved/remaining. The subsequent user-selected 92-target Trash
+job completed in two batches: 92 changed, zero other outcomes, every target now
+excluded from both dashboard scopes. Live cancellation was not requested; an
+independent Gmail-view check was not obtained. No agent-selected mutation or
+external deployment occurred.
+
 ## Real Gmail core check — 2026-10-29
 
-The current app is now running against the retained Gmail connection and V18
-database. Eight messages explicitly selected by the user were moved to Trash,
+This earlier check ran against the retained Gmail connection and V18 database.
+Eight messages explicitly selected by the user were moved to Trash,
 confirmed in the actual Gmail Trash view, and excluded from both dashboard scopes.
 A real sync-restart defect was fixed: pre-existing queued sync work now dispatches
 after restart. The metadata refresh reduced unrefreshed identities from 17,529

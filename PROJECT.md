@@ -18,9 +18,17 @@ read-only verification of uncertain results. Phase 5 extends that flow to
 Archive/Trash with bounded read retries, reconnect guidance and shared provider
 capacity; see the [Phase 5 report](docs/PHASE-5-ACTIONS-AND-RESILIENCE.md).
 Phase 6 desktop simplification is complete; see the
-[Phase 6 report](docs/PHASE-6-SIMPLIFIED-EXPERIENCE.md). Phase 7 remains next.
-V16–V19 are additive and have passed isolated fresh/retained fixtures. V19 has
-not been applied to the retained development database in Phase 6. See the
+[Phase 6 report](docs/PHASE-6-SIMPLIFIED-EXPERIENCE.md). Phase 7 has verified the
+retained V18→V19 upgrade after an encrypted backup/restore rehearsal, preserving
+all 80,018 indexed messages and the checked credentials, cursors and history.
+Startup, refresh, selection-race, paging and concurrent-work fixes are running
+locally. Phase 7 acceptance is complete: user-confirmed live Archive changed 81,
+Mark as Read changed nine and skipped 28 already-read targets, and a subsequent
+92-target Trash job changed all 92 in two batches, with no failures/unresolved
+outcomes. See the [Phase 7 acceptance matrix](docs/PHASE-7-UPGRADE-AND-ACCEPTANCE.md)
+for evidence boundaries; live cancellation and independent Gmail-view inspection
+were not established. Deployment remains a separate decision.
+V16–V19 are additive and have passed isolated fresh/retained fixtures. See the
 [Phase 3 report](docs/PHASE-3-INDEXED-DASHBOARD.md) and
 [Phase 4 report](docs/PHASE-4-BACKGROUND-MARK-READ.md). The inventory below describes
 the retained legacy surfaces.

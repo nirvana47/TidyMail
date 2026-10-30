@@ -1,6 +1,6 @@
 # TidyMail
 
-Self-hosted Gmail cleanup with sender grouping, unread triage, unsubscribe inspection, queued approval, analytics and eligible undo. Java 21 + Spring Boot + PostgreSQL; no LLM integration.
+Self-hosted Gmail cleanup: browse senders, review exact selections, and run Mark as Read, Archive or Move to Trash in the background. Java 21 + Spring Boot + PostgreSQL; no LLM integration.
 
 Start with [local setup](DEPLOY.md). Read [PROJECT.md](PROJECT.md) for product and privacy behavior.
 
@@ -16,6 +16,10 @@ see the [Phase 5 report](docs/PHASE-5-ACTIONS-AND-RESILIENCE.md) for verificatio
 Phase 6 finishes Activity, pending indicators and desktop focus, and disables legacy
 workflows by default; see the [Phase 6 report](docs/PHASE-6-SIMPLIFIED-EXPERIENCE.md).
 Legacy code and records are retained behind the MVP-mode restrictions.
+Phase 7 fixes fresh-page loading, background refresh and concurrent cleanup/browsing,
+and has upgraded the retained index to V19 with a verified backup. See the
+[acceptance matrix](docs/PHASE-7-UPGRADE-AND-ACCEPTANCE.md) for the completed desktop,
+upgrade, regression and user-selected live-action checks, with their limits.
 
 | Reference | Contents |
 |---|---|

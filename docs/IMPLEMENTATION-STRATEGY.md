@@ -204,9 +204,15 @@ browser evidence; see the [Phase 4 report](PHASE-4-BACKGROUND-MARK-READ.md).
 Phase 5 Archive/Trash and resilience are complete for synthetic-provider and
 desktop acceptance; see the [Phase 5 report](PHASE-5-ACTIONS-AND-RESILIENCE.md).
 Phase 6 desktop simplification is complete; see the
-[Phase 6 report](PHASE-6-SIMPLIFIED-EXPERIENCE.md). Phase 7 remains not started.
-The two existing display/documentation assertions
-and later release gates remain open.
+[Phase 6 report](PHASE-6-SIMPLIFIED-EXPERIENCE.md). Phase 7 is complete within the
+recorded desktop, upgrade and live-action scope; see the
+[acceptance matrix](PHASE-7-UPGRADE-AND-ACCEPTANCE.md). The retained V18→V19 upgrade,
+backup restoration and 80k-message concurrent workload have been verified. The old
+display/documentation assertions were aligned with current contracts; the final
+regression is clean. Small user-selected live Archive and Mark as Read passed,
+followed by the user's larger 92-target Trash job. The matrix records limits:
+live cancellation was not requested and independent Gmail-view inspection was
+not obtained. Deployment/publication remains a separate decision.
 
 ## Review refinements — 2026-10-28
 

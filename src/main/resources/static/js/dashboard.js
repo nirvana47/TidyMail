@@ -12,7 +12,7 @@
     if(!container.contains(current))return ()=>{};
     const key=current.dataset.focusKey,label=current.getAttribute('aria-label');
     if(!key&&!label)return ()=>{};
-    return ()=>{const next=[...container.querySelectorAll('button,input,a')].find(e=>key?e.dataset.focusKey===key:label&&e.getAttribute('aria-label')===label);(next&&!next.disabled?next:$('senderTable')).focus({preventScroll:true});};
+    return ()=>{const next=[...container.querySelectorAll('button,input,a')].find(e=>key?e.dataset.focusKey===key:label&&e.getAttribute('aria-label')===label),other=key==='message-next'?container.querySelector('[data-focus-key=message-prev]'):key==='message-prev'?container.querySelector('[data-focus-key=message-next]'):null;(next&&!next.disabled?next:other&&!other.disabled?other:$('senderTable')).focus({preventScroll:true});};
   }
   function progressMeter(job) {
     const meter=node('progress');meter.max=job.total;meter.value=job.changed+job.failed+job.skipped+job.cancelled;
@@ -59,7 +59,7 @@
     confirming=true;$('confirmAction').disabled=true;const preview=state.preview;
     try{const job=await api('jobs',{preview:preview.id});state.preview=null;selected.clear();$('confirm').close();renderSelectionControls();notice(actionName(preview.action)+' saved. You can close this page; work continues.');await pollJobs();if(!jobs.some(j=>j.id===job.id)){jobs.unshift(job);renderJobs();}}catch(error){notice(error.message);}finally{confirming=false;$('confirmAction').disabled=!state.preview||!state.preview.effective;}
   }
-  let filterEpoch=0, listRequest=0, detailRequest=0, selectionBusy=0, mergePage=0, correctionDraft=null;
+  let filterEpoch=0, listRequest=0, listLoading=false, detailRequest=0, selectionBusy=0, mergePage=0, correctionDraft=null;
   const fmt = number => Number(number).toLocaleString();
   function node(tag,text,className) { const e=document.createElement(tag); if(text!==undefined)e.textContent=text; if(className)e.className=className; return e; }
   function notice(text) {
@@ -91,7 +91,7 @@
   const query = (value=filter()) => new URLSearchParams(Object.entries(value)).toString();
   function checkbox(label,count,match,onChange) {
     const e=node('input');e.type='checkbox';e.setAttribute('aria-label',label);e.dataset.selection='true';
-    e.checked=count>0 && match>=count;e.indeterminate=match>0 && match<count;e.disabled=selectionBusy>0;
+    e.checked=count>0 && match>=count;e.indeterminate=match>0 && match<count;e.disabled=selectionBusy>0||$('senderTable').hasAttribute('aria-busy');
     e.addEventListener('change',()=>onChange(e.checked));return e;
   }
   const selectedCount = (group,address) => [...selected.values()].filter(v=>v.groupId===group && (address===undefined || v.address===address)).length;
@@ -100,11 +100,11 @@
     const groupCount=new Set([...selected.values()].map(v=>v.groupId)).size;
     $('selectionDescription').textContent=`${fmt(groupCount)} sender ${groupCount===1?'group':'groups'} · includes other pages`;
     const groups=state.data?.groups||[], total=groups.reduce((n,g)=>n+g.messages,0), chosen=groups.reduce((n,g)=>n+selectedCount(g.id),0);
-    $('selectPage').checked=total>0 && chosen>=total;$('selectPage').indeterminate=chosen>0 && chosen<total;$('selectPage').disabled=!total||selectionBusy>0;
+    $('selectPage').checked=total>0 && chosen>=total;$('selectPage').indeterminate=chosen>0 && chosen<total;$('selectPage').disabled=!total||selectionBusy>0||$('senderTable').hasAttribute('aria-busy');
     $('review').disabled=!selected.size||selectionBusy>0;
   }
   async function selectGroups(groups,checked,address) {
-    if(selectionBusy)return;const epoch=filterEpoch;selectionBusy++;renderSelectionControls();
+    if(selectionBusy||$('senderTable').hasAttribute('aria-busy'))return;const epoch=filterEpoch;selectionBusy++;renderSelectionControls();
     try {
       if(checked) {
         const rows=await api('selection',{filter:filter(),groups,address:address??null,revision:state.revision});
@@ -127,17 +127,22 @@
     if($('correction').open)$('correction').close();
     clearSelection('Filters changed. Draft selection was cleared.');loadPage();
   }
-  async function loadPage(pagerFocus) {
-    const request=++listRequest, epoch=filterEpoch;$('senderTable').setAttribute('aria-busy','true');
+  async function loadPage(pagerFocus,background=false) {
+    if(background&&(document.hidden||document.querySelector('dialog[open]')||selectionBusy||listLoading))return;
+    const restoreFocus=rememberFocus(document.querySelector('.workspace'));
+    const request=++listRequest, epoch=filterEpoch;listLoading=true;
+    if(!background){$('senderTable').setAttribute('aria-busy','true');renderSelectionControls();}
     try {
       const data=await api('page?'+query());if(request!==listRequest||epoch!==filterEpoch)return;
+      if(background&&(document.querySelector('dialog[open]')||selectionBusy))return;
+      if(background&&JSON.stringify(data)===JSON.stringify(state.data))return;
       if(state.data&&state.revision!==data.revision) {selected.clear();expanded.clear();invalidatePreview();notice('Grouping changed. Draft selection was cleared.');}
       const lastPage=Math.max(0,Math.ceil(Number(data.summary.groups)/10)-1);
       if(state.page>lastPage){state.page=lastPage;return loadPage(pagerFocus);}
       const updates=await Promise.all(data.groups.filter(g=>expanded.has(g.id)).map(async g=>{
         try{return [g.id,(await api(`groups/${g.id}?${query()}`)).addresses];}catch(_){return [g.id,null];}
       }));
-      if(request!==listRequest||epoch!==filterEpoch)return;
+      if(request!==listRequest||epoch!==filterEpoch||(background&&(document.querySelector('dialog[open]')||selectionBusy)))return;
       for(const [id,addresses] of updates){if(addresses)expanded.set(id,addresses);else expanded.delete(id);}
       state.data=data;state.revision=data.revision;
       $('accountEmail').textContent=data.sync.email;
@@ -163,7 +168,7 @@
         if(epoch===filterEpoch)loadDetails();
       }
     } catch(error) {if(request===listRequest){notice(error.message);$('empty').hidden=false;$('empty').textContent='Could not load indexed mail. Change filters or reload to try again.';}}
-    finally{if(request===listRequest)$('senderTable').removeAttribute('aria-busy');}
+    finally{if(request===listRequest){listLoading=false;if(!background){$('senderTable').removeAttribute('aria-busy');renderSelectionControls();if(document.activeElement===document.body||document.activeElement===$('senderTable'))restoreFocus();}}}
   }
   function renderGroups() {
     const restore=rememberFocus($('senders'));
@@ -189,7 +194,7 @@
   function focusGroup(g) {state.focused=g;state.messagePage=0;state.details=null;$('detail').hidden=false;renderGroups();renderDetail();loadDetails();}
   async function loadDetails() {
     if(!state.focused)return;const request=++detailRequest,group=state.focused.id,epoch=filterEpoch;
-    try {const details=await api(`groups/${group}?${query()}&messagePage=${state.messagePage}`);if(request!==detailRequest||epoch!==filterEpoch||group!==state.focused?.id)return;if(details.revision!==state.revision){filtersChanged();return;}state.details=details;renderDetail();}
+    try {const details=await api(`groups/${group}?${query()}&messagePage=${state.messagePage}`);if(request!==detailRequest||epoch!==filterEpoch||group!==state.focused?.id)return;if(details.revision!==state.revision){filtersChanged();return;}const lastPage=Math.max(0,Math.ceil(details.total/10)-1);if(state.messagePage>lastPage){state.messagePage=lastPage;return loadDetails();}state.details=details;renderDetail();}
     catch(error){if(request===detailRequest)notice(error.message);}
   }
   function renderDetail() {
@@ -272,5 +277,7 @@
   document.addEventListener('focusin',keepFocusVisible);
   pollJobs();setInterval(pollJobs,2000);
   if(location.hash==='#activity')$('activityOpen').click();
-  api('settings').then(settings=>{if(![...$('zone').options].some(o=>o.value===settings.zone)){const o=node('option',settings.zone);o.value=settings.zone;$('zone').append(o);}$('zone').value=settings.zone;return loadPage(pagerFocus);}).catch(error=>notice(error.message));
+  api('settings').then(settings=>{if(![...$('zone').options].some(o=>o.value===settings.zone)){const o=node('option',settings.zone);o.value=settings.zone;$('zone').append(o);}$('zone').value=settings.zone;return loadPage();}).catch(error=>notice(error.message));
+  setInterval(()=>loadPage(undefined,true),15000);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadPage(undefined,true);});
 })();

@@ -508,7 +508,7 @@ class Phase8DeploymentTest {
 
             String contents = Files.readString(f.toPath());
             assertThat(contents).contains("docker info");
-            assertThat(contents).contains("cloudflared tunnel --url http://localhost:8080");
+            assertThat(contents).contains("persistent Java host with PostgreSQL");
             assertThat(contents).contains("SPRING_DATASOURCE");
         }
 

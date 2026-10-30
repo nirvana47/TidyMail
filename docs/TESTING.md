@@ -58,9 +58,13 @@ requirements.
 
 Use a controlled mailbox and redacted evidence. Establish recent-page usefulness while older mail indexes, then observe new mail and label/read changes arriving without waiting for backfill. Compare unique Inbox versus All Mail unread counts, message-size estimates and attachment presence with Gmail. Verify managed refresh persists and reconnect errors retain indexed data.
 
-For cleanup, confirm a known exact selection, approve it, compare the provider outcome and Review ledger, then undo an eligible action within its window. Check protection/conflicts and unsubscribe acceptance versus confirmation independently. Verify logout retains data and confirmed deletion removes every owned account's local data.
-
-An authenticated browser pass should cover the six rail pages, paging/filter state, fragment updates, desktop/narrow layouts and keyboard focus. Existing MockMvc/template assertions do not establish absence of overflow in a live browser. Keep live evidence free of real addresses, subject text, provider IDs and OAuth tokens.
+For the desktop MVP, verify selection → exact preview → confirmation → durable
+progress → reconciled dashboard and Activity, including reload and cancellation.
+Use Inbox and All received mail, both pagers, rapid filter changes, background
+indexing, and keyboard focus. Mark as Read/Archive need small user-selected live
+scopes before larger user-confirmed Archive/Trash work. There is no MVP Undo,
+Review rail or unsubscribe acceptance requirement. Keep live evidence free of
+real addresses, subject text, provider IDs and OAuth tokens.
 
 Historical results and the outstanding provider gate are summarized in [Status](STATUS.md). No fresh test run was performed for this documentation-only change.
 
@@ -114,7 +118,8 @@ to synthetic fixtures; production IDs remain random UUIDs.
 For manual browser acceptance, run `mvn -o -Dtest=DashboardBrowserFixture test`.
 It prints a temporary loopback URL, serves the actual Thymeleaf/MockMvc routes
 with a synthetic authenticated account/session and mocked providers, and stops
-after 15 minutes or when `/tmp/tidymail-phase3-browser-done` exists. Startup removes
+after 30 minutes (override `-Ddashboard.browser.minutes=N`) or when
+`/tmp/tidymail-phase3-browser-done` exists. Startup removes
 an earlier completion marker. This explicitly selected harness is excluded from
 the normal `*Test` suite. It does not log in to or mutate a real mailbox.
 See the [Phase 3 report](PHASE-3-INDEXED-DASHBOARD.md) for evidence and limitations.
@@ -165,3 +170,20 @@ DOCKER_HOST=unix:///Users/srt/.colima/default/docker.sock \
 TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock \
 mvn -o -Dtest='DashboardSimplificationTest,DashboardMigrationTest,DashboardJourneyTest,DashboardJobJourneyTest,DashboardResilienceTest,LogoutSemanticsTest,SecurityConfigIntegrationTest,Phase12UndoCompensationTest,Phase12ExecutionServiceTest,Phase11UnsubscribeExecutionTest,MailboxActivityJourneyTest' test
 ```
+
+## Phase 7 product acceptance
+
+See the [acceptance matrix](PHASE-7-UPGRADE-AND-ACCEPTANCE.md) for real desktop
+journeys, verified backup/restoration and retained V18→V19 upgrade, clean final
+regression, and user-selected live Archive/Mark as Read/Trash outcomes. Reuse the
+Phase 5 failure/recovery journeys. Prefer complete selection-to-result checks
+over new tests that merely mirror individual implementation details.
+
+`DashboardPerformanceTest` now measures browsing with both metadata writes and an
+active 5,000-target durable cleanup job. It temporarily uses the application's
+20-connection default, then restores the shared harness's two-connection limit.
+Default datasets remain 10k/50k; `-Ddashboard.performance.large-size=80000` repeats
+at the retained-index scale used in Phase 7. The writer commits 200-row batches
+with 100 ms gaps; provider calls are simulated and paced to keep cleanup active.
+These timings do not establish live Gmail throughput. No additional small test
+cases were added for Phase 7.
