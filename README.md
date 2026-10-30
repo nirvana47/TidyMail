@@ -2,7 +2,7 @@
 
 Self-hosted Gmail cleanup: browse senders, review exact selections, and run Mark as Read, Archive or Move to Trash in the background. Java 21 + Spring Boot + PostgreSQL, with optional metadata-only Jev classification through OpenRouter.
 
-Optional [Jev classification](docs/JEV-CLASSIFICATION.md) adds message categories and service-aware grouping using `OPENROUTER_API_KEY` in `.env`. It never performs mailbox actions automatically.
+Optional [Jev classification](docs/JEV-CLASSIFICATION.md) adds message categories and service-aware grouping using `OPENROUTER_API_KEY` in `.env`. Once configured, it automatically classifies incoming metadata by default (with an off switch), reuses saved results, and pauses paid work at each recurring $1 reported-spend checkpoint. It never performs mailbox actions automatically.
 
 Start with [local setup](DEPLOY.md). Read [PROJECT.md](PROJECT.md) for product and privacy behavior.
 

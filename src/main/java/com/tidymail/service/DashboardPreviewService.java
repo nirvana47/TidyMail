@@ -21,7 +21,9 @@ public class DashboardPreviewService {
     public DashboardPreviewService(DashboardRepository repository,ActionScopeHasher hasher,ObjectMapper json) {
         this.repository=repository;this.hasher=hasher;this.json=json;
     }
-    public record Request(DashboardFilter filter,List<UUID> ids,String action,long revision) {}
+    public record Request(DashboardFilter filter,List<UUID> ids,String action,long revision,Long classificationRevision) {
+        public Request(DashboardFilter filter,List<UUID> ids,String action,long revision){this(filter,ids,action,revision,null);}
+    }
     public record Preview(UUID id,String action,int selected,int effective,int skipped,int protectedCount,DashboardFilter filter,Map<String,Object> coverage,Instant expiresAt) {}
     public record Targets(List<Map<String,Object>> rows,long total,int page) {}
 
@@ -32,6 +34,7 @@ public class DashboardPreviewService {
         var jdbc=repository.jdbc();
         jdbc.queryForObject("SELECT id FROM user_accounts WHERE id=:account FOR UPDATE",Map.of("account",account),Long.class);
         if(request.revision()!=repository.revision(account)) throw conflict("Grouping changed. Create a new preview.");
+        if(!request.filter().category().isEmpty() && request.classificationRevision()!=null && request.classificationRevision()!=repository.classificationRevision(account))throw conflict("Categories changed. Create a new preview.");
         var ids=request.ids().stream().distinct().toList();
         var p=repository.parameters(account,request.filter()).addValue("ids",ids);
         var targets=jdbc.queryForList(DashboardRepository.FILTERED+"""

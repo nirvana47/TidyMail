@@ -28,7 +28,7 @@ class DashboardClassificationTest extends PostgresJourneyTest {
     @Autowired DashboardPreviewService previews;
     @Autowired DashboardJobService jobs;
     long account;
-    @BeforeEach void setup(){reset(classifier);when(classifier.configured()).thenReturn(true);account=userAccounts.createAccount(OWNER);
+    @BeforeEach void setup(){reset(classifier);when(classifier.configured()).thenReturn(true);account=userAccounts.createAccount(OWNER);classification.automatic(account,false);
         when(classifier.classify(anyList())).thenAnswer(call->{assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();List<Evidence> items=call.getArgument(0);return result(items);});}
     Result result(List<Evidence> items){return new Result(items.stream().map(e->new Decision(e.subject().contains("offer")?"MARKETING":e.address().contains("amazon")?"RECEIPT":"PERSONAL",
         e.address().contains("amazon")||e.address().contains("chase")||e.address().endsWith("@google.com")||e.address().contains("voice.google.com")?"AUTOMATED":"PERSON",
@@ -47,7 +47,7 @@ class DashboardClassificationTest extends PostgresJourneyTest {
         mail("shivani.tewari@gene.com","Shivani Tewari","Dinner tonight?");mail("shivani.tewari2016@gmail.com","Shivani Tewari","Our plans");mail("shivani.tewari20166@gmail.com","Shivani Tewari","A different address");
         UUID receipt=mail("orders@amazon.com","Amazon","Your receipt");UUID offer=mail("orders@amazon.com","Amazon","Special offer");finish();
         var page=dashboard.page(account,filter(""));assertThat(page.summary()).containsEntry("groups",4L).containsEntry("messages",5L);
-        assertThat(page.groups()).extracting(DashboardRepository.Group::label).contains("shivani.tewari@gene.com","shivani.tewari2016@gmail.com","shivani.tewari20166@gmail.com","amazon.com");
+        assertThat(page.groups()).extracting(DashboardRepository.Group::label).contains("Shivani Tewari","amazon.com");
         assertThat(dashboard.page(account,filter("PERSONAL")).summary().get("messages")).isEqualTo(3L);
         var marketing=dashboard.page(account,filter("MARKETING"));assertThat(marketing.summary().get("messages")).isEqualTo(1L);
         var selected=dashboard.selection(account,filter("MARKETING"),List.of(marketing.groups().getFirst().id()),null);assertThat(selected).extracting(DashboardRepository.Selected::id).containsExactly(offer);
@@ -78,7 +78,7 @@ class DashboardClassificationTest extends PostgresJourneyTest {
         mail("opaque1@txt.voice.google.com","Someone","Hi");mail("opaque2@txt.voice.google.com","Someone else","Hello");
         mail("alerts@chase.com","Chase","Bank notice");mail("alerts@e.chase.com","Chase","Bank notice");finish();
         assertThat(dashboard.page(account,filter("")).summary().get("groups")).isEqualTo(5L);
-        assertThat(dashboard.page(account,filter("")).groups()).extracting(DashboardRepository.Group::label).contains("google.com · ai product","google.com · device support","opaque1@txt.voice.google.com","opaque2@txt.voice.google.com","chase.com");
+        assertThat(dashboard.page(account,filter("")).groups()).extracting(DashboardRepository.Group::label).contains("google.com · ai product","google.com · device support","Someone","Someone else","chase.com");
     }
     @Test void manualGroupingAndCategoryCorrectionsWinAndStaleInputsAreReclassified() {
         UUID first=mail("a@chase.com","Chase","offer"),second=mail("b@e.chase.com","Chase","offer");
@@ -104,13 +104,14 @@ class DashboardClassificationTest extends PostgresJourneyTest {
         assertThat(classification.status(account).state()).isEqualTo("COMPLETE");assertThat(classification.status(account).skipped()).isEqualTo(1);assertThat(classification.status(account).done()).isZero();
         classification.start(account);assertThat(classification.status(account).total()).isEqualTo(1);
     }
-    @Test void failedPrivacyRouteDoesNotChangeGroupingAndRetriesAreBounded() {
+    @Test void unknownBillingPausesInsteadOfBlindlyRetrying() {
         mail("a@gene.com","A","Hello");classification.start(account);
         when(classifier.classify(anyList())).thenThrow(new Unavailable("Required zero-retention route unavailable",true));
         for(int i=0;i<3;i++){jdbc.update("UPDATE dashboard_classification_jobs SET next_attempt_at=now()");classification.runOnce();}
         assertThat(classification.status(account).state()).isEqualTo("FAILED");assertThat(dashboard.page(account,filter("")).groups().getFirst().label()).isEqualTo("gene.com");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM message_metadata WHERE classified_at IS NOT NULL",Long.class)).isZero();
-        classification.runOnce();verify(classifier,times(3)).classify(anyList());
+        classification.runOnce();verify(classifier,times(1)).classify(anyList());
+        assertThat(classification.status(account).budget().unknown()).isEqualTo(1);
     }
     @Test void expiredLeasesRecoverAndDeletedTargetsDoNotBlockProgress() {
         UUID id=mail("a@gene.com","A","Hello");classification.start(account);
@@ -126,5 +127,120 @@ class DashboardClassificationTest extends PostgresJourneyTest {
         long other=userAccounts.createAccount("other-classification@example.test");
         assertThatThrownBy(()->classification.correctCategory(other,List.of(id),"PERSONAL",0)).hasMessageContaining("unavailable");
         when(classifier.configured()).thenReturn(false);assertThatThrownBy(()->classification.start(other)).hasMessageContaining("OPENROUTER_API_KEY");
+    }
+    @Autowired ClassificationBudget budget;
+    @Test void recurringCheckpointSurvivesNewJobsAndContinuationIsIdempotent() {
+        for(int i=0;i<12;i++)mail("a@gene.com","A","Hello "+i);
+        when(classifier.classify(anyList())).thenAnswer(c->new Result(result(c.getArgument(0)).decisions(),new BigDecimal("0.60")));
+        classification.start(account);classification.runOnce();classification.runOnce();
+        assertThat(budget.view(account).reported()).isEqualByComparingTo("1.20");
+        assertThat(budget.view(account).paused()).isTrue();assertThat(classification.runOnce()).isFalse();
+        long generation=budget.view(account).generation();
+        budget.continueSpending(account,generation,false);budget.continueSpending(account,generation,false);
+        assertThat(budget.view(account).checkpoint()).isEqualByComparingTo("2.20");
+        assertThat(budget.view(account).generation()).isEqualTo(generation+1);
+        classification.cancel(account);classification.start(account);classification.runOnce();
+        assertThat(budget.view(account).reported()).isEqualByComparingTo("1.80");
+    }
+    @Test void lateCancelledResponsesStillChargeExactlyOnce() {
+        mail("a@gene.com","A","Hello");classification.start(account);
+        when(classifier.classify(anyList())).thenAnswer(c->{classification.cancel(account);return result(c.getArgument(0));});classification.runOnce();
+        UUID attempt=jdbc.queryForObject("SELECT id FROM classification_attempts",UUID.class);
+        budget.report(attempt,new BigDecimal("0.0001"));
+        assertThat(budget.view(account).reported()).isEqualByComparingTo("0.0001");
+        assertThat(classification.status(account).cost()).isEqualByComparingTo("0.0001");
+        assertThat(classification.status(account).done()).isZero();
+    }
+    @Test void expiredDispatchRequiresExplicitBillingReviewAndOwnerContinuation() {
+        mail("a@gene.com","A","Hello");classification.start(account);
+        UUID job=classification.status(account).id(),attempt=UUID.randomUUID();
+        jdbc.update("UPDATE classification_budget SET owner_account=?",account);
+        jdbc.update("INSERT INTO classification_attempts(id,job_id,account_id,state,dispatched_at) VALUES(?,?,?,'DISPATCHED',now()-interval '2 minutes')",attempt,job,account);
+        assertThat(classification.runOnce()).isFalse();assertThat(budget.view(account).unknown()).isEqualTo(1);
+        assertThatThrownBy(()->budget.continueSpending(account,0,false)).hasMessageContaining("acknowledge");
+        long other=userAccounts.createAccount("other@example.test");
+        assertThatThrownBy(()->budget.continueSpending(other,0,true)).hasMessageContaining("owner");
+        budget.continueSpending(account,0,true);assertThat(budget.view(account).unknown()).isZero();
+        budget.report(attempt,new BigDecimal("0.25"));assertThat(budget.view(account).reported()).isEqualByComparingTo("0.25");
+    }
+    @Test void inFlightBlocksContinuationAndZeroCostsAreValid() {
+        mail("a@gene.com","A","Hello");classification.start(account);
+        when(classifier.classify(anyList())).thenAnswer(c->{
+            assertThat(budget.view(account).inFlight()).isEqualTo(1);
+            assertThatThrownBy(()->budget.continueSpending(account,0,false)).hasMessageContaining("in-flight");
+            return new Result(result(c.getArgument(0)).decisions(),BigDecimal.ZERO);
+        });classification.runOnce();
+        assertThat(budget.view(account).reported()).isEqualByComparingTo("0");
+        assertThat(budget.view(account).unknown()).isZero();assertThat(classification.status(account).done()).isEqualTo(1);
+    }
+    @Test void automaticIncomingDeduplicatesAndRespectsSwitchAndSharedPause() {
+        mail("a@gene.com","A","Hello");assertThat(classification.runOnce()).isFalse();
+        classification.automatic(account,true);classification.runOnce();
+        verify(classifier,times(1)).classify(anyList());
+        classification.runOnce();verify(classifier,times(1)).classify(anyList());
+        classification.automatic(account,false);mail("b@gene.com","B","New arrival");classification.runOnce();
+        verify(classifier,times(1)).classify(anyList());
+        classification.automatic(account,true);jdbc.update("UPDATE classification_budget SET reported=1");
+        assertThat(classification.runOnce()).isFalse();verify(classifier,times(1)).classify(anyList());
+        budget.continueSpending(account,0,false);classification.runOnce();verify(classifier,times(2)).classify(anyList());
+    }
+    @Test void exactAddressDetailsRetainCategoryFilterAndIndependentPagination() {
+        for(int i=0;i<12;i++)mail("orders@amazon.com","Amazon","receipt "+i);
+        mail("offers@amazon.com","Amazon","offer");finish();
+        var group=dashboard.page(account,filter("")).groups().getFirst().id();
+        assertThat(dashboard.details(account,filter(""),group,0,"orders@amazon.com").messages()).hasSize(10).allMatch(m->m.address().equals("orders@amazon.com"));
+        assertThat(dashboard.details(account,filter(""),group,1,"orders@amazon.com").messages()).hasSize(2);
+        assertThat(dashboard.details(account,filter("MARKETING"),group,0,"orders@amazon.com").messages()).isEmpty();
+        assertThat(dashboard.details(account,filter(""),group,0,null).total()).isEqualTo(13);
+    }
+    @Test void batchProgressLeavesUnfilteredDraftRevisionStableAndInvalidatesCategoryPreviews() {
+        for(int i=0;i<6;i++)mail("a@gene.com","A","Hello "+i);
+        classification.start(account);long revision=dashboard.revision(account);classification.runOnce();
+        assertThat(dashboard.revision(account)).isEqualTo(revision);
+        assertThat(dashboard.classificationRevision(account)).isPositive();
+        var group=dashboard.page(account,filter("PERSONAL")).groups().getFirst().id();
+        var ids=dashboard.details(account,filter("PERSONAL"),group,0).messages().stream().map(DashboardRepository.Message::id).toList();
+        var preview=previews.create(account,new DashboardPreviewService.Request(filter("PERSONAL"),ids,"MARK_READ",revision));
+        classification.runOnce();
+        assertThatThrownBy(()->jobs.confirm(account,preview.id())).hasMessageContaining("unavailable");
+    }
+    @Test void concurrentResponseReplaysCannotLoseOrDoubleCountSpend() throws Exception {
+        mail("a@gene.com","A","Hello");classification.start(account);
+        UUID job=classification.status(account).id(),a=UUID.randomUUID(),b=UUID.randomUUID();
+        jdbc.update("INSERT INTO classification_attempts(id,job_id,account_id,state) VALUES(?,?,?,'DISPATCHED'),(?,?,?,'DISPATCHED')",a,job,account,b,job,account);
+        try(var executor=java.util.concurrent.Executors.newFixedThreadPool(2)) {
+            var first=executor.submit(()->{budget.report(a,new BigDecimal("0.65"));budget.report(b,new BigDecimal("0.55"));});
+            var second=executor.submit(()->{budget.report(b,new BigDecimal("0.55"));budget.report(a,new BigDecimal("0.65"));});
+            first.get(10,java.util.concurrent.TimeUnit.SECONDS);second.get(10,java.util.concurrent.TimeUnit.SECONDS);
+        }
+        assertThat(budget.view(account).reported()).isEqualByComparingTo("1.20");
+        assertThat(budget.view(account).paused()).isTrue();
+    }
+    @Test void automaticArrivalsGetFourSlotsAndHistoricalBacklogKeepsOne() {
+        for(int i=0;i<10;i++)mail("old@gene.com","Old","History "+i);
+        jdbc.update("DELETE FROM classification_incoming");classification.start(account);classification.automatic(account,true);
+        for(int i=0;i<8;i++)mail("new@gene.com","New","Arrival "+i);
+        classification.runOnce();
+        var captured=org.mockito.ArgumentCaptor.forClass(List.class);verify(classifier).classify(captured.capture());
+        List<Evidence> evidence=captured.getValue();
+        assertThat(evidence).filteredOn(e->e.address().equals("new@gene.com")).hasSize(4);
+        assertThat(evidence).filteredOn(e->e.address().equals("old@gene.com")).hasSize(1);
+    }
+    @Test void cancellingAutomaticWorkDoesNotImmediatelyRecreateIt() {
+        classification.automatic(account,true);mail("a@gene.com","A","Hello");
+        when(classifier.classify(anyList())).thenAnswer(c->{classification.cancel(account);return result(c.getArgument(0));});
+        classification.runOnce();classification.runOnce();verify(classifier,times(1)).classify(anyList());
+    }
+
+    @Test void disablingAutomaticLetsManualCatchupFinishAndRetainsDeferredArrivals() {
+        for(int i=0;i<2;i++)mail("old@gene.com","Old","History "+i);
+        jdbc.update("DELETE FROM classification_incoming");classification.start(account);classification.automatic(account,true);
+        for(int i=0;i<8;i++)mail("new@gene.com","New","Arrival "+i);
+        classification.runOnce();classification.automatic(account,false);classification.runOnce();
+        assertThat(classification.status(account).state()).isEqualTo("COMPLETE");
+        assertThat(classification.status(account).done()).isEqualTo(6);
+        classification.automatic(account,true);classification.runOnce();
+        assertThat(classification.status(account).done()).isEqualTo(4);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM message_metadata WHERE classified_at IS NOT NULL",Long.class)).isEqualTo(10);
     }
 }

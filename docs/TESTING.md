@@ -201,8 +201,18 @@ The browser fixture also mocks Jev, even if a real key exists in local `.env`.
 Run with the documented Java 21 / Docker environment:
 
 ```sh
-mvn -o -Dtest='JevClassifierTest,DashboardClassificationTest,DashboardJourneyTest,DashboardMigrationTest,DashboardIdentityTest' test
+mvn -o -Dspringdotenv.enabled=false -Dtest='JevClassifierTest,DashboardClassificationTest,DashboardJourneyTest,DashboardMigrationTest,DashboardIdentityTest' test
 ```
 
 See [architecture and setup](JEV-CLASSIFICATION.md) for privacy configuration and
 the accuracy evaluation still needed on a representative user-labeled sample.
+
+Classification improvements also verify recurring checkpoints, concurrent response
+accounting/replay, cancellation costs, unknown-charge acknowledgement/ownership,
+zero billing, shared automatic/manual allowance, outbox deduplication and priority,
+manual completion while automatic processing is off, category-preview invalidation,
+and retained V21 classification/override preservation across V22/V23. The ordinary
+classification worker is disabled in fixture contexts; tests call the service
+explicitly. Fixtures use batches of five to preserve deterministic batch-boundary
+assertions; production uses the measured batch size of ten. Live Jev comparisons
+and their separate accuracy limits are recorded in CLASSIFICATION-BENCHMARK.md.

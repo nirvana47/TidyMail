@@ -111,3 +111,8 @@ docs/*
 tidymail-ux-rehaul/
 tidymail-ux-rehaul-draft/
 .planning/
+
+# Local recoverable database snapshots and classification validation reports
+.local-backups/
+!docs/CLASSIFICATION-BENCHMARK.md
+!docs/CLASSIFICATION-IMPLEMENTATION.md

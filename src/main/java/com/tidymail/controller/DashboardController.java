@@ -59,7 +59,7 @@ public class DashboardController {
     @ResponseBody
     public DashboardRepository.Details details(@PathVariable UUID group, @RequestParam Map<String, String> parameters,
             @RequestParam(defaultValue = "0") int messagePage, OAuth2AuthenticationToken auth) {
-        return dashboard.details(account(auth), DashboardFilter.from(parameters), group, messagePage);
+        return dashboard.details(account(auth), DashboardFilter.from(parameters), group, messagePage,parameters.get("address"));
     }
 
     public record Selection(DashboardFilter filter, List<UUID> groups, String address, long revision) {
@@ -156,6 +156,18 @@ public class DashboardController {
         return classification.cancel(account(auth));
     }
 
+    public record AutomaticClassification(boolean enabled) {}
+    @PostMapping("/api/classification/automatic")
+    @ResponseBody
+    public DashboardClassificationService.Status automaticClassification(@RequestBody AutomaticClassification request,OAuth2AuthenticationToken auth) {
+        long account=account(auth); classification.automatic(account,request.enabled()); return classification.status(account);
+    }
+    public record ContinueClassification(long generation,boolean acknowledgeUnknown) {}
+    @PostMapping("/api/classification/continue")
+    @ResponseBody
+    public DashboardClassificationService.Status continueClassification(@RequestBody ContinueClassification request,OAuth2AuthenticationToken auth) {
+        long account=account(auth); classification.continueSpending(account,request.generation(),request.acknowledgeUnknown()); return classification.status(account);
+    }
     public record CategoryCorrection(List<UUID> ids, String category, long revision) {
     }
 

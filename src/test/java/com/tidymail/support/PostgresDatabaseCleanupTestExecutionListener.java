@@ -28,6 +28,7 @@ public final class PostgresDatabaseCleanupTestExecutionListener
             Boolean.class);
         if (Boolean.TRUE.equals(schemaReady)) {
             jdbc.execute("TRUNCATE TABLE user_accounts RESTART IDENTITY CASCADE");
+        jdbc.update("INSERT INTO classification_budget(id) VALUES(1) ON CONFLICT DO NOTHING");
         }
     }
 }

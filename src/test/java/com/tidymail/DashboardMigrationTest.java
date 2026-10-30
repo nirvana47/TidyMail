@@ -81,7 +81,7 @@ class DashboardMigrationTest {
         jdbc.update(
                 "INSERT INTO dashboard_preview_targets(preview_id,account_id,ordinal,message_id,effective,reason) VALUES(?,?,0,?,true,'Eligible')",
                 missingPreview, account, java.util.UUID.randomUUID());
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(5);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(7);
         assertThat(jdbc.queryForObject("SELECT provider_message_id FROM dashboard_preview_targets WHERE preview_id=?",
                 String.class, retainedPreview)).isEqualTo("retained-1");
         assertThat(jdbc.queryForObject("SELECT invalidated_at IS NOT NULL FROM dashboard_previews WHERE public_id=?",
@@ -112,9 +112,9 @@ class DashboardMigrationTest {
         assertThatThrownBy(() -> jdbc.update(
                 "INSERT INTO sender_group_members VALUES(?,(SELECT min(id) FROM sender_units), (SELECT min(id) FROM sender_groups))",
                 account + 1)).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
-        // A fresh installation also reaches V21 with all new tables and constraints.
+        // A fresh installation also reaches V23 with all new tables and constraints.
         flyway(null).clean();
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(21);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(23);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM user_accounts", Long.class)).isZero();
         assertThat(
                 jdbc.queryForObject("SELECT count(*) FROM dashboard_domain_registry WHERE kind='SHARED'", Long.class))
@@ -149,7 +149,7 @@ class DashboardMigrationTest {
                 account, "separate:" + correction, unit);
         var messageIds = jdbc.queryForList("SELECT dashboard_message_id FROM message_metadata ORDER BY id");
         var unitIds = jdbc.queryForList("SELECT id,public_id FROM sender_units ORDER BY id");
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(2);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(4);
         assertThat(jdbc.queryForObject("SELECT count(DISTINCT group_id) FROM sender_group_members", Long.class))
                 .isEqualTo(2);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM sender_units WHERE automatic_group_key='domain:chase.com'",
@@ -198,7 +198,7 @@ class DashboardMigrationTest {
         jdbc.update(
                 "INSERT INTO cleanup_active_targets(account_id,target_fingerprint,job_id) VALUES(?,repeat('c',64),?)",
                 account, job);
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(4);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(6);
         assertThat(jdbc.queryForObject("SELECT pre_change_observed FROM cleanup_job_targets WHERE job_id=?",
                 Boolean.class, job)).isTrue();
         assertThat(jdbc.queryForObject("SELECT state FROM cleanup_job_targets WHERE job_id=?", String.class, job))
@@ -210,4 +210,21 @@ class DashboardMigrationTest {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM cleanup_active_targets", Long.class)).isEqualTo(1);
     }
 
+
+    @Test void retainedClassificationsOverridesAndHistoricalSpendingSurviveNewAllowance() {
+        flyway("21").clean();flyway("21").migrate();
+        var jdbc=new JdbcTemplate(new DriverManagerDataSource(POSTGRES.getJdbcUrl(),POSTGRES.getUsername(),POSTGRES.getPassword()));
+        long account=new UserAccountFixtures(jdbc).createAccount("upgrade-classification@example.test");
+        jdbc.update("INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,labels,label_evidence_known,dashboard_from_address,dashboard_unit_kind,dashboard_unit_key,classification_category,classification_override,classification_version,classified_at) VALUES(?,'google','preserved','a@example.test',ARRAY['INBOX'],true,'a@example.test','ADDRESS','a@example.test','MARKETING','PERSONAL',?,now())",account,com.tidymail.service.JevClassifier.VERSION);
+        jdbc.update("UPDATE message_metadata SET classification_hash=classification_evidence_hash");
+        var job=java.util.UUID.randomUUID();
+        jdbc.update("INSERT INTO dashboard_classification_jobs(public_id,account_id,status,total,done,cost_usd) VALUES(?,?,'COMPLETE',1,1,2)",job,account);
+        var before=jdbc.queryForMap("SELECT classification_category,classification_override,classification_hash,classification_evidence_hash,classification_version,classified_at FROM message_metadata");
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(2);
+        assertThat(jdbc.queryForMap("SELECT classification_category,classification_override,classification_hash,classification_evidence_hash,classification_version,classified_at FROM message_metadata")).isEqualTo(before);
+        assertThat(jdbc.queryForObject("SELECT cost_usd FROM dashboard_classification_jobs",java.math.BigDecimal.class)).isEqualByComparingTo("2");
+        assertThat(jdbc.queryForObject("SELECT reported FROM classification_budget",java.math.BigDecimal.class)).isEqualByComparingTo("0");
+        assertThat(jdbc.queryForObject("SELECT checkpoint FROM classification_budget",java.math.BigDecimal.class)).isEqualByComparingTo("1");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM classification_incoming",Long.class)).isZero();
+    }
 }

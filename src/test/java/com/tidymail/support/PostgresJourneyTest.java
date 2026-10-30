@@ -39,6 +39,8 @@ import org.testcontainers.junit.jupiter.Container;
 @TestPropertySource(properties = {
     "spring.jpa.hibernate.ddl-auto=validate",
     "spring.task.scheduling.enabled=false",
+    "app.classification.worker.enabled=false",
+    "app.classification.batch-size=5",
     "TOKEN_ENCRYPT_SECRET=0000000000000000000000000000000000000000000000000000000000000000",
     "TOKEN_ENCRYPT_SALT=00000000000000000000000000000000",
     "GOOGLE_CLIENT_ID=",
@@ -79,6 +81,7 @@ public abstract class PostgresJourneyTest {
     protected void resetState() {
         reset(gmailProvider, outlookProvider);
         jdbc.execute("TRUNCATE TABLE user_accounts RESTART IDENTITY CASCADE");
+        jdbc.update("INSERT INTO classification_budget(id) VALUES(1) ON CONFLICT DO NOTHING");
         userAccounts = new UserAccountFixtures(jdbc);
     }
 

@@ -39,7 +39,7 @@ public class DashboardRepository {
             """ + DELIVERY + ")";
     // Read pending state once. A scalar initplan keeps its map out of the row joins
     // and avoids a correlated target query for every matching message.
-    public static final String CATEGORY = "COALESCE(m.classification_override,CASE WHEN m.classification_hash=dashboard_classification_hash(m) AND m.classification_version='"
+    public static final String CATEGORY = "COALESCE(m.classification_override,CASE WHEN m.classification_hash=m.classification_evidence_hash AND m.classification_version='"
             + com.tidymail.service.JevClassifier.VERSION + "' THEN m.classification_category END,'UNCLASSIFIED')";
     public static final String FILTERED = """
             WITH pending AS MATERIALIZED (
@@ -63,7 +63,8 @@ public class DashboardRepository {
                     JOIN sender_groups g ON g.account_id=member.account_id AND g.id=member.group_id
                     WHERE m.account_id=:account AND
                     """ + RECEIVED + """
-                    AND (:category='' OR """ + CATEGORY + """
+                    AND (:category='' OR
+                    """ + CATEGORY + """
                       =:category)
                     AND (:scope='all' OR 'INBOX'=ANY(m.labels))
                     AND (CAST(:start AS timestamptz) IS NULL OR m.received_at>=:start)
@@ -89,14 +90,16 @@ public class DashboardRepository {
         var groups = jdbc.query(
                 FILTERED + """
                         SELECT group_public_id,group_key,group_label,count(*) messages,count(*) FILTER(WHERE unread) unread,
-                        max(received_at) latest,count(DISTINCT address) addresses,count(*) FILTER(WHERE pending_state IS NOT NULL) pending
+                        max(received_at) latest,count(DISTINCT address) addresses,
+                        CASE WHEN group_key LIKE 'address:%' THEN max(NULLIF(from_display_name,'')) END display_name,
+                        CASE WHEN group_key LIKE 'address:%' THEN min(address) END exact_address,count(*) FILTER(WHERE pending_state IS NOT NULL) pending
                         FROM filtered GROUP BY group_public_id,group_key,group_label
                         ORDER BY count(*) DESC,group_key LIMIT 10 OFFSET :offset
                         """,
                 p,
-                (r, n) -> new Group(uuid(r, "group_public_id"), r.getString("group_label"), r.getLong("messages"),
+                (r, n) -> new Group(uuid(r, "group_public_id"), r.getString("display_name")==null?r.getString("group_label"):r.getString("display_name"), r.getLong("messages"),
                         r.getLong("unread"), instant(r, "latest"), r.getLong("addresses"),
-                        groupingEvidence(r.getString("group_key")), r.getLong("pending")));
+                        groupingEvidence(r.getString("group_key")), r.getLong("pending"),r.getString("exact_address")));
         var coverage = jdbc.queryForMap(
                 """
                         SELECT count(*) indexed,min(m.received_at) oldest,max(m.received_at) newest,
@@ -117,7 +120,7 @@ public class DashboardRepository {
                         """,
                 p);
         long revision = revision(account);
-        return new Page(groups, summary, coverage, state, revision, filter);
+        return new Page(groups, summary, coverage, state, revision, filter, classificationRevision(account));
     }
 
     public long revision(long account) {
@@ -127,30 +130,37 @@ public class DashboardRepository {
         return result;
     }
 
+    public long classificationRevision(long account) {
+        return jdbc.queryForObject("SELECT COALESCE((SELECT classification_revision FROM dashboard_account_settings WHERE account_id=:account),0)",Map.of("account",account),Long.class);
+    }
     public Details details(long account, DashboardFilter filter, UUID group, int messagePage) {
+        return details(account,filter,group,messagePage,null);
+    }
+    public Details details(long account, DashboardFilter filter, UUID group, int messagePage,String address) {
         if (messagePage < 0 || messagePage > 1_000_000)
             throw new IllegalArgumentException("Invalid message page");
-        var p = parameters(account, filter).addValue("group", group).addValue("message_offset", messagePage * 10L);
+        var p = parameters(account, filter).addValue("group", group).addValue("message_offset", messagePage * 10L).addValue("address",address);
         if (jdbc.queryForObject("SELECT count(*) FROM sender_groups WHERE account_id=:account AND public_id=:group", p,
                 Long.class) == 0)
             throw new org.springframework.web.server.ResponseStatusException(
                     org.springframework.http.HttpStatus.NOT_FOUND, "Sender group unavailable for this account");
-        String inGroup = " FROM filtered WHERE group_public_id=:group";
+        String allGroup = " FROM filtered WHERE group_public_id=:group";
+        String inGroup=allGroup+" AND (CAST(:address AS text) IS NULL OR address=:address)";
         long total = jdbc.queryForObject(FILTERED + "SELECT count(*)" + inGroup, p, Long.class);
         List<Message> messages = jdbc.query(
                 FILTERED + "SELECT *" + inGroup
                         + " ORDER BY received_at DESC NULLS LAST,provider_message_id LIMIT 10 OFFSET :message_offset",
                 p, (r, n) -> message(r));
         var addresses = jdbc.query(
-                FILTERED + "SELECT address,count(*) messages,count(*) FILTER(WHERE unread) unread" + inGroup
+                FILTERED + "SELECT address,max(NULLIF(from_display_name,'')) display_name,count(*) messages,count(*) FILTER(WHERE unread) unread" + allGroup
                         + " GROUP BY address ORDER BY address",
-                p, (r, n) -> new Address(r.getString("address"), r.getLong("messages"), r.getLong("unread")));
+                p, (r, n) -> new Address(r.getString("address"), r.getLong("messages"), r.getLong("unread"),r.getString("display_name")));
         var units = jdbc.query(
-                FILTERED + "SELECT DISTINCT unit_public_id,unit_kind,unit_key,evidence_reason" + inGroup
+                FILTERED + "SELECT DISTINCT unit_public_id,unit_kind,unit_key,evidence_reason" + allGroup
                         + " ORDER BY unit_public_id",
                 p, (r, n) -> new Unit(uuid(r, "unit_public_id"), r.getString("unit_kind"), r.getString("unit_key"),
                         r.getString("evidence_reason")));
-        return new Details(messages, addresses, units, total, messagePage, revision(account));
+        return new Details(messages, addresses, units, total, messagePage, revision(account),classificationRevision(account));
     }
 
     public List<Selected> selection(long account, DashboardFilter filter, List<UUID> groups, String address) {
@@ -172,7 +182,7 @@ public class DashboardRepository {
     public static Message message(ResultSet r) throws SQLException {
         return new Message(uuid(r, "dashboard_message_id"), r.getString("subject_header"), r.getString("address"),
                 instant(r, "received_at"), r.getBoolean("unread"), uuid(r, "group_public_id"),
-                r.getString("pending_state"), r.getString("category"));
+                r.getString("pending_state"), r.getString("category"),r.getString("from_display_name"),r.getString("classification_override")!=null?"MANUAL":"JEV");
     }
 
     public static UUID uuid(ResultSet r, String column) throws SQLException {
@@ -204,14 +214,14 @@ public class DashboardRepository {
     }
 
     public record Group(UUID id, String label, long messages, long unread, Instant latest, long addresses,
-            String evidence, long pending) {
+            String evidence, long pending,String address) {
     }
 
     public record Message(UUID id, String subject, String address, Instant receivedAt, boolean unread, UUID groupId,
-            String pendingState, String category) {
+            String pendingState, String category,String displayName,String categorySource) {
     }
 
-    public record Address(String address, long messages, long unread) {
+    public record Address(String address, long messages, long unread,String displayName) {
     }
 
     public record Unit(UUID id, String kind, String key, String reason) {
@@ -221,10 +231,10 @@ public class DashboardRepository {
     }
 
     public record Details(List<Message> messages, List<Address> addresses, List<Unit> units, long total, int page,
-            long revision) {
+            long revision,long classificationRevision) {
     }
 
     public record Page(List<Group> groups, Map<String, Object> summary, Map<String, Object> coverage,
-            Map<String, Object> sync, long revision, DashboardFilter filter) {
+            Map<String, Object> sync, long revision, DashboardFilter filter,long classificationRevision) {
     }
 }

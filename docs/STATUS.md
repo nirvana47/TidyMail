@@ -2,14 +2,22 @@
 
 ## Optional Jev classification — 2026-10-30
 
-Implemented locally with metadata-only Jev via OpenRouter, strict ZDR/provider
-routing, fixed message categories, category filters/corrections and sender/service
-classification. Saved manual grouping corrections and confirmed cleanup targets
-remain authoritative. V21 adds persisted batches and evidence-version caching.
-The package build passed 72 focused tests and isolated desktop checks; live model
-accuracy and the retained application upgrade remain unverified. Add
-`OPENROUTER_API_KEY` locally and follow the
-[architecture/setup guide](JEV-CLASSIFICATION.md). No local model is needed.
+The approved retained V21→V23 upgrade is running, after an encrypted backup and
+verified restoration. Classification has durable deployment-wide $1 spending
+checkpoints, response-attempt accounting, billing-uncertainty review, partial
+category browsing, exact-address navigation, stored display names and automatic
+incoming-metadata processing with an off switch. Manual corrections and confirmed
+cleanup targets remain authoritative. Original 59,120 classifications still match
+the backup exactly; 80 newly eligible messages were saved in bounded checks.
+
+Live comparisons selected ten messages/request and one in-flight request, retaining
+original instructions/version. Both benchmark rounds reported $0.01580061 total,
+without allowance continuation or request failures. Final core checks passed
+39/39; scale checks passed at 10k/50k, plus isolated desktop checks. Broader
+user-labeled real-mail accuracy remains unestablished. See
+[implementation/validation](CLASSIFICATION-IMPLEMENTATION.md),
+[benchmark evidence](CLASSIFICATION-BENCHMARK.md), and
+[architecture/setup](JEV-CLASSIFICATION.md). Changes are uncommitted and unpushed.
 
 ## Dashboard Phase 7 — 2026-10-29
 

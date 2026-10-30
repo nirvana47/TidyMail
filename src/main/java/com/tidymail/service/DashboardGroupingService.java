@@ -164,18 +164,16 @@ public class DashboardGroupingService {
                         Arrays.asList((Long[]) r.getArray(3).getArray()), r.getString(4)),
                 account);
         var after = layout(units, events);
-        for (var entry : after.labels().entrySet())
-            jdbc.update(
-                    "INSERT INTO sender_groups(account_id,group_key,label) VALUES(?,?,?) ON CONFLICT(account_id,group_key) DO UPDATE SET label=EXCLUDED.label",
-                    account, entry.getKey(), entry.getValue());
         jdbc.batchUpdate(
-                "UPDATE sender_group_members SET group_id=(SELECT id FROM sender_groups WHERE account_id=? AND group_key=?) WHERE account_id=? AND unit_id=?",
+                "INSERT INTO sender_groups(account_id,group_key,label) VALUES(?,?,?) ON CONFLICT(account_id,group_key) DO UPDATE SET label=EXCLUDED.label WHERE sender_groups.label IS DISTINCT FROM EXCLUDED.label",
+                after.labels().entrySet(),500,(ps,entry)->{ps.setLong(1,account);ps.setString(2,entry.getKey());ps.setString(3,entry.getValue());});
+        jdbc.batchUpdate(
+                "UPDATE sender_group_members member SET group_id=g.id FROM sender_groups g WHERE g.account_id=? AND g.group_key=? AND member.account_id=g.account_id AND member.unit_id=? AND member.group_id IS DISTINCT FROM g.id",
                 units, 500,
                 (ps, u) -> {
                     ps.setLong(1, account);
                     ps.setString(2, after.membership().get(u.id()));
-                    ps.setLong(3, account);
-                    ps.setLong(4, u.id());
+                    ps.setLong(3, u.id());
                 });
         jdbc.update("DELETE FROM sender_separations WHERE account_id=?", account);
         jdbc.batchUpdate("INSERT INTO sender_separations(account_id,low_unit_id,high_unit_id) VALUES(?,?,?)",

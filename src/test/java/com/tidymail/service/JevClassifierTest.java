@@ -60,4 +60,23 @@ class JevClassifierTest {
         var builder=RestClient.builder();var server=MockRestServiceServer.bindTo(builder).build();var classifier=new JevClassifier("",json,builder);
         assertThat(classifier.configured()).isFalse();assertThatThrownBy(()->classifier.classify(List.of(evidence()))).hasMessageContaining("OPENROUTER_API_KEY");server.verify();
     }
+
+    @Test void rejectedDecisionsRetainExactReportedCostAndMissingBillingNeverBecomesZero() {
+        var invalid=response();invalid.put("provider","Other");invalid.withObject("usage").put("cost",new java.math.BigDecimal("0.000019992"));
+        try {JevClassifier.parse(invalid,1);fail("Expected invalid provider");}catch(JevClassifier.Unavailable error){assertThat(error.reportedCost()).isEqualByComparingTo("0.000019992");}
+        var missing=response();missing.remove("usage");
+        try {JevClassifier.parse(missing,1);fail("Expected missing billing");}catch(JevClassifier.Unavailable error){assertThat(error.reportedCost()).isNull();}
+        var zero=response();zero.withObject("usage").put("cost",0);
+        assertThat(JevClassifier.parse(zero,1).cost()).isEqualByComparingTo("0");
+    }
+    @Test void largerTransportBatchKeepsAllThreeDimensionsAndPrivacyRoute() {
+        var builder=RestClient.builder();var server=MockRestServiceServer.bindTo(builder).build();var classifier=new JevClassifier("test-secret",json,builder);
+        var root=response();var answers=(ObjectNode)root.path("answers");
+        for(int i=1;i<10;i++){answer(answers,"email_"+i+"_category",JevClassifier.CATEGORIES,"PERSONAL",.98);answer(answers,"email_"+i+"_kind",JevClassifier.KINDS,"PERSON",.98);answer(answers,"email_"+i+"_stream",JevClassifier.STREAMS,"GENERAL",.98);}
+        server.expect(requestTo("https://openrouter.ai/api/alpha/decisions")).andExpect(request->{
+            var payload=json.readTree(((org.springframework.mock.http.client.MockClientHttpRequest)request).getBodyAsString());
+            assertThat(payload.path("questions").size()).isEqualTo(30);assertThat(payload.path("state").size()).isEqualTo(10);
+        }).andRespond(withSuccess(root.toString(),MediaType.APPLICATION_JSON));
+        assertThat(classifier.classify(java.util.Collections.nCopies(10,evidence())).decisions()).hasSize(10);server.verify();
+    }
 }

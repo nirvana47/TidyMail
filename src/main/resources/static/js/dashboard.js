@@ -1,7 +1,7 @@
 'use strict';
 (() => {
   const $ = id => document.getElementById(id);
-  const state = { scope: 'inbox', page: 0, messagePage: 0, tab: 'messages', data: null, focused: null, details: null, action: 'MARK_READ', preview: null, targetPage: 0, revision: 0 };
+  const state = { scope: 'inbox', page: 0, messagePage: 0, address: null, tab: 'messages', data: null, focused: null, details: null, action: 'MARK_READ', preview: null, targetPage: 0, revision: 0 };
   const selected = new Map(), expanded = new Map();
   let jobs = [], confirming = false, jobsRequest = 0, historyPage = 0, historyTotal = 0, historyLoading = false;
   const history = new Map();
@@ -144,6 +144,7 @@
       }));
       if (request !== listRequest || epoch !== filterEpoch || (background && (document.querySelector('dialog[open]') || selectionBusy))) return;
       for (const [id, addresses] of updates) { if (addresses) expanded.set(id, addresses); else expanded.delete(id); }
+      if (state.data && $('category').value && state.data.classificationRevision !== data.classificationRevision) { selected.clear(); invalidatePreview(); notice('Category results changed. Select matching messages again.'); }
       state.data = data; state.revision = data.revision;
       $('accountEmail').textContent = data.sync.email;
       $('matching').textContent = fmt(data.summary.messages); $('unreadCount').textContent = fmt(data.summary.unread); $('groupCount').textContent = fmt(data.summary.groups);
@@ -178,11 +179,11 @@
       const row = node('tr'); if (state.focused?.id === g.id) row.classList.add('focused');
       const cell = node('td'); cell.append(checkbox(`Select all ${g.messages} matching messages from ${g.label}`, g.messages, selectedCount(g.id), checked => selectGroups([g.id], checked))); row.append(cell);
       const sender = node('td'), focus = node('button', undefined, 'sender-focus'), badge = node('span', g.label.slice(0, 1).toUpperCase(), 'brand'), text = node('span', undefined, 'sender-label');
-      text.append(node('strong', g.label), node('small', `${g.addresses} sender ${g.addresses === 1 ? 'address' : 'addresses'}`, 'muted')); if (g.pending) text.append(node('small', `${fmt(g.pending)} cleanup pending / unresolved`, 'pending')); focus.dataset.focusKey = 'sender-' + g.id; focus.append(badge, text); focus.onclick = () => focusGroup(g); sender.append(focus); row.append(sender, node('td', fmt(g.messages)), node('td', fmt(g.unread)), node('td', dateText(g.latest)));
+      text.append(node('strong', g.label), node('small', `${g.address ? g.address + " · " : ""}${g.addresses} sender ${g.addresses === 1 ? 'address' : 'addresses'}`, 'muted')); if (g.pending) text.append(node('small', `${fmt(g.pending)} cleanup pending / unresolved`, 'pending')); focus.dataset.focusKey = 'sender-' + g.id; focus.append(badge, text); focus.onclick = () => focusGroup(g); sender.append(focus); row.append(sender, node('td', fmt(g.messages)), node('td', fmt(g.unread)), node('td', dateText(g.latest)));
       const expandCell = node('td'); if (g.addresses > 1) { const expand = node('button', expanded.has(g.id) ? '⌃' : '⌄'); expand.setAttribute('aria-label', `Show sender addresses for ${g.label}`); expand.setAttribute('aria-expanded', String(expanded.has(g.id))); expand.onclick = () => expandGroup(g); expandCell.append(expand); } row.append(expandCell); body.append(row);
       if (expanded.has(g.id)) {
         const detail = node('tr', undefined, 'address-row'), td = node('td'); td.colSpan = 6;
-        for (const address of expanded.get(g.id)) { const a = node('div', undefined, 'inline-address'); a.append(checkbox(`Select ${address.messages} matching messages from ${address.address}`, address.messages, selectedCount(g.id, address.address), checked => selectGroups([g.id], checked, address.address)), node('span', `${address.address} · ${fmt(address.messages)} messages`)); td.append(a); } detail.append(td); body.append(detail);
+        for (const address of expanded.get(g.id)) { const a = node('div', undefined, 'inline-address'); a.append(checkbox(`Select ${address.messages} matching messages from ${address.address}`, address.messages, selectedCount(g.id, address.address), checked => selectGroups([g.id], checked, address.address)), addressLink(g,address)); td.append(a); } detail.append(td); body.append(detail);
       }
     });
     restore();
@@ -192,10 +193,15 @@
     const epoch = filterEpoch;
     try { const detail = await api(`groups/${g.id}?${query()}`); if (epoch !== filterEpoch || detail.revision !== state.revision) return; expanded.set(g.id, detail.addresses); renderGroups(); } catch (error) { notice(error.message); }
   }
-  function focusGroup(g) { state.focused = g; state.messagePage = 0; state.details = null; $('detail').hidden = false; renderGroups(); renderDetail(); loadDetails(); }
+  function addressLink(g,a) {
+    const button=node('button',`${a.displayName || a.address}${a.displayName ? ' · '+a.address : ''} · ${fmt(a.messages)} messages`,'sender-focus');
+    button.onclick=()=>{ state.address=a.address; state.tab='messages'; focusGroup(g,true); $('messagesTab').click(); $('messagesTab').focus(); };
+    return button;
+  }
+  function focusGroup(g,retainAddress=false) { if(!retainAddress)state.address=null; state.focused = g; state.messagePage = 0; state.details = null; $('detail').hidden = false; renderGroups(); renderDetail(); loadDetails(); }
   async function loadDetails() {
     if (!state.focused) return; const request = ++detailRequest, group = state.focused.id, epoch = filterEpoch;
-    try { const details = await api(`groups/${group}?${query()}&messagePage=${state.messagePage}`); if (request !== detailRequest || epoch !== filterEpoch || group !== state.focused?.id) return; if (details.revision !== state.revision) { filtersChanged(); return; } const lastPage = Math.max(0, Math.ceil(details.total / 10) - 1); if (state.messagePage > lastPage) { state.messagePage = lastPage; return loadDetails(); } state.details = details; renderDetail(); }
+    try { const details = await api(`groups/${group}?${query()}&messagePage=${state.messagePage}${state.address ? "&address="+encodeURIComponent(state.address) : ""}`); if (request !== detailRequest || epoch !== filterEpoch || group !== state.focused?.id) return; if (details.revision !== state.revision) { filtersChanged(); return; } const lastPage = Math.max(0, Math.ceil(details.total / 10) - 1); if (state.messagePage > lastPage) { state.messagePage = lastPage; return loadDetails(); } state.details = details; renderDetail(); }
     catch (error) { if (request === detailRequest) notice(error.message); }
   }
   function renderDetail() {
@@ -204,15 +210,16 @@
     $('detailCounts').textContent = state.details ? `${fmt(state.details.total)} matching messages` : `${fmt(state.focused.messages)} matching messages · ${fmt(state.focused.unread)} unread`;
     const content = $('detailContent'), restore = rememberFocus(content); content.replaceChildren(); const detail = state.details;
     if (!detail) { content.append(node('p', 'Loading indexed details…', 'evidence')); return; }
+    if (state.address) { const back=node('button','All messages in this group'); back.onclick=()=>{state.address=null;state.messagePage=0;state.details=null;renderDetail();loadDetails();}; content.append(node('p',state.address,'evidence'),back); }
     if (state.tab === 'messages') {
       const visible = node('div', undefined, 'evidence'), count = detail.messages.filter(m => selected.has(m.id)).length;
       visible.append(checkbox(`Select visible messages (${detail.messages.length})`, detail.messages.length, count, checked => { for (const m of detail.messages) { if (checked) selected.set(m.id, m); else selected.delete(m.id); } invalidatePreview(); renderSelectionControls(); }), node('span', ' Select visible messages')); content.append(visible);
-      for (const m of detail.messages) { const row = node('div', undefined, 'message-row'), text = node('div', undefined, 'message-text'); text.append(node('span', m.subject || '(No subject)', 'message-subject'), node('small', m.address, 'muted'), node('small', `${dateText(m.receivedAt)} · ${m.unread ? 'Unread' : 'Read'} · ${categoryName(m.category)}`, 'muted')); if (m.pendingState) text.append(node('small', pendingText(m.pendingState), 'pending')); row.append(checkbox(`Select message ${m.subject || '(No subject)'}`, 1, selected.has(m.id) ? 1 : 0, checked => { if (checked) selected.set(m.id, m); else selected.delete(m.id); invalidatePreview(); renderSelectionControls(); }), text); content.append(row); }
+      for (const m of detail.messages) { const row = node('div', undefined, 'message-row'), text = node('div', undefined, 'message-text'); text.append(node('span', m.subject || '(No subject)', 'message-subject'), node('small', `${m.displayName ? m.displayName+' · ' : ''}${m.address}`, 'muted'), node('small', `${dateText(m.receivedAt)} · ${m.unread ? 'Unread' : 'Read'} · ${categoryName(m.category)}${m.category === "UNCLASSIFIED" ? "" : m.categorySource === "MANUAL" ? " · Manual correction" : " · Jev"}`, 'muted')); if (m.pendingState) text.append(node('small', pendingText(m.pendingState), 'pending')); row.append(checkbox(`Select message ${m.subject || '(No subject)'}`, 1, selected.has(m.id) ? 1 : 0, checked => { if (checked) selected.set(m.id, m); else selected.delete(m.id); invalidatePreview(); renderSelectionControls(); }), text); content.append(row); }
       if (!detail.total) content.append(node('p', 'No matching messages in this group.', 'evidence'));
       const paging = node('div', undefined, 'paging'), prev = node('button', '‹'), next = node('button', '›'); prev.setAttribute('aria-label', 'Previous message page'); next.setAttribute('aria-label', 'Next message page'); prev.disabled = state.messagePage === 0; next.disabled = (state.messagePage + 1) * 10 >= detail.total;
       prev.dataset.focusKey = 'message-prev'; next.dataset.focusKey = 'message-next'; prev.onclick = () => { state.messagePage--; loadDetails(); }; next.onclick = () => { state.messagePage++; loadDetails(); }; paging.append(prev, node('span', detail.messages.length ? `${state.messagePage * 10 + 1}–${state.messagePage * 10 + detail.messages.length} of ${fmt(detail.total)}` : '0 messages'), next); content.append(paging);
     } else {
-      for (const a of detail.addresses) { const row = node('div', undefined, 'message-row'); row.append(checkbox(`Select ${a.messages} matching messages from ${a.address}`, a.messages, selectedCount(state.focused.id, a.address), checked => selectGroups([state.focused.id], checked, a.address)), node('span', `${a.address} · ${fmt(a.messages)} messages`)); content.append(row); }
+      for (const a of detail.addresses) { const row = node('div', undefined, 'message-row'); row.append(checkbox(`Select ${a.messages} matching messages from ${a.address}`, a.messages, selectedCount(state.focused.id, a.address), checked => selectGroups([state.focused.id], checked, a.address)), addressLink(state.focused,a)); content.append(row); }
       const reasons = [...new Set(detail.units.map(u => u.reason))]; content.append(node('p', [state.focused.evidence, ...reasons].filter(Boolean).join(' · '), 'evidence'));
       const controls = node('div', undefined, 'corrections'), organize = node('button', 'Merge / keep separate'); organize.disabled = !detail.units.some(u => u.kind !== 'MESSAGE'); organize.dataset.focusKey = 'organize'; organize.onclick = openCorrections; controls.append(organize); if (organize.disabled) controls.append(node('p', 'Fresh sender metadata is needed before grouping corrections.', 'muted')); content.append(controls);
     }
@@ -221,7 +228,7 @@
   async function openPreview() {
     const epoch = filterEpoch, ids = [...selected.keys()]; $('review').disabled = true;
     try {
-      const preview = await api('previews', { filter: filter(), ids, action: state.action, revision: state.revision }); if (epoch !== filterEpoch || ids.length !== selected.size || ids.some(id => !selected.has(id))) { api(`previews/${preview.id}/invalidate`, {}); return; }
+      const preview = await api('previews', { filter: filter(), ids, action: state.action, revision: state.revision, classificationRevision: state.data?.classificationRevision }); if (epoch !== filterEpoch || ids.length !== selected.size || ids.some(id => !selected.has(id))) { api(`previews/${preview.id}/invalidate`, {}); return; }
       state.preview = preview; state.targetPage = 0;
       $('confirmAction').disabled = confirming || !preview.effective;
       $('actionAvailability').textContent = 'Work is saved before processing. Closing this page does not cancel it.';
@@ -259,9 +266,17 @@
   const classifying = value => value && ['QUEUED', 'RUNNING'].includes(value.state);
   function renderClassification() {
     const active = classifying(classification), count = classification ? classification.done + classification.skipped : 0;
-    $('classificationStart').disabled = !classification?.configured || active;
+    $('classificationStart').disabled = !classification?.configured || (active && !classification?.automaticRun);
     $('classificationStart').textContent = classification?.state === 'FAILED' ? 'Retry classification' : 'Classify new or changed mail';
     $('classificationCancel').hidden = !active;
+    $('classificationAutomatic').checked=!!classification?.automatic;
+    const budget=classification?.budget;
+    $('classificationContinue').hidden=!budget?.paused;
+    $('classificationContinue').disabled=!budget?.canContinue;
+    $('classificationAcknowledgeLabel').hidden=!budget?.unknown;
+    $('classificationBudget').textContent=budget?.unknown ? 'Billing is unknown for an interrupted request. Check OpenRouter activity, then acknowledge before continuing.' : budget?.paused ? 'The $1 reported-spend checkpoint has been reached. Wait for requests to settle, then explicitly continue for another $1.' : 'Each $1 of newly reported spend pauses paid work. Already dispatched requests may add a small overshoot. Keep an external OpenRouter key cap for a hard limit.';
+    $('classificationStart').disabled ||= !!budget?.paused;
+
     $('classificationProgress').hidden = !classification?.total;
     if (classification?.total) { $('classificationProgress').max = classification.total; $('classificationProgress').value = count; }
     $('classificationStatus').textContent = !classification?.configured ? 'Add OPENROUTER_API_KEY to your local .env file and restart TidyMail to enable classification.' :
@@ -280,9 +295,12 @@
       }
     } catch (error) { if ($('classification').open) $('classificationStatus').textContent = error.message; } finally { classificationLoading = false; }
   }
+  $('correctSelectedCategory').onclick=()=>{renderClassification();$('classification').showModal();$('categoryCorrection').focus();};
   $('classificationOpen').onclick = () => { renderClassification(); $('classification').showModal(); pollClassification(); };
   $('classification').addEventListener('close', () => { $('classificationOpen').focus(); loadPage(); });
-  $('classificationStart').onclick = async () => { if (classificationLoading) return; classificationLoading = true; $('classificationStart').disabled = true; try { classification = await api('classification/start', {}); clearSelection('Classification started. Draft selection cleared.'); renderClassification(); } catch (error) { $('classificationStatus').textContent = error.message; } finally { classificationLoading = false; } };
+  $('classificationStart').onclick = async () => { if (classificationLoading) return; classificationLoading = true; $('classificationStart').disabled = true; try { classification = await api('classification/start', {}); renderClassification(); } catch (error) { $('classificationStatus').textContent = error.message; } finally { classificationLoading = false; } };
+  $('classificationAutomatic').onchange = async () => { try{ classification=await api('classification/automatic',{enabled:$('classificationAutomatic').checked});renderClassification(); }catch(error){$('classificationStatus').textContent=error.message;} };
+  $('classificationContinue').onclick = async () => { if(classificationLoading)return; classificationLoading=true; try { classification=await api('classification/continue',{generation:classification.budget.generation,acknowledgeUnknown:$('classificationAcknowledge').checked}); $('classificationAcknowledge').checked=false; renderClassification(); }catch(error){$('classificationStatus').textContent=error.message;}finally{classificationLoading=false;} };
   $('classificationCancel').onclick = async () => { if (classificationLoading) return; classificationLoading = true; try { classification = await api('classification/cancel', {}); renderClassification(); } catch (error) { $('classificationStatus').textContent = error.message; } finally { classificationLoading = false; } };
   $('categoryCorrectionApply').onclick = async () => { const ids = [...selected.keys()]; $('categoryCorrectionApply').disabled = true; try { await api('classification/category', { ids, category: $('categoryCorrection').value, revision: state.revision }); clearSelection('Category correction saved.'); $('classification').close(); } catch (error) { $('classificationStatus').textContent = error.message; } finally { renderClassification(); } };
   pollClassification(); setInterval(pollClassification, 5000);

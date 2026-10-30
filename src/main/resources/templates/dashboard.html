@@ -115,7 +115,7 @@
             <div class="selection row" id="selectionRow">
                 <div><strong id="selectionCount"></strong>
                     <p class="muted" id="selectionDescription">Selection stays while paging.</p>
-                </div><button class="ghost" id="clear">Clear selection</button>
+                </div><button id="correctSelectedCategory">Correct category</button><button class="ghost" id="clear">Clear selection</button>
                 <div class="actions row" role="group" aria-label="Choose cleanup action"><button class="active"
                         data-action="MARK_READ" aria-pressed="true">Mark as read</button><button data-action="ARCHIVE"
                         aria-pressed="false">Archive</button><button class="trash" data-action="TRASH"
@@ -139,8 +139,13 @@
             requires a zero-retention provider and disables response caching. Usage metadata is still retained; legal
             screening exceptions can apply.</p>
         <p>Classification covers indexed received mail, including archived mail, excluding Spam and Trash. Unchanged
-            saved results are reused. New or changed mail can be classified on a later run. Work continues if you close
+            saved results are reused. Automatic classification processes new or changed mail after sync when enabled. Work continues if you close
             this page.</p>
+        <p>Saved categories are available immediately, even when classification is incomplete or stopped. Close this dialog, choose All received mail, and use Category, including Unclassified. Select messages to correct their categories below.</p>
+        <label><input id="classificationAutomatic" type="checkbox">Automatically classify incoming mail after sync</label>
+        <p id="classificationBudget"></p>
+        <label id="classificationAcknowledgeLabel" hidden><input id="classificationAcknowledge" type="checkbox">I checked OpenRouter activity and acknowledge unknown charges.</label>
+        <button id="classificationContinue" hidden>Continue for another $1</button>
         <p id="classificationStatus" role="status" aria-live="polite"></p><progress id="classificationProgress"
             aria-label="Classification progress" hidden></progress>
         <div class="row"><button id="classificationStart" class="primary">Start classification</button><button
