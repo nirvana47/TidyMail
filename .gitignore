@@ -107,7 +107,6 @@ flyway.locations
 
 ### Planning & Demo Folders ###
 docs/*
-!docs/JEV-CLASSIFICATION.md
 tidymail-ux-rehaul/
 tidymail-ux-rehaul-draft/
 .planning/
