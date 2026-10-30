@@ -114,5 +114,3 @@ tidymail-ux-rehaul-draft/
 
 # Local recoverable database snapshots and classification validation reports
 .local-backups/
-!docs/CLASSIFICATION-BENCHMARK.md
-!docs/CLASSIFICATION-IMPLEMENTATION.md
