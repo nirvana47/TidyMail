@@ -29,7 +29,7 @@ public class DashboardJobService {
         this.repository=repository;this.jdbc=repository.jdbc();this.scopes=scopes;this.json=json;this.tx=new TransactionTemplate(manager);
     }
     public record Progress(UUID id,String action,String status,int total,int changed,int failed,int skipped,
-        int unresolved,int cancelled,int remaining,boolean cancelRequested,Instant createdAt,long version,String retryReason) {}
+        int unresolved,int cancelled,int remaining,boolean cancelRequested,Instant createdAt,long version,String retryReason,boolean verificationPending) {}
     public record Target(int ordinal,String providerId,UUID messageId,boolean preChangeObserved) {}
     public record Claim(UUID job,long account,UUID worker,long generation,DashboardFilter filter,List<Target> targets,boolean verification,String action) {}
     public record Dispatch(Claim claim,UUID batch,List<Target> targets) {}
@@ -250,17 +250,17 @@ public class DashboardJobService {
     private void scheduleRetry(Claim claim,RuntimeException error,boolean verification,RuntimeException earlier) {
         var p=params(claim.account(),claim.job());
         int attempts=jdbc.queryForObject("SELECT COALESCE(max(GREATEST(read_attempts,verification_attempts)),0) FROM cleanup_job_targets WHERE job_id=:job",p,Integer.class);
-        boolean exhausted=jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM cleanup_job_targets WHERE job_id=:job AND state='AWAITING_VERIFICATION' AND verification_attempts>=6)",p,Boolean.class);
-        boolean waiting=jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM cleanup_job_targets WHERE job_id=:job AND state IN ('QUEUED','AWAITING_VERIFICATION'))",p,Boolean.class);
+        boolean exhausted=jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM cleanup_job_targets WHERE job_id=:job AND state='AWAITING_VERIFICATION' AND verification_attempts>=6) AND NOT EXISTS(SELECT 1 FROM cleanup_job_targets WHERE job_id=:job AND state='AWAITING_VERIFICATION' AND verification_attempts<6)",p,Boolean.class);
+        boolean waiting=jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM cleanup_job_targets WHERE job_id=:job AND (state='QUEUED' OR (state='AWAITING_VERIFICATION' AND verification_attempts<6)))",p,Boolean.class);
         boolean unresolved=jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM cleanup_job_targets WHERE job_id=:job AND state='AWAITING_VERIFICATION')",p,Boolean.class);
         String reason=exhausted?"Verification limit reached; unresolved outcomes retained":waiting&&(error!=null||verification||unresolved)?"Waiting to retry provider reads":null;
         long delay=Math.min(64000L,1000L<<Math.min(attempts,6))+java.util.concurrent.ThreadLocalRandom.current().nextLong(251);
         Instant next=Instant.now().plusMillis(delay);
-        if(error instanceof com.tidymail.mail.CleanupProviderException provider) {
+        if(waiting && error instanceof com.tidymail.mail.CleanupProviderException provider) {
             if(provider.status()==401){reason="Reconnect Gmail to continue; read retries are bounded";next=Instant.now().plusSeconds(60);}
             if(provider.retryAt()!=null&&provider.retryAt().isAfter(next))next=provider.retryAt();
         }
-        if(error instanceof com.tidymail.security.oauth2.ManagedGoogleCredentialService.CredentialAuthorizationException credentials
+        if(waiting && error instanceof com.tidymail.security.oauth2.ManagedGoogleCredentialService.CredentialAuthorizationException credentials
             && credentials.getCode()==com.tidymail.security.oauth2.ManagedGoogleCredentialService.FailureCode.REAUTH_REQUIRED) {
             reason="Reconnect Gmail to continue; read retries are bounded";next=Instant.now().plusSeconds(60);
         }
@@ -307,9 +307,9 @@ public class DashboardJobService {
             """,p);
         var progress=progress(account,job);
         String status=progress.cancelRequested()?(progress.remaining()>0?"CANCELLING":"CANCELLED"):
-            progress.remaining()>0?"QUEUED":progress.unresolved()>0?"VERIFYING":
-            progress.failed()>0||progress.skipped()>0?"COMPLETED_WITH_EXCEPTIONS":"COMPLETED";
-        p.addValue("status",status).addValue("settled",progress.remaining()==0);
+            progress.remaining()>0?"QUEUED":progress.verificationPending()?"VERIFYING":
+            progress.failed()>0||progress.skipped()>0||progress.unresolved()>0?"COMPLETED_WITH_EXCEPTIONS":"COMPLETED";
+        p.addValue("status",status).addValue("settled",progress.remaining()==0&&!progress.verificationPending());
         jdbc.update("UPDATE cleanup_jobs SET status=:status,settled_at=CASE WHEN :settled THEN COALESCE(settled_at,now()) ELSE NULL END WHERE public_id=:job",p);
         event(account,job);
     }
@@ -318,6 +318,7 @@ public class DashboardJobService {
             SELECT j.*,count(*) FILTER(WHERE t.state='CHANGED') changed,count(*) FILTER(WHERE t.state='FAILED') failed,
             count(*) FILTER(WHERE t.state='SKIPPED') skipped,count(*) FILTER(WHERE t.state='AWAITING_VERIFICATION') unresolved,
             count(*) FILTER(WHERE t.state='CANCELLED_BEFORE_DISPATCH') cancelled,
+            count(*) FILTER(WHERE t.state='AWAITING_VERIFICATION' AND t.verification_attempts<6) verification_pending,
             count(*) FILTER(WHERE t.state IN ('QUEUED','DISPATCH_INTENT')) remaining,count(t.ordinal) actual,
             (SELECT COALESCE(max(e.id),0) FROM cleanup_job_events e WHERE e.job_id=j.public_id) version
             FROM cleanup_jobs j JOIN cleanup_job_targets t ON t.job_id=j.public_id
@@ -325,7 +326,12 @@ public class DashboardJobService {
             """,params(account,job),(r,n)->{
                 int total=r.getInt("selected_count");
                 if(total!=r.getInt("actual"))throw new IllegalStateException("Fixed cleanup target count violated");
-                return new Progress(job,r.getString("action_type"),r.getString("status"),total,r.getInt("changed"),r.getInt("failed"),r.getInt("skipped"),r.getInt("unresolved"),r.getInt("cancelled"),r.getInt("remaining"),r.getTimestamp("cancel_requested_at")!=null,r.getTimestamp("created_at").toInstant(),r.getLong("version"),r.getString("retry_reason"));
+                boolean verificationPending=r.getInt("verification_pending")>0;
+                // Normalize older saved jobs too; exhausted unknown outcomes are retained, not active.
+                String status=r.getString("status");
+                if(r.getInt("remaining")==0 && r.getInt("unresolved")>0 && !verificationPending)
+                    status=r.getTimestamp("cancel_requested_at")!=null?"CANCELLED":"COMPLETED_WITH_EXCEPTIONS";
+                return new Progress(job,r.getString("action_type"),status,total,r.getInt("changed"),r.getInt("failed"),r.getInt("skipped"),r.getInt("unresolved"),r.getInt("cancelled"),r.getInt("remaining"),r.getTimestamp("cancel_requested_at")!=null,r.getTimestamp("created_at").toInstant(),r.getLong("version"),r.getString("retry_reason"),verificationPending);
             });
     }
     private void event(long account,UUID job) {

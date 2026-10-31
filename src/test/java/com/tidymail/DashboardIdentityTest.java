@@ -6,6 +6,15 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class DashboardIdentityTest {
+    @Test void displayNameBracketsNeverBecomeMailboxDelimiters() {
+        for (String from : List.of("\"Alerts > Updates\" <sender@example.test>",
+                "\"Alerts < Updates\" <sender@example.test>",
+                "\"Alerts <old@example.test>\" <sender@example.test>")) {
+            assertThat(DashboardIdentity.mailbox(from)).isEqualTo("sender@example.test");
+        }
+        assertThat(DashboardIdentity.mailbox("\"Alerts > Updates\" <invalid>")).isNull();
+        assertThat(DashboardIdentity.mailbox("Alerts > Updates <sender@example.test>")).isNull();
+    }
     @Test void providerAndMapperPreserveMissingVersusObservedEmptyLabels() {
         var provider=new com.google.api.services.gmail.model.Message().setId("synthetic-label-evidence");
         var mapper=new com.tidymail.service.MessageMetadataMapper();

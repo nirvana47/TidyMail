@@ -6,7 +6,7 @@
   let jobs = [], confirming = false, jobsRequest = 0, historyPage = 0, historyTotal = 0, historyLoading = false;
   const history = new Map();
   const pendingText = state => ({ QUEUED: 'Cleanup queued', DISPATCH_INTENT: 'Cleanup in progress', AWAITING_VERIFICATION: 'Outcome unresolved — checking labels' }[state] || '');
-  const jobLabel = j => j.cancelRequested ? (j.remaining ? 'Cancellation pending — claimed requests may finish' : j.unresolved ? 'Cancelled — unresolved outcomes retained' : 'Cancelled — completed changes stay') : j.remaining ? 'Processing' : j.unresolved ? 'Unresolved — review details' : j.failed ? 'Completed with failures' : 'Completed';
+  const jobLabel = j => j.cancelRequested ? (j.remaining ? 'Cancellation pending — claimed requests may finish' : j.unresolved ? 'Cancelled — unresolved outcomes retained' : 'Cancelled — completed changes stay') : j.remaining ? 'Processing' : j.verificationPending ? 'Verifying' : j.unresolved ? 'Finished — unresolved outcomes retained' : j.failed ? 'Completed with failures' : 'Completed';
   function rememberFocus(container) {
     const current = document.activeElement;
     if (!container.contains(current)) return () => { };
@@ -24,14 +24,14 @@
     catch (error) { notice(error.message); } finally { historyLoading = false; $('historyMore').disabled = false; }
   }
   const actionName = action => ({ MARK_READ: 'Mark as Read', ARCHIVE: 'Archive', TRASH: 'Move to Trash' }[action] || action);
-  const activeJob = j => j.remaining > 0 || j.unresolved > 0;
+  const activeJob = j => j.remaining > 0 || j.verificationPending;
   const jobCounts = j => `${fmt(j.changed)} changed · ${fmt(j.failed)} failed · ${fmt(j.skipped)} skipped · ${fmt(j.unresolved)} unresolved · ${fmt(j.cancelled)} cancelled before dispatch · ${fmt(j.remaining)} remaining of ${fmt(j.total)}`;
   function renderJobs() {
     const focused = document.activeElement?.dataset?.cancelJob;
     $('jobProgress').replaceChildren();
     for (const job of jobs.filter(activeJob)) {
       const row = node('div', undefined, 'job-progress'), copy = node('div');
-      copy.append(node('strong', job.cancelRequested ? (job.remaining ? 'Cancellation pending — claimed requests may finish' : (job.retryReason?.includes('limit reached') ? 'Cancelled — unresolved outcomes retained' : 'Cancelled — verification continues')) : actionName(job.action) + ' · ' + job.status.toLowerCase().replaceAll('_', ' ')), node('p', jobCounts(job) + (job.retryReason ? ' · ' + job.retryReason : ''), 'muted'));
+      copy.append(node('strong', job.cancelRequested ? (job.remaining ? 'Cancellation pending — claimed requests may finish' : (job.verificationPending ? 'Cancelled — verification continues' : 'Cancelled — unresolved outcomes retained')) : actionName(job.action) + ' · ' + job.status.toLowerCase().replaceAll('_', ' ')), node('p', jobCounts(job) + (job.retryReason ? ' · ' + job.retryReason : ''), 'muted'));
       copy.append(progressMeter(job)); row.append(copy); if (job.remaining > 0 && !job.cancelRequested) { const cancel = node('button', 'Cancel'); cancel.dataset.cancelJob = job.id; cancel.onclick = () => cancelJob(job.id, cancel); row.append(cancel); } $('jobProgress').append(row);
     }
     updateSelection(); if ($('activity').open) renderActivity();
@@ -52,7 +52,7 @@
   }
   async function cancelJob(id, button) { const hadFocus = document.activeElement === button; button.disabled = true; try { await api(`jobs/${id}/cancel`, {}); notice('Cancellation requested. Remaining unclaimed work stops; claimed requests may finish. Completed changes are not reversed.'); await pollJobs(); if (hadFocus && document.activeElement === document.body) ($('activity').open ? $('activity').querySelector('[data-close]') : $('activityOpen')).focus(); } catch (error) { notice(error.message); button.disabled = false; if (hadFocus) button.focus(); } }
   async function pollJobs() {
-    const request = ++jobsRequest; try { const latest = await api('jobs'); if (request !== jobsRequest) return; const prior = new Map(jobs.map(j => [j.id, j])); if (latest.length === jobs.length && latest.every(j => prior.get(j.id)?.version === j.version)) return; const changed = latest.some(j => !prior.has(j.id) || prior.get(j.id).version !== j.version); jobs = latest; renderJobs(); if (changed) { await loadPage(); if (jobs.some(j => prior.has(j.id) && activeJob(prior.get(j.id)) && !activeJob(j))) notice('Cleanup finished. Completed changes stay. ' + jobCounts(jobs.find(j => prior.has(j.id) && activeJob(prior.get(j.id)) && !activeJob(j)))); } } catch (error) { notice('Job status unavailable. Saved work continues. ' + error.message); }
+    const request = ++jobsRequest; try { const latest = await api('jobs'); if (request !== jobsRequest) return; const prior = new Map(jobs.map(j => [j.id, j])); if (latest.length === jobs.length && latest.every(j => prior.get(j.id)?.version === j.version)) return; const changed = latest.some(j => !prior.has(j.id) || prior.get(j.id).version !== j.version); jobs = latest; renderJobs(); if (changed) { await loadPage(); if (jobs.some(j => prior.has(j.id) && activeJob(prior.get(j.id)) && !activeJob(j))) notice('Cleanup finished. Completed changes stay. ' + jobCounts(jobs.find(j => prior.has(j.id) && activeJob(prior.get(j.id)) && !activeJob(j))), true); } } catch (error) { notice('Job status unavailable. Saved work continues. ' + error.message); }
   }
   async function confirmJob() {
     if (confirming || !state.preview) return;
@@ -62,8 +62,15 @@
   let filterEpoch = 0, listRequest = 0, listLoading = false, detailRequest = 0, selectionBusy = 0, mergePage = 0, correctionDraft = null;
   const fmt = number => Number(number).toLocaleString();
   function node(tag, text, className) { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (className) e.className = className; return e; }
-  function notice(text) {
+  function notice(text, activity = false) {
     $('notice').hidden = false; $('notice').textContent = text;
+    $('notice').classList.toggle('notice-link', activity);
+    if (activity) {
+      const button = node('button', text + ' · View Activity →', 'notice-action');
+      button.type = 'button'; button.dataset.focusKey = 'cleanup-activity';
+      button.onclick = () => $('activityOpen').click();
+      $('notice').replaceChildren(button);
+    }
     const dialog = document.querySelector('dialog[open]');
     if (dialog) { let feedback = dialog.querySelector('.dialog-notice'); if (!feedback) { feedback = node('p', undefined, 'notice dialog-notice'); feedback.setAttribute('role', 'status'); dialog.querySelector('h2').parentElement.after(feedback); } feedback.textContent = text; }
   }

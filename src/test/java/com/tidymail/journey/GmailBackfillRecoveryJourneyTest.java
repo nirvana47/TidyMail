@@ -213,8 +213,10 @@ class GmailBackfillRecoveryJourneyTest extends PostgresJourneyTest {
                     String id = matcher.group(1);
                     int attempt = metadataAttempts.merge(id, 1, Integer::sum);
                     int status = denyMetadata ? 403 : id.equals("id201") && attempt <= 2 ? (attempt == 1 ? 403 : 429) : 200;
+                    // Historical From display names may contain angle brackets.
+                    String from = id.equals("id201") ? "\\\"Alerts > Updates\\\" <sender@example.test>" : "sender@example.test";
                     String body = status == 200
-                        ? "{\"id\":\"" + id + "\",\"threadId\":\"t" + id + "\",\"historyId\":\"1000\",\"internalDate\":\"1700000000000\",\"payload\":{\"headers\":[{\"name\":\"From\",\"value\":\"sender@example.test\"}]}}"
+                        ? "{\"id\":\"" + id + "\",\"threadId\":\"t" + id + "\",\"historyId\":\"1000\",\"internalDate\":\"1700000000000\",\"payload\":{\"headers\":[{\"name\":\"From\",\"value\":\"" + from + "\"}]}}"
                         : error(status, denyMetadata ? "insufficientPermissions" : "rateLimitExceeded");
                     response.append("--test_boundary\r\nContent-Type: application/http\r\nContent-ID: response-")
                         .append(++index).append("\r\n\r\nHTTP/1.1 ").append(status).append(" status\r\n")

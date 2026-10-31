@@ -67,6 +67,14 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
                     "INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,from_display_name,subject_header,labels,unread,label_evidence_known,dashboard_from_address,dashboard_unit_kind,dashboard_unit_key,received_at) VALUES(?,'google',?,?,?,?,ARRAY['INBOX'],true,true,?,'ADDRESS',?,now())",
                     account, id, sample[0], sample[1], sample[2], sample[0], sample[0]);
         }
+        jdbc.update("""
+                INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,from_display_name,
+                  subject_header,labels,unread,label_evidence_known,dashboard_from_address,dashboard_unit_kind,
+                  dashboard_unit_key,received_at)
+                SELECT ?,'google','list-label-'||i,'offers@lender.example','LendingTree',
+                  'Synthetic offer '||i,ARRAY['INBOX'],true,true,'offers@lender.example','LIST',
+                  'spc.142003.1.sparkpostmail.com',now() FROM generate_series(1,3) i
+                """, account);
         var classificationExecutor = java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
         classificationExecutor.scheduleWithFixedDelay(classification::runOnce, 1, 1,
                 java.util.concurrent.TimeUnit.SECONDS);

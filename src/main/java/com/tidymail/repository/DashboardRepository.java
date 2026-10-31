@@ -5,6 +5,8 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -87,6 +89,7 @@ public class DashboardRepository {
         var summary = jdbc.queryForMap(FILTERED
                 + " SELECT count(*) messages,count(*) FILTER(WHERE unread) unread,count(DISTINCT group_public_id) groups,count(*) FILTER(WHERE received_at IS NULL) undated FROM filtered",
                 p);
+        var mailingLists = new ArrayList<UUID>();
         var groups = jdbc.query(
                 FILTERED + """
                         SELECT group_public_id,group_key,group_label,count(*) messages,count(*) FILTER(WHERE unread) unread,
@@ -97,9 +100,15 @@ public class DashboardRepository {
                         ORDER BY count(*) DESC,group_key LIMIT 10 OFFSET :offset
                         """,
                 p,
-                (r, n) -> new Group(uuid(r, "group_public_id"), r.getString("display_name")==null?r.getString("group_label"):r.getString("display_name"), r.getLong("messages"),
+                (r, n) -> {
+                    UUID id = uuid(r, "group_public_id");
+                    String key = r.getString("group_key"), label = r.getString("group_label");
+                    if (key.equals("list:" + label)) mailingLists.add(id);
+                    return new Group(id, r.getString("display_name")==null?label:r.getString("display_name"), r.getLong("messages"),
                         r.getLong("unread"), instant(r, "latest"), r.getLong("addresses"),
-                        groupingEvidence(r.getString("group_key")), r.getLong("pending"),r.getString("exact_address")));
+                        groupingEvidence(key), r.getLong("pending"),r.getString("exact_address"));
+                });
+        groups = labelMailingLists(account, groups, mailingLists);
         var coverage = jdbc.queryForMap(
                 """
                         SELECT count(*) indexed,min(m.received_at) oldest,max(m.received_at) newest,
@@ -121,6 +130,31 @@ public class DashboardRepository {
                 p);
         long revision = revision(account);
         return new Page(groups, summary, coverage, state, revision, filter, classificationRevision(account));
+    }
+
+    /** Display evidence never changes list membership or overrides a saved label.
+     * Read the whole received group so a search/category/page cannot hide conflicting names. */
+    private List<Group> labelMailingLists(long account, List<Group> groups, List<UUID> mailingLists) {
+        if (mailingLists.isEmpty()) return groups;
+        var names = new HashMap<UUID, String>();
+        var p = new MapSqlParameterSource("account", account).addValue("groups", mailingLists);
+        jdbc.query("""
+                SELECT g.public_id, count(DISTINCT NULLIF(btrim(m.from_display_name),'')) name_count,
+                  min(NULLIF(btrim(m.from_display_name),'')) display_name
+                FROM sender_groups g
+                JOIN sender_group_members member ON member.account_id=g.account_id AND member.group_id=g.id
+                JOIN message_sender_units link ON link.account_id=member.account_id AND link.unit_id=member.unit_id
+                JOIN message_metadata m ON m.account_id=link.account_id AND m.id=link.metadata_id
+                JOIN user_accounts a ON a.id=m.account_id
+                WHERE g.account_id=:account AND g.public_id IN (:groups) AND
+                """ + RECEIVED + " GROUP BY g.public_id", p, r -> {
+                    if (r.getLong("name_count") == 1)
+                        names.put(uuid(r, "public_id"), r.getString("display_name"));
+                });
+        return groups.stream().map(g -> names.containsKey(g.id())
+                ? new Group(g.id(), names.get(g.id()), g.messages(), g.unread(), g.latest(), g.addresses(),
+                        g.evidence(), g.pending(), g.address())
+                : g).toList();
     }
 
     public long revision(long account) {

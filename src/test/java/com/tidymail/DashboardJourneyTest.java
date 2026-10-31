@@ -71,6 +71,48 @@ class DashboardJourneyTest extends PostgresJourneyTest {
     }
 
     @Test
+    void mailingListUsesConsistentStoredNameWithoutChangingItsIdentityOrSelection() {
+        String list = "spc.142003.1.sparkpostmail.com";
+        listMessage("lending-a", "offers@lender.example", "Offers <" + list + ">");
+        listMessage("lending-b", "news@lender.example", "Offers <" + list + ">");
+        jdbc.update("UPDATE message_metadata SET from_display_name=' LendingTree ' WHERE account_id=?", account);
+        long revision = repository.revision(account);
+        UUID id = jdbc.queryForObject("SELECT public_id FROM sender_groups WHERE account_id=? AND group_key=?",
+                UUID.class, account, "list:" + list);
+        var group = dashboard.page(account, filter("all", "")).groups().getFirst();
+        assertThat(group.id()).isEqualTo(id);
+        assertThat(group.label()).isEqualTo("LendingTree");
+        assertThat(group.messages()).isEqualTo(2);
+        assertThat(group.addresses()).isEqualTo(2);
+        assertThat(dashboard.selection(account, filter("all", ""), List.of(id), null, revision)).hasSize(2);
+        assertThat(dashboard.page(account, filter("all", "LendingTree")).groups().getFirst().label()).isEqualTo("LendingTree");
+        assertThat(dashboard.page(account, filter("all", list)).groups().getFirst().label()).isEqualTo("LendingTree");
+        assertThat(repository.revision(account)).isEqualTo(revision);
+        // Friendly presentation must not overwrite persisted/manual labels or list keys.
+        assertThat(jdbc.queryForObject("SELECT group_key FROM sender_groups WHERE public_id=?", String.class, id)).isEqualTo("list:" + list);
+        jdbc.update("UPDATE sender_groups SET label='My lender' WHERE public_id=?", id);
+        assertThat(dashboard.page(account, filter("all", "")).groups().getFirst().label()).isEqualTo("My lender");
+        verifyNoInteractions(gmailProvider, outlookProvider);
+    }
+
+    @Test
+    void mailingListNeverPicksOneBrandWhenFiltersHideConflictingNames() {
+        String list = "shared.sparkpostmail.com";
+        listMessage("shared-a", "a@first.example", "News <" + list + ">");
+        listMessage("shared-b", "b@second.example", "News <" + list + ">");
+        jdbc.update("UPDATE message_metadata SET from_display_name='First Brand' WHERE provider_message_id='shared-a'");
+        jdbc.update("UPDATE message_metadata SET from_display_name='Second Brand',labels=ARRAY[]::text[] WHERE provider_message_id='shared-b'");
+        assertThat(dashboard.page(account, filter("all", "")).groups().getFirst().label()).isEqualTo(list);
+        assertThat(dashboard.page(account, filter("inbox", "First Brand")).groups().getFirst().label()).isEqualTo(list);
+        jdbc.update("UPDATE message_metadata SET classification_override=CASE WHEN provider_message_id='shared-a' THEN 'MARKETING' ELSE 'NEWSLETTER' END");
+        var category = new DashboardFilter("all", "", "", "", "UTC", 0, "MARKETING");
+        assertThat(dashboard.page(account, category).groups().getFirst().label()).isEqualTo(list);
+        jdbc.update("UPDATE message_metadata SET from_display_name='  ' WHERE account_id=?", account);
+        assertThat(dashboard.page(account, filter("all", "")).groups().getFirst().label()).isEqualTo(list);
+        verifyNoInteractions(gmailProvider, outlookProvider);
+    }
+
+    @Test
     void deterministicGroupingPreservesLocalCaseListsAndSharedDomainExceptions() {
         jdbc.update("INSERT INTO dashboard_domain_registry(domain,kind) VALUES('shop.example','DEDICATED')");
         message("receipt", "receipts@shop.example", List.of("INBOX"), true, List.of(), true, NOW);

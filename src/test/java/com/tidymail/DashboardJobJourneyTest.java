@@ -116,6 +116,62 @@ class DashboardJobJourneyTest extends PostgresJourneyTest {
         var resolved=invariant(job.id());assertThat(resolved.changed()).isEqualTo(5);assertThat(resolved.remaining()).isZero();assertThat(resolved.unresolved()).isZero();assertThat(resolved.status()).isEqualTo("CANCELLED");
         verify(gmailProvider,times(1)).markReadOnce(any(),anyList());
     }
+    @Test void exhaustedTrashVerificationFinishesWithUnknownOutcomesAndNormalizesSavedJobs() throws Exception {
+        preview(189);
+        var ids=jdbc.queryForList("SELECT dashboard_message_id FROM message_metadata",UUID.class);
+        var preview=previews.create(account,new DashboardPreviewService.Request(new DashboardFilter("inbox","","","","UTC",0),ids,"TRASH",0));
+        var job=jobs.confirm(account,preview.id());
+        Set<String> trashed=new HashSet<>();
+        when(gmailProvider.getCleanupMetadata(any(),anyList())).thenAnswer(call->{
+            List<String> requested=call.getArgument(1);
+            return requested.stream().map(id->trashed.contains(id)
+                ?new MailMessage(id,"thread-"+id,"google",Instant.now(),Map.of(),Set.of("TRASH")):mail(id,true)).toList();
+        });
+        doAnswer(call->{
+            List<String> requested=call.getArgument(1);
+            requested.stream().filter(id->Integer.parseInt(id.substring(4))<139).forEach(trashed::add);
+            if(!trashed.containsAll(requested))throw new IllegalStateException("simulated timeout");
+            return null;
+        }).when(gmailProvider).cleanupOnce(any(),anyList(),eq(com.tidymail.mail.BulkActionType.TRASH));
+        for(int i=0;i<4;i++){ready(job.id());worker.runOnce();}
+        assertThat(invariant(job.id()).verificationPending()).isTrue();
+        for(int i=0;i<6;i++){ready(job.id());worker.runOnce();}
+        var result=invariant(job.id());
+        assertThat(result.changed()).isEqualTo(139);assertThat(result.unresolved()).isEqualTo(50);
+        assertThat(result.remaining()).isZero();assertThat(result.verificationPending()).isFalse();
+        assertThat(result.status()).isEqualTo("COMPLETED_WITH_EXCEPTIONS");
+        assertThat(result.retryReason()).contains("Verification limit reached");
+        ready(job.id());assertThat(jobs.claim()).isNull();
+        verify(gmailProvider,times(4)).cleanupOnce(any(),anyList(),eq(com.tidymail.mail.BulkActionType.TRASH));
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM cleanup_active_targets",Long.class)).isEqualTo(50);
+        // Yesterday's persisted VERIFYING row must also render as finished without resetting attempts.
+        jdbc.update("UPDATE cleanup_jobs SET status='VERIFYING' WHERE public_id=?",job.id());
+        assertThat(jobs.get(account,job.id()).status()).isEqualTo("COMPLETED_WITH_EXCEPTIONS");
+        assertThat(jobs.history(account,0).rows().getFirst().verificationPending()).isFalse();
+        mockMvc.perform(get("/dashboard/api/jobs/{id}",job.id()).with(authenticatedAs(OWNER)))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.verificationPending").value(false))
+            .andExpect(jsonPath("$.status").value("COMPLETED_WITH_EXCEPTIONS"))
+            .andExpect(jsonPath("$.unresolved").value(50));
+    }
+    @Test void exhaustedTargetsDoNotHideOtherPendingVerificationOrLoseTheLimitReason() {
+        var job=jobs.confirm(account,preview(2).id());
+        doThrow(new IllegalStateException("simulated timeout")).when(gmailProvider).markReadOnce(any(),anyList());
+        worker.runOnce();
+        jdbc.update("UPDATE cleanup_job_targets SET verification_attempts=CASE WHEN ordinal=0 THEN 6 ELSE 1 END WHERE job_id=?",job.id());
+        ready(job.id());worker.runOnce();
+        assertThat(invariant(job.id()).verificationPending()).isTrue();
+        assertThat(invariant(job.id()).retryReason()).isEqualTo("Waiting to retry provider reads");
+        jdbc.update("UPDATE cleanup_job_targets SET verification_attempts=5 WHERE job_id=?",job.id());
+        when(gmailProvider.getCleanupMetadata(any(),anyList())).thenThrow(
+            new com.tidymail.security.oauth2.ManagedGoogleCredentialService.CredentialAuthorizationException(
+                com.tidymail.security.oauth2.ManagedGoogleCredentialService.FailureCode.REAUTH_REQUIRED));
+        ready(job.id());worker.runOnce();
+        var result=invariant(job.id());
+        assertThat(result.verificationPending()).isFalse();
+        assertThat(result.retryReason()).isEqualTo("Verification limit reached; unresolved outcomes retained");
+        assertThat(result.status()).isEqualTo("COMPLETED_WITH_EXCEPTIONS");
+        verify(gmailProvider,times(1)).markReadOnce(any(),anyList());
+    }
     @Test void restartRecoversQueuedWorkButNeverReplaysAnExpiredDispatchAndFencesLateResults() {
         var preview=preview(60);var job=jobs.confirm(account,preview.id());var old=jobs.claim();var dispatch=jobs.dispatch(old,before(old));
         jdbc.update("UPDATE cleanup_jobs SET lease_expires_at=now()-interval '1 second' WHERE public_id=?",job.id());

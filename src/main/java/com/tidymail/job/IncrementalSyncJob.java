@@ -216,13 +216,37 @@ public class IncrementalSyncJob {
             recordWorkerFailure(progressId);
             releaseLane(accountId, lane, leaseOwner);
             log.warn(
-                "Mailbox sync unit failed for account {} lane {} supportCode=SYNC_UNIT_FAILED",
-                accountId, lane);
+                "Mailbox sync unit failed for account {} lane {} supportCode=SYNC_UNIT_FAILED diagnostic={}",
+                accountId, lane, failureDiagnostic(exception));
         } finally {
             activeLeases.remove(leaseKey, leaseOwner);
             releaseLane(accountId, lane, leaseOwner);
             drainQueuedLane(accountId, lane);
         }
+    }
+
+    /** Logs locations and status codes, never provider payloads or exception text. */
+    static String failureDiagnostic(Throwable failure) {
+        StringBuilder diagnostic = new StringBuilder();
+        for (int depth = 0; failure != null && depth < 8; depth++, failure = failure.getCause()) {
+            if (depth > 0) diagnostic.append(" causedBy=");
+            diagnostic.append(failure.getClass().getSimpleName());
+            if (failure instanceof com.google.api.client.http.HttpResponseException response) {
+                diagnostic.append(" status=").append(response.getStatusCode());
+            }
+            if (failure instanceof java.sql.SQLException sql) {
+                diagnostic.append(" sqlState=").append(sql.getSQLState());
+            }
+            String message = failure.getMessage();
+            if (message != null && (message.matches("[A-Z_]{1,64}")
+                    || message.matches("Gmail metadata request failed with status [0-9]{3}"))) {
+                diagnostic.append(" code=").append(message);
+            }
+            java.util.Arrays.stream(failure.getStackTrace())
+                .filter(frame -> frame.getClassName().startsWith("com.tidymail."))
+                .limit(4).forEach(frame -> diagnostic.append(" at ").append(frame));
+        }
+        return diagnostic.toString();
     }
 
     /**

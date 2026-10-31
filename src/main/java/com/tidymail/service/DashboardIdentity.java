@@ -7,6 +7,7 @@ import java.util.regex.Pattern;
 
 /** Conservative, versioned grouping evidence; an uncertain parse never merges identities. */
 public record DashboardIdentity(String address, String kind, String key, String reason) {
+    private static final Pattern NAME_ADDRESS = Pattern.compile("(?:\"[^\"\\r\\n]*\"|[^<>,\"]*)\\s*<([^<>]+)>\\s*");
     private static final Pattern LOCAL = Pattern.compile("[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*");
 
     public static DashboardIdentity parse(List<String> from, List<String> lists, String messageId) {
@@ -29,8 +30,9 @@ public record DashboardIdentity(String address, String kind, String key, String 
         if (raw == null || raw.length()>1024 || raw.indexOf('\r')>=0 || raw.indexOf('\n')>=0) return null;
         String value=raw.trim();
         if (value.contains("<")) {
-            if (!value.matches("(?:\"[^\"\\r\\n]*\"|[^<>,\"]*)\\s*<[^<>]+>\\s*")) return null;
-            value=value.substring(value.indexOf('<')+1,value.indexOf('>')).trim();
+            var mailbox = NAME_ADDRESS.matcher(value);
+            if (!mailbox.matches()) return null;
+            value=mailbox.group(1).trim();
         }
         int at=value.indexOf('@');
         if (at<1 || at!=value.lastIndexOf('@') || !LOCAL.matcher(value.substring(0,at)).matches()) return null;
