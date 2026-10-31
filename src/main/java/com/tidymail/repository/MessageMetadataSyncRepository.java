@@ -36,6 +36,10 @@ public class MessageMetadataSyncRepository {
     }
 
     public int upsertMetadata(MessageMetadata row) {
+        return upsertMetadata(row,row.getLastSyncedAt());
+    }
+
+    public int upsertMetadata(MessageMetadata row,Instant observationStartedAt) {
         requireOwnedRow(row);
         return jdbc.update("""
             INSERT INTO message_metadata(
@@ -86,7 +90,9 @@ public class MessageMetadataSyncRepository {
                    subject_header = EXCLUDED.subject_header,
                    received_at = EXCLUDED.received_at,
                    last_synced_at = EXCLUDED.last_synced_at,
-                   unread = EXCLUDED.unread,
+                   unread = CASE WHEN message_metadata.cleanup_updated_at>:observation_started_at
+                       AND COALESCE(EXCLUDED.provider_revision,-1)<=COALESCE(message_metadata.provider_revision,-1)
+                       THEN message_metadata.unread ELSE EXCLUDED.unread END,
                    size_estimate = EXCLUDED.size_estimate,
                    has_attachments = CASE
                        WHEN EXCLUDED.attachment_state = 'UNKNOWN'
@@ -106,7 +112,9 @@ public class MessageMetadataSyncRepository {
                        WHEN EXCLUDED.attachment_state = 'UNKNOWN'
                            THEN message_metadata.attachment_source
                        ELSE EXCLUDED.attachment_source END,
-                   labels = EXCLUDED.labels,
+                   labels = CASE WHEN message_metadata.cleanup_updated_at>:observation_started_at
+                       AND COALESCE(EXCLUDED.provider_revision,-1)<=COALESCE(message_metadata.provider_revision,-1)
+                       THEN message_metadata.labels ELSE EXCLUDED.labels END,
                    to_values = EXCLUDED.to_values,
                    cc_values = EXCLUDED.cc_values,
                    bcc_values = EXCLUDED.bcc_values,
@@ -130,7 +138,7 @@ public class MessageMetadataSyncRepository {
                    unsubscribe_auth_reason = EXCLUDED.unsubscribe_auth_reason
              WHERE COALESCE(EXCLUDED.provider_revision, -1)
                    >= COALESCE(message_metadata.provider_revision, -1)
-            """, parameters(row));
+            """, parameters(row).addValue("observation_started_at",Timestamp.from(observationStartedAt==null?Instant.EPOCH:observationStartedAt)));
     }
 
     public int deleteByProviderMessageId(long accountId, String providerMessageId) {

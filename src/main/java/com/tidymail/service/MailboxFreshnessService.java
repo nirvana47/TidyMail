@@ -56,63 +56,62 @@ public class MailboxFreshnessService {
         }
 
         assertProviderOutsideTransaction();
-        Set<String> changed = new LinkedHashSet<>();
-        Set<String> deleted = new LinkedHashSet<>();
-        String pageToken = null;
-        String returnedCursor = state.incrementalCursorValue();
-        long fetched = 0;
+        String pageToken=null;
+        String durableCursor=state.incrementalCursorValue();
+        Set<String> visitedPages=new java.util.HashSet<>();
         try {
             do {
-                ChangePage page = provider.listChanges(account, new ChangeRequest(
-                    state.incrementalCursorValue(), cursorKind, pageToken,
-                    MAX_CHANGE_IDS_PER_UNIT));
-                changed.addAll(page.changedIds());
-                deleted.addAll(page.deletedIds());
-                returnedCursor = page.returnedCursor();
-                pageToken = page.nextPageToken();
-                fetched += page.changedIds().size() + page.deletedIds().size();
-                if (changed.size() + deleted.size() > MAX_CHANGE_IDS_PER_UNIT) {
-                    throw new IllegalStateException(
-                        "Freshness unit exceeded its bounded change limit");
+                ChangePage page=provider.listChanges(account,new ChangeRequest(
+                    state.incrementalCursorValue(),cursorKind,pageToken,MAX_CHANGE_IDS_PER_UNIT));
+                // A history record may contain thousands of message IDs after bulk cleanup.
+                // Bound DB commits and hydration, not the total number of IDs in that record.
+                Set<String> touched=new LinkedHashSet<>(page.changedIds());touched.addAll(page.deletedIds());
+                List<String> ids=new ArrayList<>(touched);
+                String finishedCursor=page.hasMore()
+                    ?page.lastCompletelyAppliedRevision()==null?durableCursor:page.lastCompletelyAppliedRevision()
+                    :page.returnedCursor();
+                if(ids.isEmpty())commitChanges(account,leaseOwner,List.of(),Set.of(),finishedCursor,0);
+                for(int start=0;start<ids.size();start+=MAX_CHANGE_IDS_PER_UNIT) {
+                    List<String> chunk=ids.subList(start,Math.min(start+MAX_CHANGE_IDS_PER_UNIT,ids.size()));
+                    List<String> changed=chunk.stream().filter(page.changedIds()::contains).toList();
+                    List<MailMessage> current=changed.isEmpty()?List.of():provider.getCurrentMetadata(account,changed);
+                    Set<String> returned=new java.util.HashSet<>();current.forEach(message->returned.add(message.id()));
+                    Set<String> deleted=new LinkedHashSet<>();
+                    for(String id:chunk)if(page.deletedIds().contains(id)||!returned.contains(id))deleted.add(id);
+                    deleted.removeAll(returned);
+                    // Keep the previous cursor until every target in the history page is committed.
+                    // A crash may re-read committed chunks but cannot skip the uncommitted suffix.
+                    boolean last=start+MAX_CHANGE_IDS_PER_UNIT>=ids.size();
+                    commitChanges(account,leaseOwner,current,deleted,last?finishedCursor:durableCursor,chunk.size());
                 }
-            } while (pageToken != null);
-        } catch (GmailClientInitException exception) {
-            if (!"HISTORY_EXPIRED".equals(exception.getMessage())) {
-                throw exception;
-            }
-            StateSnapshot expired = states.findByAccountId(account.getId())
-                .orElseThrow(() -> new IllegalStateException("Mailbox sync state disappeared"));
-            if (!states.markRescanRequired(
-                    account.getId(), leaseOwner, expired.version(), Instant.now())) {
+                durableCursor=finishedCursor;
+                if(page.hasMore()&&page.lastCompletelyAppliedRevision()!=null
+                        &&!durableCursor.equals(state.incrementalCursorValue()))return SyncOutcome.requeue();
+                pageToken=page.nextPageToken();
+                if(pageToken!=null&&!visitedPages.add(pageToken))throw new IllegalStateException("History continuation did not advance");
+            } while(pageToken!=null);
+            return SyncOutcome.complete();
+        } catch(GmailClientInitException exception) {
+            if(!"HISTORY_EXPIRED".equals(exception.getMessage()))throw exception;
+            StateSnapshot expired=states.findByAccountId(account.getId()).orElseThrow();
+            if(!states.markRescanRequired(account.getId(),leaseOwner,expired.version(),Instant.now()))
                 throw new IllegalStateException("Mailbox state changed before rescan transition");
-            }
             return SyncOutcome.rescan();
         }
+    }
 
-        List<MailMessage> current = changed.isEmpty()
-            ? List.of() : provider.getCurrentMetadata(account, List.copyOf(changed));
-        Set<String> returnedIds = new LinkedHashSet<>();
-        current.forEach(message -> returnedIds.add(message.id()));
-        changed.stream()
-            .filter(id -> !returnedIds.contains(id))
-            .forEach(deleted::add);
-
-        Instant completedAt = Instant.now();
-        StateSnapshot commitState = states.findByAccountId(account.getId())
-            .orElseThrow(() -> new IllegalStateException("Mailbox sync state disappeared"));
-        if (current.isEmpty() && deleted.isEmpty()) {
-            commits.commitNoChangeSuccess(new NoChangeUnit(
-                account.getId(), leaseOwner, commitState.version(),
-                state.incrementalCursorKind(), returnedCursor,
-                completedAt, state.providerTotal()));
+    private void commitChanges(UserAccount account,String leaseOwner,List<MailMessage> current,
+            Set<String> deleted,String cursor,long fetched) {
+        Instant completedAt=Instant.now();
+        StateSnapshot state=states.findByAccountId(account.getId()).orElseThrow();
+        if(current.isEmpty()&&deleted.isEmpty()) {
+            commits.commitNoChangeSuccess(new NoChangeUnit(account.getId(),leaseOwner,state.version(),
+                state.incrementalCursorKind(),cursor,completedAt,state.providerTotal()));
         } else {
-            commits.commitFreshnessUnit(new SyncUnit(
-                account.getId(), leaseOwner, commitState.version(),
-                new ArrayList<>(current), new ArrayList<>(deleted),
-                state.incrementalCursorKind(), returnedCursor,
-                completedAt, fetched, state.providerTotal(), null, null, false));
+            commits.commitFreshnessUnit(new SyncUnit(account.getId(),leaseOwner,state.version(),
+                current,new ArrayList<>(deleted),state.incrementalCursorKind(),cursor,
+                completedAt,fetched,state.providerTotal(),null,null,false));
         }
-        return SyncOutcome.complete();
     }
 
     /** Maps a stored cursor-kind label to its change-feed kind. */

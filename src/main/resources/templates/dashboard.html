@@ -12,7 +12,7 @@
 </head>
 
 <body>
-    <a href="#senderTable" class="muted-link" style="margin:12px;display:inline-block">Skip to senders</a>
+    <a href="#senderTable" class="skip-link">Skip to senders</a>
     <main class="app">
         <header class="row spread">
             <div>
@@ -62,6 +62,10 @@
                         <option value="UNCERTAIN">Uncertain</option>
                         <option value="UNCLASSIFIED">Unclassified</option>
                     </select></label>
+                <label>Sort by <select id="sort" aria-label="Sort senders">
+                        <option value="messages">Message count</option>
+                        <option value="unread">Unread count</option>
+                    </select></label>
                 <button id="classificationOpen">Classify mail</button><span id="classificationSummary" class="muted"
                     role="status"></span>
             </div>
@@ -82,8 +86,8 @@
                                 <th><input id="selectPage" type="checkbox" aria-label="Select groups on this page"
                                         disabled></th>
                                 <th>Sender</th>
-                                <th>Messages</th>
-                                <th>Unread</th>
+                                <th aria-sort="descending"><button id="sortMessages" class="column-sort" aria-label="Sort by message count, highest first">Messages ↓</button></th>
+                                <th aria-sort="none"><button id="sortUnread" class="column-sort" aria-label="Sort by unread count, highest first">Unread ↕</button></th>
                                 <th>Latest message</th>
                                 <th></th>
                             </tr>
@@ -92,7 +96,7 @@
                     </table>
                 </div>
                 <div id="empty" class="empty" role="status">Loading indexed mail…</div>
-                <div class="paging muted"><span>Sorted by message count</span><button id="prevPage"
+                <div class="paging muted"><span id="sortSummary">Sorted by message count</span><button id="prevPage"
                         aria-label="Previous sender page" disabled>‹</button><span id="pageLabel">0 of 0</span><button
                         id="nextPage" aria-label="Next sender page" disabled>›</button></div>
             </div>
@@ -103,6 +107,8 @@
                         <p class="muted" id="detailCounts"></p>
                     </div>
                 </div>
+                <div class="evidence row"><label><input id="detailUnreadOnly" type="checkbox"> Unread only</label>
+                    <button id="selectUnread">Select all unread</button></div>
                 <div class="tabs" role="tablist" aria-label="Sender detail"><button class="active" role="tab"
                         id="messagesTab" aria-controls="detailContent" aria-selected="true"
                         data-tab="messages">Messages</button><button role="tab" id="addressesTab"

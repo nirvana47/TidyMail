@@ -23,8 +23,17 @@ public record MailMessage(
     Set<String> labelIds,
     Long sizeEstimate,
     BigInteger providerRevision,
-    AttachmentState attachmentState
+    AttachmentState attachmentState,
+    Instant observationStartedAt
 ) {
+    public MailMessage(String id,String threadId,String provider,Instant receivedAt,
+            Map<String,List<String>> headers,Set<String> labelIds,Long sizeEstimate,
+            BigInteger providerRevision,AttachmentState attachmentState) {
+        this(id,threadId,provider,receivedAt,headers,labelIds,sizeEstimate,providerRevision,attachmentState,null);
+    }
+    public MailMessage observedSince(Instant startedAt) {
+        return new MailMessage(id,threadId,provider,receivedAt,headers,labelIds,sizeEstimate,providerRevision,attachmentState,startedAt);
+    }
     public MailMessage(
             String id,
             String threadId,

@@ -364,6 +364,78 @@ class DashboardJourneyTest extends PostgresJourneyTest {
                 .hasMessageContaining("unavailable");
     }
 
+    @Test
+    void senderUnreadViewAndSelectionExcludeReadMessagesAcrossPages() throws Exception {
+        var unreadIds = new ArrayList<UUID>();
+        for (int i = 0; i < 25; i++) {
+            var id = message("unread-view-" + i, "sender@example.test", List.of("INBOX"), true,
+                    List.of(), i % 2 == 0, NOW.minusSeconds(i));
+            if (i % 2 == 0) unreadIds.add(id);
+        }
+        message("other-sender", "other@example.test", List.of("INBOX"), true, List.of(), true, NOW);
+        message("outside-inbox", "sender@example.test", List.of(), true, List.of(), true, NOW);
+        var query = filter("inbox", "");
+        var page = dashboard.page(account, query);
+        var group = page.groups().getFirst().id();
+        mockMvc.perform(get("/dashboard/api/groups/" + group).with(authenticatedAs(OWNER))
+                .param("unreadOnly", "true"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(13))
+                .andExpect(jsonPath("$.messages.length()").value(10))
+                .andExpect(jsonPath("$.messages[?(@.unread == false)]").isEmpty());
+        mockMvc.perform(get("/dashboard/api/groups/" + group).with(authenticatedAs(OWNER))
+                .param("unreadOnly", "true").param("messagePage", "1"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.messages.length()").value(3));
+        assertThat(dashboard.details(account, query, group, 0).total()).isEqualTo(25);
+
+        var response = mockMvc.perform(post("/dashboard/api/selection").with(authenticatedAs(OWNER))
+                .with(csrfToken()).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(Map.of("filter", query, "groups", List.of(group),
+                        "revision", page.revision(), "unreadOnly", true))))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        var ids = new ArrayList<UUID>();
+        json.readTree(response).forEach(row -> ids.add(UUID.fromString(row.get("id").asText())));
+        assertThat(ids).containsExactlyInAnyOrderElementsOf(unreadIds);
+        for (String action : List.of("MARK_READ", "TRASH"))
+            mockMvc.perform(post("/dashboard/api/previews").with(authenticatedAs(OWNER))
+                    .with(csrfToken()).contentType(MediaType.APPLICATION_JSON)
+                    .content(json.writeValueAsString(Map.of("filter", query, "ids", ids,
+                            "action", action, "revision", page.revision()))))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.selected").value(13))
+                    .andExpect(jsonPath("$.effective").value(13));
+    }
+
+    @Test
+    void unreadSortOrdersAllSendersBeforePagingAndUsesMatchingMessages() throws Exception {
+        for (int sender = 0; sender < 12; sender++) {
+            for (int i = 0; i < 24 - sender; i++)
+                message("sort-" + sender + "-" + i, "sender" + sender + "@example.test",
+                        List.of("INBOX"), true, List.of(), i < sender, NOW);
+        }
+        // Archived unread messages must not affect the inbox ordering.
+        for (int i = 0; i < 15; i++)
+            message("archived-" + i, "sender0@example.test", List.of(), true, List.of(), true, NOW);
+
+        mockMvc.perform(get("/dashboard/api/page").with(authenticatedAs(OWNER)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.groups[0].unread").value(0));
+        mockMvc.perform(get("/dashboard/api/page").with(authenticatedAs(OWNER)).param("sort", "unread"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.groups.length()").value(10))
+                .andExpect(jsonPath("$.groups[0].unread").value(11))
+                .andExpect(jsonPath("$.groups[9].unread").value(2));
+        mockMvc.perform(get("/dashboard/api/page").with(authenticatedAs(OWNER))
+                .param("sort", "unread").param("page", "1"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.groups.length()").value(2))
+                .andExpect(jsonPath("$.groups[0].unread").value(1))
+                .andExpect(jsonPath("$.groups[1].unread").value(0));
+        mockMvc.perform(get("/dashboard/api/page").with(authenticatedAs(OWNER))
+                .param("sort", "unread").param("scope", "all").param("q", "sender0@"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.groups[0].unread").value(15));
+        mockMvc.perform(get("/dashboard/api/page").with(authenticatedAs(OWNER)).param("sort", "invalid"))
+                .andExpect(status().isBadRequest());
+        var filter = DashboardFilter.from(Map.of("sort", "unread", "page", "1"));
+        assertThat(filter.firstPage().sort()).isEqualTo("unread");
+        assertThat(filter.firstPage().page()).isZero();
+    }
+
     UUID message(String id, String from, List<String> labels, boolean known, List<String> delivered, boolean unread,
             Instant at) {
         var identity = DashboardIdentity.parse(List.of(from), List.of(), id);

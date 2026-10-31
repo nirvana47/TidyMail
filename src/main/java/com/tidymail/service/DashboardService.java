@@ -17,8 +17,12 @@ public class DashboardService {
     public DashboardRepository.Page page(long account,DashboardFilter filter) { return repository.page(account,filter); }
     public DashboardRepository.Details details(long account,DashboardFilter filter,UUID group,int page) { return repository.details(account,filter,group,page); }
     public DashboardRepository.Details details(long account,DashboardFilter filter,UUID group,int page,String address) { return repository.details(account,filter,group,page,address); }
+    public DashboardRepository.Details details(long account,DashboardFilter filter,UUID group,int page,String address,boolean unreadOnly) { return repository.details(account,filter,group,page,address,unreadOnly); }
     public List<DashboardRepository.Selected> selection(long account,DashboardFilter filter,List<UUID> groups,String address,long revision) {
+        return selection(account,filter,groups,address,revision,false);
+    }
+    public List<DashboardRepository.Selected> selection(long account,DashboardFilter filter,List<UUID> groups,String address,long revision,boolean unreadOnly) {
         if(revision!=repository.revision(account)) throw new ResponseStatusException(HttpStatus.CONFLICT,"Grouping changed. Reload the dashboard.");
-        return repository.selection(account,filter,groups,address);
+        return repository.selection(account,filter,groups,address,unreadOnly);
     }
 }

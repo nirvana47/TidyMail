@@ -18,6 +18,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 /** Single bounded worker, independent of the scheduler and HTTP requests. PostgreSQL owns the queue. */
 @Component
 public class DashboardCleanupWorker {
+    private static final org.slf4j.Logger log=LoggerFactory.getLogger(DashboardCleanupWorker.class);
     private final DashboardJobService jobs;
     private final UserAccountRepository accounts;
     private final Map<String,MailProvider> providers;
@@ -51,14 +52,22 @@ public class DashboardCleanupWorker {
             catch(RuntimeException error){observations=Map.of();failure=error;}
             jobs.complete(claim,null,claim.targets(),observations,failure);return;
         }
-        Map<String,MailMessage> before;
-        try{before=read(reader,account,claim.targets());}catch(RuntimeException error){jobs.defer(claim,error);return;}
+        Map<String,MailMessage> before=Map.of();
+        if(!claim.responseBased())try{before=read(reader,account,claim.targets());}catch(RuntimeException error){jobs.defer(claim,error);return;}
         var dispatch=jobs.dispatch(claim,before);if(dispatch==null)return;
+        long started=System.nanoTime();
         RuntimeException failure=null;
         try{
             if(claim.action().equals("MARK_READ"))provider.markReadOnce(account,dispatch.targets().stream().map(Target::providerId).toList());
             else provider.cleanupOnce(account,dispatch.targets().stream().map(Target::providerId).toList(),BulkActionType.valueOf(claim.action()));
         } catch(RuntimeException error){failure=error;}
+        if(claim.responseBased()){
+            jobs.completeAcknowledged(dispatch,failure);
+            log.info("Cleanup batch job={} action={} mode={} targets={} outcome={} elapsedMs={}",
+                claim.job(),claim.action(),claim.executionMode(),dispatch.targets().size(),
+                failure==null?"ACKNOWLEDGED":failure.getClass().getSimpleName(),TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-started));
+            return;
+        }
         Map<String,MailMessage> after;RuntimeException readFailure=null;
         try{after=read(reader,account,dispatch.targets());}catch(RuntimeException error){after=Map.of();readFailure=error;}
         jobs.complete(claim,dispatch.batch(),dispatch.targets(),after,failure,readFailure);

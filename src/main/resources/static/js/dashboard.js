@@ -25,7 +25,7 @@
   }
   const actionName = action => ({ MARK_READ: 'Mark as Read', ARCHIVE: 'Archive', TRASH: 'Move to Trash' }[action] || action);
   const activeJob = j => j.remaining > 0 || j.verificationPending;
-  const jobCounts = j => `${fmt(j.changed)} changed · ${fmt(j.failed)} failed · ${fmt(j.skipped)} skipped · ${fmt(j.unresolved)} unresolved · ${fmt(j.cancelled)} cancelled before dispatch · ${fmt(j.remaining)} remaining of ${fmt(j.total)}`;
+  const jobCounts = j => `${fmt(j.changed)} ${j.executionMode === 'RESPONSE' ? 'accepted by Gmail' : 'changed'} · ${fmt(j.failed)} failed · ${fmt(j.skipped)} skipped · ${fmt(j.unresolved)} unresolved · ${fmt(j.cancelled)} cancelled before dispatch · ${fmt(j.remaining)} remaining of ${fmt(j.total)}`;
   function renderJobs() {
     const focused = document.activeElement?.dataset?.cancelJob;
     $('jobProgress').replaceChildren();
@@ -93,7 +93,7 @@
       end = `${v('year')}-${v('month')}-${v('day')}`;
       const first = new Date(end + 'T12:00:00Z'); first.setUTCDate(first.getUTCDate() - 6); start = first.toISOString().slice(0, 10);
     }
-    return { scope: state.scope, q: $('search').value, start, end, zone: $('zone').value, page: state.page, category: $('category').value };
+    return { scope: state.scope, q: $('search').value, start, end, zone: $('zone').value, page: state.page, category: $('category').value, sort: $('sort').value };
   }
   const query = (value = filter()) => new URLSearchParams(Object.entries(value)).toString();
   function checkbox(label, count, match, onChange) {
@@ -110,13 +110,15 @@
     $('selectPage').checked = total > 0 && chosen >= total; $('selectPage').indeterminate = chosen > 0 && chosen < total; $('selectPage').disabled = !total || selectionBusy > 0 || $('senderTable').hasAttribute('aria-busy');
     $('review').disabled = !selected.size || selectionBusy > 0;
   }
-  async function selectGroups(groups, checked, address) {
+  async function selectGroups(groups, checked, address, unreadOnly = false) {
     if (selectionBusy || $('senderTable').hasAttribute('aria-busy')) return; const epoch = filterEpoch; selectionBusy++; renderSelectionControls();
     try {
       if (checked) {
-        const rows = await api('selection', { filter: filter(), groups, address: address ?? null, revision: state.revision });
+        const rows = await api('selection', { filter: filter(), groups, address: address ?? null, revision: state.revision, unreadOnly });
         if (epoch !== filterEpoch) return;
+        if (unreadOnly) selected.clear();
         rows.forEach(row => selected.set(row.id, row));
+        if (unreadOnly) notice(`${fmt(rows.length)} unread messages selected. Selection includes all matching pages for this sender.`);
       } else {
         [...selected.entries()].forEach(([id, row]) => { if (groups.includes(row.groupId) && (address === undefined || address === row.address)) selected.delete(id); });
       }
@@ -208,13 +210,15 @@
   function focusGroup(g,retainAddress=false) { if(!retainAddress)state.address=null; state.focused = g; state.messagePage = 0; state.details = null; $('detail').hidden = false; renderGroups(); renderDetail(); loadDetails(); }
   async function loadDetails() {
     if (!state.focused) return; const request = ++detailRequest, group = state.focused.id, epoch = filterEpoch;
-    try { const details = await api(`groups/${group}?${query()}&messagePage=${state.messagePage}${state.address ? "&address="+encodeURIComponent(state.address) : ""}`); if (request !== detailRequest || epoch !== filterEpoch || group !== state.focused?.id) return; if (details.revision !== state.revision) { filtersChanged(); return; } const lastPage = Math.max(0, Math.ceil(details.total / 10) - 1); if (state.messagePage > lastPage) { state.messagePage = lastPage; return loadDetails(); } state.details = details; renderDetail(); }
+    try { const details = await api(`groups/${group}?${query()}&unreadOnly=${$('detailUnreadOnly').checked}&messagePage=${state.messagePage}${state.address ? "&address="+encodeURIComponent(state.address) : ""}`); if (request !== detailRequest || epoch !== filterEpoch || group !== state.focused?.id) return; if (details.revision !== state.revision) { filtersChanged(); return; } const lastPage = Math.max(0, Math.ceil(details.total / 10) - 1); if (state.messagePage > lastPage) { state.messagePage = lastPage; return loadDetails(); } state.details = details; renderDetail(); }
     catch (error) { if (request === detailRequest) notice(error.message); }
   }
   function renderDetail() {
     if (!state.focused) return;
     $('detailTitle').textContent = state.focused.label; $('detailBadge').textContent = state.focused.label.slice(0, 1).toUpperCase();
-    $('detailCounts').textContent = state.details ? `${fmt(state.details.total)} matching messages` : `${fmt(state.focused.messages)} matching messages · ${fmt(state.focused.unread)} unread`;
+    $('detailCounts').textContent = state.details ? `${fmt(state.details.total)} matching ${$('detailUnreadOnly').checked ? 'unread messages' : 'messages'}` : `${fmt(state.focused.messages)} matching messages · ${fmt(state.focused.unread)} unread`;
+    $('selectUnread').disabled = selectionBusy > 0 || listLoading || !state.details;
+    $('detailUnreadOnly').disabled = state.tab !== 'messages' || selectionBusy > 0;
     const content = $('detailContent'), restore = rememberFocus(content); content.replaceChildren(); const detail = state.details;
     if (!detail) { content.append(node('p', 'Loading indexed details…', 'evidence')); return; }
     if (state.address) { const back=node('button','All messages in this group'); back.onclick=()=>{state.address=null;state.messagePage=0;state.details=null;renderDetail();loadDetails();}; content.append(node('p',state.address,'evidence'),back); }
@@ -314,6 +318,20 @@
 
   document.querySelectorAll('[data-scope]').forEach(button => button.onclick = () => { if (state.scope === button.dataset.scope) return; state.scope = button.dataset.scope; document.querySelectorAll('[data-scope]').forEach(b => { b.classList.toggle('active', b === button); b.setAttribute('aria-pressed', String(b === button)); }); filtersChanged(); });
   $('search').addEventListener('input', filtersChanged);
+  function sortChanged() {
+    const unread = $('sort').value === 'unread';
+    $('sortMessages').textContent = unread ? 'Messages ↕' : 'Messages ↓';
+    $('sortUnread').textContent = unread ? 'Unread ↓' : 'Unread ↕';
+    $('sortMessages').closest('th').setAttribute('aria-sort', unread ? 'none' : 'descending');
+    $('sortUnread').closest('th').setAttribute('aria-sort', unread ? 'descending' : 'none');
+    $('sortSummary').textContent = unread ? 'Sorted by unread count' : 'Sorted by message count';
+    filtersChanged();
+  }
+  $('sort').addEventListener('change', sortChanged);
+  $('sortMessages').onclick = () => { $('sort').value = 'messages'; sortChanged(); };
+  $('sortUnread').onclick = () => { $('sort').value = 'unread'; sortChanged(); };
+  $('detailUnreadOnly').onchange = () => { state.messagePage = 0; state.details = null; clearSelection('Message view changed. Draft selection was cleared.'); renderDetail(); loadDetails(); };
+  $('selectUnread').onclick = () => { if (state.focused) selectGroups([state.focused.id], true, state.address ?? undefined, true); };
   for (const id of ['date', 'start', 'end', 'zone', 'category']) $(id).addEventListener('change', () => { if (id === 'zone') api('settings', { zone: $('zone').value }).catch(error => notice(error.message)); $('startLabel').hidden = $('endLabel').hidden = $('date').value !== 'custom'; filtersChanged(); });
   $('prevPage').onclick = () => { state.page--; loadPage('prevPage'); }; $('nextPage').onclick = () => { state.page++; loadPage('nextPage'); }; $('selectPage').onchange = e => selectGroups((state.data?.groups || []).map(g => g.id), e.target.checked);
   $('clear').onclick = () => clearSelection(); $('review').onclick = openPreview;

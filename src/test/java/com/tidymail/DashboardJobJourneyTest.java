@@ -21,6 +21,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+@org.springframework.test.context.TestPropertySource(properties="app.cleanup.execution-mode=VERIFIED")
 class DashboardJobJourneyTest extends PostgresJourneyTest {
     static final String OWNER="cleanup@example.test";
     @Autowired DashboardJobService jobs;

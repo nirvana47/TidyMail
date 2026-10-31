@@ -38,8 +38,14 @@ public class GmailSyncConfigProperties {
     @Value("${SYNC_GMAIL_API_BATCH_DELAY_MS:100}")
     private int batchDelayMs;
 
-    @Value("${SYNC_GMAIL_METADATA_BATCH_DELAY_MS:1000}")
-    private int metadataBatchDelayMs = 1000;
+    @Value("${SYNC_GMAIL_METADATA_BATCH_DELAY_MS:0}")
+    private int metadataBatchDelayMs;
+    @Value("${SYNC_GMAIL_METADATA_BATCH_SIZE:25}")
+    private int metadataBatchSize = 25;
+    @Value("${SYNC_GMAIL_QUOTA_UNITS_PER_MINUTE:4800}")
+    private int quotaUnitsPerMinute = 4800;
+    @Value("${SYNC_GMAIL_BACKFILL_QUOTA_UNITS_PER_MINUTE:2400}")
+    private int backfillQuotaUnitsPerMinute = 2400;
 
     @Value("${app.sync.initial-page-size:200}")
     private int initialPageSize = 200;
@@ -79,6 +85,11 @@ public class GmailSyncConfigProperties {
     public int getMetadataBatchDelayMs() {
         return metadataBatchDelayMs;
     }
+    public int getMetadataBatchSize(){return metadataBatchSize;}
+    public int getQuotaUnitsPerMinute(){return quotaUnitsPerMinute;}
+    public int getBackfillQuotaUnitsPerMinute(){return backfillQuotaUnitsPerMinute;}
+    public void setQuotaUnitsPerMinute(int value){quotaUnitsPerMinute=value;}
+    public void setBackfillQuotaUnitsPerMinute(int value){backfillQuotaUnitsPerMinute=value;}
 
     public void setInitialPageSize(int initialPageSize) {
         this.initialPageSize = initialPageSize;
@@ -122,6 +133,9 @@ public class GmailSyncConfigProperties {
 
     @PostConstruct
     public void validate() {
+        if(metadataBatchSize<1||metadataBatchSize>25||quotaUnitsPerMinute<0||backfillQuotaUnitsPerMinute<0
+                ||(quotaUnitsPerMinute>0&&backfillQuotaUnitsPerMinute>quotaUnitsPerMinute))
+            throw new IllegalStateException("Invalid Gmail metadata batch size or quota budget");
         if (apiConcurrency < 1) {
             throw new IllegalStateException(
                 "SYNC_GMAIL_API_CONCURRENCY must be >= 1; got " + apiConcurrency);

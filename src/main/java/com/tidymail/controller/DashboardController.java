@@ -58,11 +58,11 @@ public class DashboardController {
     @GetMapping("/api/groups/{group}")
     @ResponseBody
     public DashboardRepository.Details details(@PathVariable UUID group, @RequestParam Map<String, String> parameters,
-            @RequestParam(defaultValue = "0") int messagePage, OAuth2AuthenticationToken auth) {
-        return dashboard.details(account(auth), DashboardFilter.from(parameters), group, messagePage,parameters.get("address"));
+            @RequestParam(defaultValue = "0") int messagePage, @RequestParam(defaultValue = "false") boolean unreadOnly, OAuth2AuthenticationToken auth) {
+        return dashboard.details(account(auth), DashboardFilter.from(parameters), group, messagePage,parameters.get("address"),unreadOnly);
     }
 
-    public record Selection(DashboardFilter filter, List<UUID> groups, String address, long revision) {
+    public record Selection(DashboardFilter filter, List<UUID> groups, String address, long revision, boolean unreadOnly) {
     }
 
     @PostMapping("/api/selection")
@@ -72,7 +72,7 @@ public class DashboardController {
         if (request.filter() == null)
             throw new IllegalArgumentException("Filters are required");
         return dashboard.selection(account(auth), request.filter(), request.groups(), request.address(),
-                request.revision());
+                request.revision(), request.unreadOnly());
     }
 
     @PostMapping("/api/previews")

@@ -101,7 +101,7 @@ class GmailBackfillRecoveryJourneyTest extends PostgresJourneyTest {
             assertThat(server.metadataAttempts.get("id202")).isEqualTo(1);
             assertThat(limiter.retries).containsExactly(0, 1);
             assertThat(limiter.retryAfterValues).contains("2");
-            assertThat(server.metadataBatchTimes).hasSize(25); // 20 bootstrap, 4 first page, 1 final page.
+            assertThat(server.metadataBatchTimes).hasSize(12); // 8 bootstrap, 1 page plus 2 failed-ID retries, 1 final page.
             for (int i = 1; i < server.metadataBatchTimes.size(); i++) {
                 assertThat(server.metadataBatchTimes.get(i) - server.metadataBatchTimes.get(i - 1))
                     .isGreaterThanOrEqualTo(Duration.ofMillis(8).toNanos());
@@ -140,6 +140,7 @@ class GmailBackfillRecoveryJourneyTest extends PostgresJourneyTest {
         GmailSyncConfigProperties config = new GmailSyncConfigProperties();
         config.setApiConcurrency(3);
         config.setBatchDelayMs(0);
+        config.setQuotaUnitsPerMinute(0); // Synthetic HTTP timing; quota admission is checked separately.
         return config;
     }
 

@@ -90,7 +90,7 @@ class GmailSynchronizationContractTest {
         assertThat(recent).hasSize(11);
         verify(fixture.listRequest).setMaxResults(200L);
         verify(fixture.listRequest, never()).setIncludeSpamTrash(true);
-        verify(fixture.gmail, times(2)).batch();
+        verify(fixture.gmail, times(1)).batch();
 
         when(fixture.listRequest.execute()).thenReturn(
             new ListMessagesResponse()

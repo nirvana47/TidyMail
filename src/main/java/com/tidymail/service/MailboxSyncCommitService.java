@@ -197,7 +197,7 @@ public class MailboxSyncCommitService {
         for (MailMessage message : messages) {
             MessageMetadata row = mapper.apply(accountId, message, null, completedAt);
             row.setFullScanGeneration(generation);
-            upserted += metadata.upsertMetadata(row);
+            upserted += metadata.upsertMetadata(row,message.observationStartedAt()==null?completedAt:message.observationStartedAt());
         }
         return upserted;
     }

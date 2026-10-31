@@ -3,14 +3,10 @@ package com.tidymail.mail.gmail;
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
 import com.google.api.client.json.jackson2.JacksonFactory;
 import com.google.api.services.gmail.Gmail;
-import com.google.auth.http.HttpCredentialsAdapter;
-import com.google.auth.oauth2.AccessToken;
-import com.google.auth.oauth2.GoogleCredentials;
 import com.tidymail.entity.UserAccount;
 import com.tidymail.security.oauth2.ManagedGoogleCredentialService;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
-import java.util.Date;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.core.OAuth2AccessToken;
 import org.springframework.stereotype.Component;
@@ -25,6 +21,12 @@ import org.springframework.stereotype.Component;
 public class GmailClientFactory {
 
     private final ManagedGoogleCredentialService credentialService;
+    private volatile com.google.api.client.http.HttpTransport transport;
+
+    private com.google.api.client.http.HttpTransport transport() throws GeneralSecurityException,IOException {
+        if(transport==null)synchronized(this){if(transport==null)transport=GoogleNetHttpTransport.newTrustedTransport();}
+        return transport;
+    }
 
     public GmailClientFactory(ManagedGoogleCredentialService credentialService) {
         this.credentialService = credentialService;
@@ -41,22 +43,18 @@ public class GmailClientFactory {
         OAuth2AccessToken managedToken = authorizedClient.getAccessToken();
 
         try {
-            Date expiration = managedToken.getExpiresAt() == null
-                ? null
-                : Date.from(managedToken.getExpiresAt());
-            GoogleCredentials credentials = GoogleCredentials.create(
-                new AccessToken(managedToken.getTokenValue(), expiration));
-            HttpCredentialsAdapter credentialAdapter = new HttpCredentialsAdapter(credentials);
-
             return new Gmail.Builder(
-                    GoogleNetHttpTransport.newTrustedTransport(),
+                    transport(),
                     JacksonFactory.getDefaultInstance(),
-                    credentialAdapter)
+                    null)
                 .setApplicationName("TidyMail/0.1.0")
                 .setHttpRequestInitializer(request -> {
                     request.setConnectTimeout(10000);
-                    request.setReadTimeout(60000);
-                    credentialAdapter.initialize(request);
+                    request.setReadTimeout(30000);
+                    request.setNumberOfRetries(0);
+                    // Spring owns refresh. A token-only GoogleCredentials adapter cannot refresh
+                    // itself and previously threw near expiry during long-running background sync.
+                    request.getHeaders().setAuthorization("Bearer "+managedToken.getTokenValue());
                 })
                 .build();
         } catch (GeneralSecurityException | IOException ex) {

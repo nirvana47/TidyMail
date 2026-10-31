@@ -21,6 +21,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /** 501 fixed synthetic targets per scenario; no OAuth account or real Gmail requests. */
+@org.springframework.test.context.TestPropertySource(properties="app.cleanup.execution-mode=VERIFIED")
 class DashboardResilienceTest extends PostgresJourneyTest {
     enum Action {MARK_READ,ARCHIVE,TRASH}
     @Autowired DashboardJobService jobs;

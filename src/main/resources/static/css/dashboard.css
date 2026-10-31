@@ -12,6 +12,9 @@ button{min-height: 44px}@media(max-width:375px){.app{padding-left:12px;padding-r
 
 .job-progress{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:12px 18px;border-top:1px solid var(--line)}.job-progress p{margin:6px 0 0;font-size:12px}.job-progress>div{min-width:0}.job-progress p{overflow-wrap:anywhere}#jobProgress:empty{display:none}
 
+.skip-link{position:fixed;top:12px;left:12px;z-index:20;padding:10px 16px;background:white;color:#2463ff;border:1px solid currentColor;border-radius:7px;transform:translateY(calc(-100% - 20px))}.skip-link:focus{transform:translateY(0)}
+.column-sort{border:0;background:transparent;color:inherit;font:inherit;padding:6px 4px}.column-sort:hover{background:#eaf0ff;color:#2463ff}th[aria-sort=descending] .column-sort{color:#2463ff;font-weight:600}
+
 /* Phase 6: visible pending work, acknowledged progress and bounded desktop dock. */
 .pending{color:#825600;font-weight:600}.job-progress progress,.target progress{display:block;width:100%;height:9px;margin-top:8px;accent-color:var(--blue)}
 #jobProgress{max-height:24vh;overflow:auto;overscroll-behavior:contain}.dock{max-height:50vh;overflow:auto}.job-progress>div{flex:1}.target button{margin-top:10px}button:focus-visible,a:focus-visible{scroll-margin-bottom:calc(var(--dock-height,0px) + 24px)}

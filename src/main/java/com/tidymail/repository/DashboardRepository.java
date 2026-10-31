@@ -97,8 +97,9 @@ public class DashboardRepository {
                         CASE WHEN group_key LIKE 'address:%' THEN max(NULLIF(from_display_name,'')) END display_name,
                         CASE WHEN group_key LIKE 'address:%' THEN min(address) END exact_address,count(*) FILTER(WHERE pending_state IS NOT NULL) pending
                         FROM filtered GROUP BY group_public_id,group_key,group_label
-                        ORDER BY count(*) DESC,group_key LIMIT 10 OFFSET :offset
-                        """,
+                        ORDER BY
+                        """ + (filter.sort().equals("unread") ? "count(*) FILTER(WHERE unread) DESC," : "")
+                        + "count(*) DESC,group_key LIMIT 10 OFFSET :offset",
                 p,
                 (r, n) -> {
                     UUID id = uuid(r, "group_public_id");
@@ -171,6 +172,9 @@ public class DashboardRepository {
         return details(account,filter,group,messagePage,null);
     }
     public Details details(long account, DashboardFilter filter, UUID group, int messagePage,String address) {
+        return details(account, filter, group, messagePage, address, false);
+    }
+    public Details details(long account, DashboardFilter filter, UUID group, int messagePage,String address, boolean unreadOnly) {
         if (messagePage < 0 || messagePage > 1_000_000)
             throw new IllegalArgumentException("Invalid message page");
         var p = parameters(account, filter).addValue("group", group).addValue("message_offset", messagePage * 10L).addValue("address",address);
@@ -179,7 +183,7 @@ public class DashboardRepository {
             throw new org.springframework.web.server.ResponseStatusException(
                     org.springframework.http.HttpStatus.NOT_FOUND, "Sender group unavailable for this account");
         String allGroup = " FROM filtered WHERE group_public_id=:group";
-        String inGroup=allGroup+" AND (CAST(:address AS text) IS NULL OR address=:address)";
+        String inGroup=allGroup+" AND (CAST(:address AS text) IS NULL OR address=:address)" + (unreadOnly ? " AND unread" : "");
         long total = jdbc.queryForObject(FILTERED + "SELECT count(*)" + inGroup, p, Long.class);
         List<Message> messages = jdbc.query(
                 FILTERED + "SELECT *" + inGroup
@@ -198,6 +202,9 @@ public class DashboardRepository {
     }
 
     public List<Selected> selection(long account, DashboardFilter filter, List<UUID> groups, String address) {
+        return selection(account, filter, groups, address, false);
+    }
+    public List<Selected> selection(long account, DashboardFilter filter, List<UUID> groups, String address, boolean unreadOnly) {
         if (groups == null || groups.isEmpty())
             return List.of();
         var p = parameters(account, filter).addValue("groups", groups).addValue("address", address);
@@ -207,7 +214,8 @@ public class DashboardRepository {
             throw new org.springframework.web.server.ResponseStatusException(
                     org.springframework.http.HttpStatus.NOT_FOUND, "Sender group unavailable for this account");
         return jdbc.query(FILTERED
-                + "SELECT dashboard_message_id,group_public_id,address FROM filtered WHERE group_public_id IN (:groups) AND (CAST(:address AS text) IS NULL OR address=:address) ORDER BY provider_message_id",
+                + "SELECT dashboard_message_id,group_public_id,address FROM filtered WHERE group_public_id IN (:groups) AND (CAST(:address AS text) IS NULL OR address=:address)"
+                + (unreadOnly ? " AND unread" : "") + " ORDER BY provider_message_id",
                 p,
                 (r, n) -> new Selected(uuid(r, "dashboard_message_id"), uuid(r, "group_public_id"),
                         r.getString("address")));
