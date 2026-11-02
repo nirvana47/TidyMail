@@ -23,22 +23,24 @@ import org.springframework.web.servlet.view.RedirectView;
  * Handles sender categorization: correcting a sender's category and organizing
  * senders into categories.
  *
- * <p>Product functionality supported: the <em>Sender Categories</em> feature
+ * <p>
+ * Product functionality supported: the <em>Sender Categories</em> feature
  * on the Senders/Unread pages. These endpoints let the user override an
  * auto-detected sender type (semantic: LIST/AUTOMATED/TRANSACTIONAL/PERSONAL),
  * assign senders to a custom category, create new categories, or clear a
  * category — with strict parameter validation and either htmx refresh or a
- * redirect back to the origin page.</p>
+ * redirect back to the origin page.
+ * </p>
  */
 @Controller
 public class SenderCategoryController {
     private static final Set<String> CORRECTION_PARAMETERS = Set.of(
-        "accountId", "senderAddress", "correctionTarget", "returnTo", "_csrf");
+            "accountId", "senderAddress", "correctionTarget", "returnTo", "_csrf");
     private static final Map<String, SenderType> SEMANTIC_TARGETS = Map.of(
-        "semantic:LIST", SenderType.LIST,
-        "semantic:AUTOMATED", SenderType.AUTOMATED,
-        "semantic:TRANSACTIONAL", SenderType.TRANSACTIONAL,
-        "semantic:PERSONAL", SenderType.PERSONAL);
+            "semantic:LIST", SenderType.LIST,
+            "semantic:AUTOMATED", SenderType.AUTOMATED,
+            "semantic:TRANSACTIONAL", SenderType.TRANSACTIONAL,
+            "semantic:PERSONAL", SenderType.PERSONAL);
 
     private final SenderCategoryService categories;
     private final SenderTypeOverrideService overrides;
@@ -62,7 +64,7 @@ public class SenderCategoryController {
             Model model) {
         if (request.getQueryString() != null
                 || parameters.keySet().stream()
-                    .anyMatch(name -> !CORRECTION_PARAMETERS.contains(name))) {
+                        .anyMatch(name -> !CORRECTION_PARAMETERS.contains(name))) {
             throw bad("Invalid correction parameters");
         }
         parameters.forEach((name, values) -> {
@@ -117,8 +119,7 @@ public class SenderCategoryController {
             @RequestParam(required = false) Long categoryId,
             @RequestParam(required = false) String categoryTarget,
             @RequestParam(required = false) String categoryName,
-            @RequestParam(name = "senderAddress", required = false)
-                List<String> senderAddresses,
+            @RequestParam(name = "senderAddress", required = false) List<String> senderAddresses,
             @RequestParam String returnTo,
             @RequestParam(required = false) String returnAccount,
             HttpServletRequest request,
@@ -147,8 +148,8 @@ public class SenderCategoryController {
             return refreshResponse();
         }
         String account = returnAccount == null || returnAccount.isBlank()
-            ? String.valueOf(accountId)
-            : returnAccount;
+                ? String.valueOf(accountId)
+                : returnAccount;
         return new RedirectView(path + "?account=" + account, true);
     }
 
@@ -179,7 +180,8 @@ public class SenderCategoryController {
      * to the {@code custom:<id>} form.
      */
     private static String normalizedCategoryTarget(String categoryTarget, Long categoryId) {
-        if (categoryTarget != null && !categoryTarget.isBlank()) return categoryTarget;
+        if (categoryTarget != null && !categoryTarget.isBlank())
+            return categoryTarget;
         return categoryId == null ? null : "custom:" + categoryId;
     }
 

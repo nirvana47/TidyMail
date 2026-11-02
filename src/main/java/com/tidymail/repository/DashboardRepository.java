@@ -42,7 +42,8 @@ public class DashboardRepository {
     // Read pending state once. A scalar initplan keeps its map out of the row joins
     // and avoids a correlated target query for every matching message.
     public static final String CATEGORY = "replace(COALESCE(m.classification_override,CASE WHEN m.classification_hash=m.classification_evidence_hash AND m.classification_version='"
-            + com.tidymail.service.JevClassifier.VERSION + "' THEN m.classification_category END,'UNCLASSIFIED'),'UNCERTAIN','OTHER')";
+            + com.tidymail.service.JevClassifier.VERSION
+            + "' THEN m.classification_category END,'UNCLASSIFIED'),'UNCERTAIN','OTHER')";
     public static final String FILTERED = """
             WITH pending AS MATERIALIZED (
             SELECT COALESCE(jsonb_object_agg(message_id,state),'{}'::jsonb) AS states FROM (
@@ -80,7 +81,8 @@ public class DashboardRepository {
 
     public MapSqlParameterSource parameters(long account, DashboardFilter filter) {
         return new MapSqlParameterSource("account", account).addValue("scope", filter.scope())
-                .addValue("suggestion", filter.suggestion()).addValue("category", filter.category()).addValue("q", filter.q())
+                .addValue("suggestion", filter.suggestion()).addValue("category", filter.category())
+                .addValue("q", filter.q())
                 .addValue("start", timestamp(filter.startInstant()))
                 .addValue("end", timestamp(filter.endInstant())).addValue("offset", filter.page() * 10L);
     }
@@ -100,16 +102,20 @@ public class DashboardRepository {
                         CASE WHEN group_key LIKE 'address:%' THEN min(address) END exact_address,count(*) FILTER(WHERE pending_state IS NOT NULL) pending
                         FROM filtered GROUP BY group_public_id,group_key,group_label
                         ORDER BY
-                        """ + (filter.sort().equals("unread") ? "count(*) FILTER(WHERE unread) DESC," : "")
+                        """
+                        + (filter.sort().equals("unread") ? "count(*) FILTER(WHERE unread) DESC," : "")
                         + "count(*) DESC,group_key LIMIT 10 OFFSET :offset",
                 p,
                 (r, n) -> {
                     UUID id = uuid(r, "group_public_id");
                     String key = r.getString("group_key"), label = r.getString("group_label");
-                    if (key.equals("list:" + label) || key.startsWith("address:")) mailingLists.add(id);
-                    return new Group(id, r.getString("display_name")==null?label:r.getString("display_name"), r.getLong("messages"),
-                        r.getLong("unread"), instant(r, "latest"), r.getLong("addresses"),
-                        groupingEvidence(key), r.getLong("pending"),r.getString("exact_address"),r.getLong("known_bytes"),r.getLong("unknown_sizes"));
+                    if (key.equals("list:" + label) || key.startsWith("address:"))
+                        mailingLists.add(id);
+                    return new Group(id, r.getString("display_name") == null ? label : r.getString("display_name"),
+                            r.getLong("messages"),
+                            r.getLong("unread"), instant(r, "latest"), r.getLong("addresses"),
+                            groupingEvidence(key), r.getLong("pending"), r.getString("exact_address"),
+                            r.getLong("known_bytes"), r.getLong("unknown_sizes"));
                 });
         groups = labelMailingLists(account, groups, mailingLists);
         var coverage = jdbc.queryForMap(
@@ -135,10 +141,14 @@ public class DashboardRepository {
         return new Page(groups, summary, coverage, state, revision, filter, classificationRevision(account));
     }
 
-    /** Display evidence never changes membership or overrides a saved label.
-     * Read the whole received group so a search/category/page cannot hide conflicting names. */
+    /**
+     * Display evidence never changes membership or overrides a saved label.
+     * Read the whole received group so a search/category/page cannot hide
+     * conflicting names.
+     */
     private List<Group> labelMailingLists(long account, List<Group> groups, List<UUID> mailingLists) {
-        if (mailingLists.isEmpty()) return groups;
+        if (mailingLists.isEmpty())
+            return groups;
         var names = new HashMap<UUID, String>();
         var p = new MapSqlParameterSource("account", account).addValue("groups", mailingLists);
         jdbc.query("""
@@ -151,12 +161,12 @@ public class DashboardRepository {
                 JOIN user_accounts a ON a.id=m.account_id
                 WHERE g.account_id=:account AND g.public_id IN (:groups) AND
                 """ + RECEIVED + " GROUP BY g.public_id", p, r -> {
-                    if (r.getLong("name_count") == 1)
-                        names.put(uuid(r, "public_id"), r.getString("display_name"));
-                });
+            if (r.getLong("name_count") == 1)
+                names.put(uuid(r, "public_id"), r.getString("display_name"));
+        });
         return groups.stream().map(g -> names.containsKey(g.id())
                 ? new Group(g.id(), names.get(g.id()), g.messages(), g.unread(), g.latest(), g.addresses(),
-                        g.evidence(), g.pending(), g.address(),g.knownBytes(),g.unknownSizes())
+                        g.evidence(), g.pending(), g.address(), g.knownBytes(), g.unknownSizes())
                 : g).toList();
     }
 
@@ -168,14 +178,19 @@ public class DashboardRepository {
     }
 
     public long classificationRevision(long account) {
-        return jdbc.queryForObject("SELECT COALESCE((SELECT classification_revision FROM dashboard_account_settings WHERE account_id=:account),0)",Map.of("account",account),Long.class);
+        return jdbc.queryForObject(
+                "SELECT COALESCE((SELECT classification_revision FROM dashboard_account_settings WHERE account_id=:account),0)",
+                Map.of("account", account), Long.class);
     }
+
     public Details details(long account, DashboardFilter filter, UUID group, int messagePage) {
-        return details(account,filter,group,messagePage,null);
+        return details(account, filter, group, messagePage, null);
     }
-    public Details details(long account, DashboardFilter filter, UUID group, int messagePage,String address) {
+
+    public Details details(long account, DashboardFilter filter, UUID group, int messagePage, String address) {
         return details(account, filter, group, messagePage, address, false);
     }
+
     public Details details(long account, DashboardFilter filter, UUID group, int messagePage,String address, boolean unreadOnly) {
         if (messagePage < 0 || messagePage > 1_000_000)
             throw new IllegalArgumentException("Invalid message page");
@@ -203,8 +218,9 @@ public class DashboardRepository {
                         + " ORDER BY received_at DESC NULLS LAST,provider_message_id LIMIT 10 OFFSET :message_offset",
                 p, (r, n) -> message(r,r.getString("reviewed_pattern")));
         var addresses = jdbc.query(
-                FILTERED + "SELECT address,max(NULLIF(from_display_name,'')) display_name,count(*) messages,count(*) FILTER(WHERE unread) unread" + allGroup
-                        + " GROUP BY address ORDER BY address",
+                FILTERED + "SELECT address,max(NULLIF(from_display_name,'')) display_name,count(*) me
+
+            + " GROUP BY address ORDER BY address",
                 p, (r, n) -> new Address(r.getString("address"), r.getLong("messages"), r.getLong("unread"),r.getString("display_name")));
         var units = jdbc.query(
                 FILTERED + "SELECT DISTINCT unit_public_id,unit_kind,unit_key,evidence_reason" + allGroup
@@ -225,7 +241,8 @@ public class DashboardRepository {
                 "SELECT count(*) FROM sender_groups WHERE account_id=:account AND public_id IN (:groups)", p,
                 Long.class) != groups.stream().distinct().count())
             throw new org.springframework.web.server.ResponseStatusException(
-                    org.springframework.http.HttpStatus.NOT_FOUND, "Sender group unavailable for this account");
+
+
         return jdbc.query(FILTERED
                 + "SELECT dashboard_message_id,group_public_id,address FROM filtered WHERE group_public_id IN (:groups) AND (CAST(:address AS text) IS NULL OR address=:address)"
                 + (unreadOnly ? " AND unread" : "") + " ORDER BY provider_message_id",
@@ -235,6 +252,7 @@ public class DashboardRepository {
     }
 
     public static Message message(ResultSet r) throws SQLException { return message(r,null); }
+
     private static Message message(ResultSet r,String pattern) throws SQLException {
         return new Message(uuid(r, "dashboard_message_id"), r.getString("subject_header"), r.getString("address"),
                 instant(r, "received_at"), r.getBoolean("unread"), uuid(r, "group_public_id"),
@@ -246,10 +264,16 @@ public class DashboardRepository {
         return r.getObject(column, UUID.class);
     }
 
+
+
+
     public static Instant instant(ResultSet r, String column) throws SQLException {
         Timestamp v = r.getTimestamp(column);
         return v == null ? null : v.toInstant();
+
+
     }
+
 
     public static Timestamp timestamp(Instant instant) {
         return instant == null ? null : Timestamp.from(instant);
@@ -287,7 +311,7 @@ public class DashboardRepository {
     public record Unit(UUID id, String kind, String key, String reason) {
     }
 
-    public record Selected(UUID id, UUID groupId, String address) {
+    public record Selected(UUID id, UUID groupId,  String address) {
     }
 
     public record Details(List<Message> messages, List<Address> addresses, List<Unit> units, long total, int page,

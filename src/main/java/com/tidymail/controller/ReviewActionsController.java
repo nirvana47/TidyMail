@@ -34,17 +34,18 @@ import org.springframework.web.server.ResponseStatusException;
  * The Review page controller — the heart of TidyMail's safe bulk-action
  * workflow.
  *
- * <p>Product functionality supported: the <em>Review</em> workspace tab, where
+ * <p>
+ * Product functionality supported: the <em>Review</em> workspace tab, where
  * staged cleanup actions are approved, executed, undone, or cancelled. It
  * handles single and batch approval/undo confirmations, unsubscribe approval,
  * conflict resolution, and the &quot;remove protection&quot; (compensation)
  * flow, returning either htmx fragments for in-place updates or full Review
- * page renders.</p>
+ * page renders.
+ * </p>
  */
 @Controller
 public class ReviewActionsController {
-    private static final Set<String> FILTER_KEYS =
-        Set.of("view", "account", "action", "state", "target", "page");
+    private static final Set<String> FILTER_KEYS = Set.of("view", "account", "action", "state", "target", "page");
     private static final String CSRF_PARAMETER = "_csrf";
     private final ActionCommandService commands;
     private final OwnedAccountScopeService accountScopes;
@@ -90,12 +91,12 @@ public class ReviewActionsController {
             OAuth2AuthenticationToken principal,
             Model model) {
         model.addAttribute("emailStats", emailStats.review(
-            accountScopes.resolve(principal, account), account, actionPublicId));
+                accountScopes.resolve(principal, account), account, actionPublicId));
         if ("true".equalsIgnoreCase(htmx)) {
             return "fragments/email-stats-modal-frag :: modal";
         }
         populate(model, principal, new ReviewQuery(
-            "queued", account, "all", "all", "", 0));
+                "queued", account, "all", "all", "", 0));
         return "review";
     }
 
@@ -110,10 +111,10 @@ public class ReviewActionsController {
             OAuth2AuthenticationToken principal,
             Model model) {
         ReviewQuery query = new ReviewQuery(
-            "queued", account, "all", "all", "", 0);
+                "queued", account, "all", "all", "", 0);
         ApprovalConfirmation confirmation = approvals.confirmSelected(
-            owner(principal), accountScopes.resolve(principal, account),
-            query, List.of(actionPublicId));
+                owner(principal), accountScopes.resolve(principal, account),
+                query, List.of(actionPublicId));
         return confirmation(model, principal, query, confirmation, htmx);
     }
 
@@ -128,11 +129,11 @@ public class ReviewActionsController {
             OAuth2AuthenticationToken principal,
             Model model) {
         ReviewQuery query = new ReviewQuery(
-            "queued", account, "all", "all", "", 0);
+                "queued", account, "all", "all", "", 0);
         model.addAttribute("reviewUndoConfirmation",
-            approvals.confirmUndoSelected(
-                owner(principal), accountScopes.resolve(principal, account),
-                query, List.of(actionPublicId)));
+                approvals.confirmUndoSelected(
+                        owner(principal), accountScopes.resolve(principal, account),
+                        query, List.of(actionPublicId)));
         return "fragments/review-confirmation-frag :: undoConfirmation";
     }
 
@@ -147,8 +148,8 @@ public class ReviewActionsController {
             OAuth2AuthenticationToken principal,
             Model model) {
         model.addAttribute("undoConfirmation", undo.prepare(
-            owner(principal), oneAccount(accountScopes.resolve(principal, account)),
-            actionPublicId));
+                owner(principal), oneAccount(accountScopes.resolve(principal, account)),
+                actionPublicId));
         return "fragments/undo-confirmation-frag :: confirmation";
     }
 
@@ -164,8 +165,8 @@ public class ReviewActionsController {
             OAuth2AuthenticationToken principal,
             Model model) {
         model.addAttribute("undoResult", undo.execute(
-            owner(principal), oneAccount(accountScopes.resolve(principal, account)),
-            actionPublicId, undoIntent));
+                owner(principal), oneAccount(accountScopes.resolve(principal, account)),
+                actionPublicId, undoIntent));
         return "fragments/undo-confirmation-frag :: result";
     }
 
@@ -181,8 +182,8 @@ public class ReviewActionsController {
             OAuth2AuthenticationToken principal,
             Model model) {
         model.addAttribute("compensationConfirmation", compensation.prepare(
-            owner(principal), oneAccount(accountScopes.resolve(principal, account)),
-            actionPublicId));
+                owner(principal), oneAccount(accountScopes.resolve(principal, account)),
+                actionPublicId));
         return "fragments/compensation-frag :: confirmation";
     }
 
@@ -200,9 +201,9 @@ public class ReviewActionsController {
             OAuth2AuthenticationToken principal,
             Model model) {
         model.addAttribute("compensationResult", compensation.submit(
-            owner(principal), oneAccount(accountScopes.resolve(principal, account)),
-            actionPublicId, compensationIntent, executionMode,
-            immediateAcknowledged));
+                owner(principal), oneAccount(accountScopes.resolve(principal, account)),
+                actionPublicId, compensationIntent, executionMode,
+                immediateAcknowledged));
         return "fragments/compensation-frag :: result";
     }
 
@@ -216,8 +217,8 @@ public class ReviewActionsController {
             @RequestParam String unsubscribeMethod,
             OAuth2AuthenticationToken principal) {
         commands.approveUnsubscribe(
-            owner(principal), accountScopes.resolve(principal, "current"),
-            actionPublicId, confirmation, unsubscribeMethod);
+                owner(principal), accountScopes.resolve(principal, "current"),
+                actionPublicId, confirmation, unsubscribeMethod);
         return "redirect:/review?view=queued";
     }
 
@@ -232,14 +233,14 @@ public class ReviewActionsController {
             OAuth2AuthenticationToken principal,
             Model model) {
         model.addAttribute("unsubscribeConfirmation",
-            commands.prepareUnsubscribeApproval(
-                owner(principal), accountScopes.resolve(principal, account),
-                actionPublicId));
+                commands.prepareUnsubscribeApproval(
+                        owner(principal), accountScopes.resolve(principal, account),
+                        actionPublicId));
         if ("true".equalsIgnoreCase(htmx)) {
             return "fragments/review-confirmation-frag :: unsubscribeConfirmation";
         }
         ReviewQuery query = new ReviewQuery(
-            "queued", account, "all", "all", "", 0);
+                "queued", account, "all", "all", "", 0);
         populate(model, principal, query);
         return "review";
     }
@@ -254,8 +255,8 @@ public class ReviewActionsController {
             @RequestParam(defaultValue = "current") String account,
             OAuth2AuthenticationToken principal) {
         approvals.cancel(
-            owner(principal), accountScopes.resolve(principal, account),
-            actionPublicId, operationIntent);
+                owner(principal), accountScopes.resolve(principal, account),
+                actionPublicId, operationIntent);
         return "redirect:/review?view=queued&account=" + account;
     }
 
@@ -272,8 +273,8 @@ public class ReviewActionsController {
             Model model) {
         ReviewQuery query = query(parameters, Set.of("selectedAction"));
         ApprovalConfirmation confirmation = approvals.confirmSelected(
-            owner(principal), accountScopes.resolve(principal, query.account()),
-            query, selected);
+                owner(principal), accountScopes.resolve(principal, query.account()),
+                query, selected);
         return confirmation(model, principal, query, confirmation, htmx);
     }
 
@@ -288,9 +289,9 @@ public class ReviewActionsController {
             Model model) {
         ReviewQuery query = query(parameters, Set.of("selectedAction"));
         model.addAttribute("reviewUndoConfirmation",
-            approvals.confirmUndoSelected(
-                owner(principal), accountScopes.resolve(principal, query.account()),
-                query, selected));
+                approvals.confirmUndoSelected(
+                        owner(principal), accountScopes.resolve(principal, query.account()),
+                        query, selected));
         return "fragments/review-confirmation-frag :: undoConfirmation";
     }
 
@@ -304,10 +305,10 @@ public class ReviewActionsController {
             @RequestParam String operationIntent,
             OAuth2AuthenticationToken principal) {
         ReviewQuery query = query(
-            parameters, Set.of("selectedAction", "operationIntent"));
+                parameters, Set.of("selectedAction", "operationIntent"));
         approvals.undoSelected(
-            owner(principal), accountScopes.resolve(principal, query.account()),
-            query, selected, operationIntent);
+                owner(principal), accountScopes.resolve(principal, query.account()),
+                query, selected, operationIntent);
         return "redirect:/review?view=queued&account=" + query.account();
     }
 
@@ -323,7 +324,7 @@ public class ReviewActionsController {
             Model model) {
         ReviewQuery query = query(parameters, Set.of());
         ApprovalConfirmation confirmation = approvals.confirmAll(
-            owner(principal), accountScopes.resolve(principal, query.account()), query);
+                owner(principal), accountScopes.resolve(principal, query.account()), query);
         return confirmation(model, principal, query, confirmation, htmx);
     }
 
@@ -339,10 +340,10 @@ public class ReviewActionsController {
             OAuth2AuthenticationToken principal,
             Model model) {
         ReviewQuery query = query(
-            parameters, Set.of("selectedAction", "operationIntent"));
+                parameters, Set.of("selectedAction", "operationIntent"));
         BatchExecutionReceipt receipt = approvals.executeSelected(
-            owner(principal), accountScopes.resolve(principal, query.account()),
-            query, selected, operationIntent);
+                owner(principal), accountScopes.resolve(principal, query.account()),
+                query, selected, operationIntent);
         return outcome(model, principal, query, receipt, htmx);
     }
 
@@ -359,10 +360,10 @@ public class ReviewActionsController {
             OAuth2AuthenticationToken principal,
             Model model) {
         ReviewQuery query = query(
-            parameters, Set.of("selectedAction", "operationIntent"));
+                parameters, Set.of("selectedAction", "operationIntent"));
         BatchExecutionReceipt receipt = approvals.executeAll(
-            owner(principal), accountScopes.resolve(principal, query.account()),
-            query, confirmed, operationIntent);
+                owner(principal), accountScopes.resolve(principal, query.account()),
+                query, confirmed, operationIntent);
         return outcome(model, principal, query, receipt, htmx);
     }
 
@@ -379,8 +380,8 @@ public class ReviewActionsController {
             Model model) {
         ReviewQuery query = query(parameters, Set.of());
         model.addAttribute("conflict", conflicts.detail(
-            owner(principal), accountScopes.resolve(principal, query.account()),
-            conflictPublicId));
+                owner(principal), accountScopes.resolve(principal, query.account()),
+                conflictPublicId));
         if ("true".equalsIgnoreCase(htmx)) {
             return "fragments/review-conflict-frag :: conflict";
         }
@@ -400,8 +401,8 @@ public class ReviewActionsController {
             @RequestParam(defaultValue = "current") String account,
             OAuth2AuthenticationToken principal) {
         conflicts.resolve(
-            owner(principal), accountScopes.resolve(principal, account),
-            conflictPublicId, command, operationIntent);
+                owner(principal), accountScopes.resolve(principal, account),
+                conflictPublicId, command, operationIntent);
         return "redirect:/review?view=queued&account=" + account;
     }
 
@@ -459,7 +460,7 @@ public class ReviewActionsController {
             OAuth2AuthenticationToken principal,
             ReviewQuery query) {
         WorkspacePageModel workspace = workspaceModels.build(
-            WorkspaceRoute.REVIEW, query.account(), principal);
+                WorkspaceRoute.REVIEW, query.account(), principal);
         model.addAttribute("workspace", workspace);
         model.addAttribute("page", reviewActions.queue(owner(principal), workspace, query));
     }
@@ -493,7 +494,7 @@ public class ReviewActionsController {
      */
     private static ResponseStatusException invalidRequest() {
         return new ResponseStatusException(
-            HttpStatus.BAD_REQUEST, "invalid_review_request");
+                HttpStatus.BAD_REQUEST, "invalid_review_request");
     }
 
     /**
@@ -510,7 +511,7 @@ public class ReviewActionsController {
     private static long oneAccount(List<Long> accountIds) {
         if (accountIds.size() != 1) {
             throw new ResponseStatusException(
-                HttpStatus.BAD_REQUEST, "one_account_required");
+                    HttpStatus.BAD_REQUEST, "one_account_required");
         }
         return accountIds.getFirst();
     }

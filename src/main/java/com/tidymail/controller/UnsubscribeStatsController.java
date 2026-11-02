@@ -16,10 +16,12 @@ import org.springframework.web.bind.annotation.RequestParam;
 /**
  * Renders per-sender stats on the Unsubscribe page.
  *
- * <p>Product functionality supported: the <em>Unsubscribe</em> workspace tab's
+ * <p>
+ * Product functionality supported: the <em>Unsubscribe</em> workspace tab's
  * email-stats modal, which shows the messages from a given sender row (and
  * their metadata) so the user can decide whether to unsubscribe/act. Returns
- * either an htmx modal fragment or a full stats page.</p>
+ * either an htmx modal fragment or a full stats page.
+ * </p>
  */
 @Controller
 public class UnsubscribeStatsController {
@@ -48,9 +50,9 @@ public class UnsubscribeStatsController {
         var page = workspace.build(WorkspaceRoute.UNSUBSCRIBE, query.account(), authentication);
         model.addAttribute("workspace", page);
         model.addAttribute(
-            "emailStats", stats.model(page.selectedAccountIds(), query, senderRowKey));
+                "emailStats", stats.model(page.selectedAccountIds(), query, senderRowKey));
         return "true".equalsIgnoreCase(htmx)
-            ? "fragments/email-stats-modal-frag :: modal"
-            : "unsubscribe-stats";
+                ? "fragments/email-stats-modal-frag :: modal"
+                : "unsubscribe-stats";
     }
 }

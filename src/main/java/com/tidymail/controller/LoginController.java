@@ -12,13 +12,19 @@ import org.springframework.web.bind.annotation.GetMapping;
 @Controller
 public class LoginController {
 
-    // NOTE: OAuthProviderAvailability MUST be injected at class level (constructor/field)
+    // NOTE: OAuthProviderAvailability MUST be injected at class level
+    // (constructor/field)
     // because passing it as a Spring MVC handler METHOD PARAMETER causes
-    // ModelAttributeMethodProcessor / ServletModelAttributeMethodProcessor to instantiate a
-    // FRESH copy via the no-arg constructor instead of resolving the singleton @Component.
-    // That fresh copy skips AutowiredAnnotationBeanPostProcessor's @Value field injection,
-    // so all 5 credential fields are null/empty → every isXxxConfigured() returns false even
-    // when real env vars exist.  DebugEnvController used constructor injection and always
+    // ModelAttributeMethodProcessor / ServletModelAttributeMethodProcessor to
+    // instantiate a
+    // FRESH copy via the no-arg constructor instead of resolving the singleton
+    // @Component.
+    // That fresh copy skips AutowiredAnnotationBeanPostProcessor's @Value field
+    // injection,
+    // so all 5 credential fields are null/empty → every isXxxConfigured() returns
+    // false even
+    // when real env vars exist. DebugEnvController used constructor injection and
+    // always
     // correctly saw true flags, which helped narrow this down.
     private final OAuthProviderAvailability availability;
 

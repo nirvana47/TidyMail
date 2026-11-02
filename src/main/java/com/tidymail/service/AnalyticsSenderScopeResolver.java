@@ -14,7 +14,8 @@ import org.springframework.web.server.ResponseStatusException;
  * drilldown key, the account ownership, and that the sender still exists in the
  * analytics evidence before allowing the Senders view to open.
  *
- * <p>Product functionality supported: the <em>Analytics</em> flow's sender
+ * <p>
+ * Product functionality supported: the <em>Analytics</em> flow's sender
  * drilldown into the Senders page.
  */
 @Service

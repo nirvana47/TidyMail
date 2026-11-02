@@ -25,8 +25,7 @@ import org.springframework.security.oauth2.client.authentication.OAuth2Authentic
 import org.springframework.web.server.ResponseStatusException;
 
 class AnalyticsContractAlignmentTest {
-    private static final Clock CLOCK =
-        Clock.fixed(Instant.parse("2026-08-10T12:00:00Z"), ZoneOffset.UTC);
+    private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-08-10T12:00:00Z"), ZoneOffset.UTC);
 
     @Test
     void quickRangesChooseIntelligentGroupingAndPreserveExplicitOverride() {
@@ -34,12 +33,11 @@ class AnalyticsContractAlignmentTest {
         AnalyticsQueryService queries = new AnalyticsQueryService(scopes, CLOCK);
 
         AnalyticsQuery week = queries.parse(Map.of("period", List.of("week")));
-        AnalyticsQuery threeMonths =
-            queries.parse(Map.of("period", List.of("3months")));
+        AnalyticsQuery threeMonths = queries.parse(Map.of("period", List.of("3months")));
         AnalyticsQuery year = queries.parse(Map.of("period", List.of("year")));
         AnalyticsQuery all = queries.parse(Map.of("period", List.of("all")));
         AnalyticsQuery overridden = queries.parse(Map.of(
-            "period", List.of("3months"), "group", List.of("day")));
+                "period", List.of("3months"), "group", List.of("day")));
 
         assertThat(week.grouping()).isEqualTo(BucketGrouping.DAY);
         assertThat(week.from().toString()).isEqualTo("2026-08-04");
@@ -60,8 +58,8 @@ class AnalyticsContractAlignmentTest {
         when(scopes.resolve(authentication, "all")).thenReturn(List.of(1L, 2L));
 
         assertThatThrownBy(() -> queries.resolve(query, authentication))
-            .isInstanceOf(ResponseStatusException.class)
-            .hasMessageContaining("one active account");
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("one active account");
     }
 
     @Test
@@ -76,16 +74,16 @@ class AnalyticsContractAlignmentTest {
         }));
 
         assertThat(fallback.loadingCopy(workspace))
-            .isEqualTo("Loaded 100 messages. Last updated 30 seconds ago.");
+                .isEqualTo("Loaded 100 messages. Last updated 30 seconds ago.");
         assertThat(reliable.loadingCopy(workspace))
-            .isEqualTo("Loaded 100 out of 250 messages. Last updated 30 seconds ago.");
+                .isEqualTo("Loaded 100 out of 250 messages. Last updated 30 seconds ago.");
     }
 
     @Test
     void sizeCapabilityCarriesFullMessageSemanticsOrHonestUnavailability() {
         SizeMetrics available = new SizeMetrics(1_024L, 3L, 2L, null);
         SizeMetrics unavailable = SizeMetrics.unavailable(
-            "Unavailable until full message size metadata is indexed.");
+                "Unavailable until full message size metadata is indexed.");
 
         assertThat(available.available()).isTrue();
         assertThat(available.unreadInboxBytes()).isEqualTo(1_024);
@@ -97,16 +95,16 @@ class AnalyticsContractAlignmentTest {
     private static AnalyticsService service(
             Optional<AnalyticsMailboxCapability> capability) {
         return new AnalyticsService(
-            null, null, null, null, null, capability, CLOCK);
+                null, null, null, null, null, capability, CLOCK);
     }
 
     private static WorkspacePageModel workspace() {
         return new WorkspacePageModel(
-            WorkspaceRoute.ANALYTICS, "Owner", "owner@example.com",
-            List.of(), List.of(7L), "7", "owner@example.com",
-            0L, UnreadScopeCounts.available(0, 0),
-            100, 100, 1, null,
-            Instant.parse("2026-08-10T11:59:30Z"),
-            WorkspaceState.LOADING, true, false, false);
+                WorkspaceRoute.ANALYTICS, "Owner", "owner@example.com",
+                List.of(), List.of(7L), "7", "owner@example.com",
+                0L, UnreadScopeCounts.available(0, 0),
+                100, 100, 1, null,
+                Instant.parse("2026-08-10T11:59:30Z"),
+                WorkspaceState.LOADING, true, false, false);
     }
 }

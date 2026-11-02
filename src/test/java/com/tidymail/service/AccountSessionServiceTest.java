@@ -27,17 +27,17 @@ class AccountSessionServiceTest {
         UserAccount second = account(2L, "other@gmail.com", "owner@example.com:google");
         OAuth2AuthenticationToken authentication = authentication();
         when(accounts.findByProviderAndProviderAccountId("google", authentication.getName()))
-            .thenReturn(java.util.Optional.of(first));
+                .thenReturn(java.util.Optional.of(first));
         when(accounts.findAllByOwnerKeyOrderByIdAsc(first.getOwnerKey()))
-            .thenReturn(List.of(first, second));
+                .thenReturn(List.of(first, second));
         MockHttpSession session = new MockHttpSession();
 
         assertThat(service.resolve(session, authentication, "2").activeAccountId()).isEqualTo(2L);
         assertThat(service.resolve(session, authentication, "current").activeAccountId())
-            .isEqualTo(2L);
+                .isEqualTo(2L);
         assertThatThrownBy(() -> service.resolve(session, authentication, "all"))
-            .isInstanceOf(ResponseStatusException.class)
-            .hasMessageContaining("All-account scope is not supported");
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("All-account scope is not supported");
     }
 
     @Test
@@ -45,14 +45,13 @@ class AccountSessionServiceTest {
         UserAccount first = account(1L, "owner@example.com", "owner@example.com:google");
         OAuth2AuthenticationToken authentication = authentication();
         when(accounts.findByProviderAndProviderAccountId("google", authentication.getName()))
-            .thenReturn(java.util.Optional.of(first));
+                .thenReturn(java.util.Optional.of(first));
         when(accounts.findAllByOwnerKeyOrderByIdAsc(first.getOwnerKey()))
-            .thenReturn(List.of(first));
+                .thenReturn(List.of(first));
 
-        assertThatThrownBy(() ->
-            service.resolve(new MockHttpSession(), authentication, "99"))
-            .isInstanceOf(ResponseStatusException.class)
-            .hasMessageContaining("Account is not owned");
+        assertThatThrownBy(() -> service.resolve(new MockHttpSession(), authentication, "99"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Account is not owned");
     }
 
     private static UserAccount account(Long id, String email, String ownerKey) {
@@ -68,9 +67,9 @@ class AccountSessionServiceTest {
     private static OAuth2AuthenticationToken authentication() {
         var authorities = List.of(new SimpleGrantedAuthority("ROLE_USER"));
         var principal = new DefaultOAuth2User(
-            authorities,
-            Map.of("sub", "subject-1", "email", "owner@example.com"),
-            "sub");
+                authorities,
+                Map.of("sub", "subject-1", "email", "owner@example.com"),
+                "sub");
         return new OAuth2AuthenticationToken(principal, authorities, "google");
     }
 }

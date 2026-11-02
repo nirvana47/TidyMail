@@ -58,12 +58,14 @@ import org.springframework.web.util.UriComponentsBuilder;
  * Unread (Reply Zero), Unsubscribe, and Review, plus their htmx result
  * fragments and category drill-downs.
  *
- * <p>Product functionality supported: the primary <em>workspace tabs</em>.
+ * <p>
+ * Product functionality supported: the primary <em>workspace tabs</em>.
  * Each page is built from a query (filters/sort/paging) resolved against the
  * user's accounts, and rendered either as a full page or a results fragment.
  * It also handles unsubscribe candidate inspection (with per-method
  * confirmation intents), manual unsubscribe navigation (mailto/provider
- * redirects), and the Review queue/history views.</p>
+ * redirects), and the Review queue/history views.
+ * </p>
  */
 @Controller
 public class WorkspaceController {
@@ -149,44 +151,44 @@ public class WorkspaceController {
             Model model) {
         if (categoryKey.startsWith("unread-")) {
             return unreadCategory(
-                categoryKey.substring("unread-".length()),
-                parameters,
-                authentication,
-                response,
-                model);
+                    categoryKey.substring("unread-".length()),
+                    parameters,
+                    authentication,
+                    response,
+                    model);
         }
         long offset = categoryOffset(parameters);
         boolean loadAll = categoryLoadAll(parameters);
         CleanupAction cleanupAction = cleanupAction(parameters, CleanupAction.ARCHIVE);
         SenderQuery query = SenderQuery.parse(withoutCategoryPaging(parameters));
         var resolvedScope = query.analyticsKey().isBlank()
-            ? null : analyticsSenderScopes.resolve(authentication, query);
-        AnalyticsSenderScope analyticsScope =
-            resolvedScope == null ? null : resolvedScope.scope();
+                ? null
+                : analyticsSenderScopes.resolve(authentication, query);
+        AnalyticsSenderScope analyticsScope = resolvedScope == null ? null : resolvedScope.scope();
         WorkspacePageModel workspace = resolvedScope == null
-            ? workspaceModelService.build(
-                WorkspaceRoute.SENDERS, query.account(), authentication)
-            : workspaceModelService.buildResolved(
-                WorkspaceRoute.SENDERS, query.account(),
-                resolvedScope.accountIds(), authentication);
+                ? workspaceModelService.build(
+                        WorkspaceRoute.SENDERS, query.account(), authentication)
+                : workspaceModelService.buildResolved(
+                        WorkspaceRoute.SENDERS, query.account(),
+                        resolvedScope.accountIds(), authentication);
         try {
             var categoryPage = senderQueryService.categoryPage(
-                workspace.selectedAccountIds(), query, analyticsScope,
-                categoryKey, offset, loadAll);
+                    workspace.selectedAccountIds(), query, analyticsScope,
+                    categoryKey, offset, loadAll);
             model.addAttribute("categoryPage", categoryPage);
             model.addAttribute("canonicalQuery", query.canonicalParameters());
             model.addAttribute("cleanupAction", cleanupAction);
             model.addAttribute("nextCategoryUrl", categoryPage.hasMore()
-                ? senderCategoryUrl(
-                    query, cleanupAction, categoryKey, categoryPage.loadedCount(), false)
-                : "");
+                    ? senderCategoryUrl(
+                            query, cleanupAction, categoryKey, categoryPage.loadedCount(), false)
+                    : "");
             model.addAttribute("loadAllCategoryUrl", categoryPage.loadAllAvailable()
-                ? senderCategoryUrl(
-                    query, cleanupAction, categoryKey, categoryPage.loadedCount(), true)
-                : "");
+                    ? senderCategoryUrl(
+                            query, cleanupAction, categoryKey, categoryPage.loadedCount(), true)
+                    : "");
             return offset > 0
-                ? "fragments/senders-results-frag :: categoryRows"
-                : "fragments/senders-results-frag :: categoryChunk";
+                    ? "fragments/senders-results-frag :: categoryRows"
+                    : "fragments/senders-results-frag :: categoryChunk";
         } catch (ResponseStatusException error) {
             if (error.getStatusCode() != HttpStatus.UNPROCESSABLE_ENTITY) {
                 throw error;
@@ -213,26 +215,25 @@ public class WorkspaceController {
         boolean loadAll = categoryLoadAll(parameters);
         CleanupAction cleanupAction = cleanupAction(parameters, CleanupAction.MARK_READ);
         UnreadQuery query = UnreadQuery.parse(withoutCategoryPaging(parameters));
-        WorkspacePageModel workspace =
-            workspaceModelService.build(WorkspaceRoute.UNREAD, query.account(), authentication);
+        WorkspacePageModel workspace = workspaceModelService.build(WorkspaceRoute.UNREAD, query.account(),
+                authentication);
         var groups = unreadQueryService.categories(workspace.selectedAccountIds(), query);
         try {
-            var categoryPage =
-                senderCategories.unreadCategoryPage(groups, categoryKey, offset, loadAll);
+            var categoryPage = senderCategories.unreadCategoryPage(groups, categoryKey, offset, loadAll);
             model.addAttribute("categoryPage", categoryPage);
             model.addAttribute("canonicalQuery", query.canonicalParameters());
             model.addAttribute("cleanupAction", cleanupAction);
             model.addAttribute("nextCategoryUrl", categoryPage.hasMore()
-                ? unreadCategoryUrl(
-                    query, cleanupAction, categoryKey, categoryPage.loadedCount(), false)
-                : "");
+                    ? unreadCategoryUrl(
+                            query, cleanupAction, categoryKey, categoryPage.loadedCount(), false)
+                    : "");
             model.addAttribute("loadAllCategoryUrl", categoryPage.loadAllAvailable()
-                ? unreadCategoryUrl(
-                    query, cleanupAction, categoryKey, categoryPage.loadedCount(), true)
-                : "");
+                    ? unreadCategoryUrl(
+                            query, cleanupAction, categoryKey, categoryPage.loadedCount(), true)
+                    : "");
             return offset > 0
-                ? "fragments/unread-results-frag :: categoryRows"
-                : "fragments/unread-results-frag :: categoryChunk";
+                    ? "fragments/unread-results-frag :: categoryRows"
+                    : "fragments/unread-results-frag :: categoryChunk";
         } catch (ResponseStatusException error) {
             if (error.getStatusCode() != HttpStatus.UNPROCESSABLE_ENTITY) {
                 throw error;
@@ -306,33 +307,33 @@ public class WorkspaceController {
             Model model) {
         UnsubscribePageModel page = unsubscribePage(parameters, authentication);
         UnsubscribeInspection inspection = unsubscribeCandidateService.inspect(
-            page.workspace().selectedAccountIds(), candidateKey);
+                page.workspace().selectedAccountIds(), candidateKey);
         Map<String, String> intents = new LinkedHashMap<>();
         for (UnsubscribeInspection.MethodFact method : inspection.methods()) {
             if (method.eligible() && method.method() != null) {
                 UnsubscribeMethod selected = UnsubscribeMethod.valueOf(method.method());
                 if (selected.automated()) {
                     var candidate = unsubscribeCandidateService.executionCandidate(
-                        page.workspace().selectedAccountIds(), candidateKey, selected);
+                            page.workspace().selectedAccountIds(), candidateKey, selected);
                     var scope = actionScopeService.createOrGet(
-                        candidate.accountId(), ActionType.UNSUBSCRIBE.name(),
-                        "UNSUBSCRIBE_CANDIDATE",
-                        List.of(candidate.providerMessageId()),
-                        new ActionScopeTargetSummary(
-                            candidate.safeLabel(), candidate.senderAddress(),
-                            null, 1),
-                        new ActionScopeRiskSummary(0, 0, List.of()));
+                            candidate.accountId(), ActionType.UNSUBSCRIBE.name(),
+                            "UNSUBSCRIBE_CANDIDATE",
+                            List.of(candidate.providerMessageId()),
+                            new ActionScopeTargetSummary(
+                                    candidate.safeLabel(), candidate.senderAddress(),
+                                    null, 1),
+                            new ActionScopeRiskSummary(0, 0, List.of()));
                     intents.put(method.method(), actionConfirmations.issue(
-                        ActionCommandController.ownerKey(authentication),
-                        ActionType.UNSUBSCRIBE, DecisionSource.UNSUBSCRIBE,
-                        List.of(new ActionConfirmationIntentService.ScopeBinding(
-                            candidate.accountId(), scope.scopeHash(),
-                            candidate.candidateFingerprint(),
-                            candidate.destinationFingerprint(),
-                            selected.name()))));
+                            ActionCommandController.ownerKey(authentication),
+                            ActionType.UNSUBSCRIBE, DecisionSource.UNSUBSCRIBE,
+                            List.of(new ActionConfirmationIntentService.ScopeBinding(
+                                    candidate.accountId(), scope.scopeHash(),
+                                    candidate.candidateFingerprint(),
+                                    candidate.destinationFingerprint(),
+                                    selected.name()))));
                 } else {
                     intents.put(method.method(), unsubscribeIntentService.issue(
-                        page.workspace().selectedAccountIds(), candidateKey, selected));
+                            page.workspace().selectedAccountIds(), candidateKey, selected));
                 }
             }
         }
@@ -340,8 +341,8 @@ public class WorkspaceController {
         model.addAttribute("page", page);
         model.addAttribute("inspection", inspection);
         return "true".equalsIgnoreCase(htmx)
-            ? "fragments/unsubscribe-inspection-frag :: inspection"
-            : "unsubscribe";
+                ? "fragments/unsubscribe-inspection-frag :: inspection"
+                : "unsubscribe";
     }
 
     /**
@@ -356,13 +357,13 @@ public class WorkspaceController {
             OAuth2AuthenticationToken authentication) {
         UnsubscribePageModel page = unsubscribePage(parameters, authentication);
         var navigation = unsubscribeCandidateService.manualNavigation(
-            page.workspace().selectedAccountIds(),
-            candidateKey,
-            UnsubscribeCandidateService.NavigationKind.MAILTO,
-            methodIndex);
+                page.workspace().selectedAccountIds(),
+                candidateKey,
+                UnsubscribeCandidateService.NavigationKind.MAILTO,
+                methodIndex);
         return ResponseEntity.status(HttpStatus.FOUND)
-            .location(URI.create(navigation.target()))
-            .build();
+                .location(URI.create(navigation.target()))
+                .build();
     }
 
     /**
@@ -376,13 +377,13 @@ public class WorkspaceController {
             OAuth2AuthenticationToken authentication) {
         UnsubscribePageModel page = unsubscribePage(parameters, authentication);
         var navigation = unsubscribeCandidateService.manualNavigation(
-            page.workspace().selectedAccountIds(),
-            candidateKey,
-            UnsubscribeCandidateService.NavigationKind.PROVIDER,
-            0);
+                page.workspace().selectedAccountIds(),
+                candidateKey,
+                UnsubscribeCandidateService.NavigationKind.PROVIDER,
+                0);
         return ResponseEntity.status(HttpStatus.FOUND)
-            .location(URI.create(navigation.target()))
-            .build();
+                .location(URI.create(navigation.target()))
+                .build();
     }
 
     /**
@@ -398,12 +399,12 @@ public class WorkspaceController {
         if ("history".equalsIgnoreCase(parameters.getFirst("view"))) {
             HistoryQuery query = HistoryQuery.parse(parameters);
             WorkspacePageModel workspace = workspaceModelService.build(
-                WorkspaceRoute.REVIEW, query.account(), authentication);
+                    WorkspaceRoute.REVIEW, query.account(), authentication);
             if ("current".equalsIgnoreCase(query.account())
                     || "default".equalsIgnoreCase(query.account())) {
                 query = new HistoryQuery(
-                    workspace.selectedAccountQuery(), query.from(), query.to(),
-                    query.action(), query.status(), query.target(), query.page());
+                        workspace.selectedAccountQuery(), query.from(), query.to(),
+                        query.action(), query.status(), query.target(), query.page());
             }
             model.addAttribute("workspace", workspace);
             model.addAttribute("history", actionHistory.history(workspace, query));
@@ -411,16 +412,16 @@ public class WorkspaceController {
         }
         ReviewQuery query = ReviewQuery.parse(parameters);
         WorkspacePageModel workspace = workspaceModelService.build(
-            WorkspaceRoute.REVIEW, query.account(), authentication);
+                WorkspaceRoute.REVIEW, query.account(), authentication);
         if ("current".equalsIgnoreCase(query.account())
                 || "default".equalsIgnoreCase(query.account())) {
             query = new ReviewQuery(
-                query.view(), workspace.selectedAccountQuery(), query.action(),
-                query.state(), query.target(), query.page());
+                    query.view(), workspace.selectedAccountQuery(), query.action(),
+                    query.state(), query.target(), query.page());
         }
         model.addAttribute("workspace", workspace);
         model.addAttribute("page", reviewActions.queue(
-            ActionCommandController.ownerKey(authentication), workspace, query));
+                ActionCommandController.ownerKey(authentication), workspace, query));
         return "review";
     }
 
@@ -436,7 +437,7 @@ public class WorkspaceController {
             Model model) {
         WorkspaceRoute workspaceRoute = WorkspaceRoute.parse(route);
         model.addAttribute(
-            "workspace", workspaceModelService.build(workspaceRoute, account, authentication));
+                "workspace", workspaceModelService.build(workspaceRoute, account, authentication));
         return "fragments/workspace-state :: state";
     }
 
@@ -449,7 +450,7 @@ public class WorkspaceController {
             OAuth2AuthenticationToken authentication,
             Model model) {
         model.addAttribute(
-            "workspace", workspaceModelService.build(route, account, authentication));
+                "workspace", workspaceModelService.build(route, account, authentication));
         return route.value();
     }
 
@@ -464,54 +465,54 @@ public class WorkspaceController {
         CleanupAction cleanupAction = cleanupAction(parameters, CleanupAction.ARCHIVE);
         SenderQuery query = SenderQuery.parse(withoutCleanupAction(parameters));
         var resolvedScope = query.analyticsKey().isBlank()
-            ? null : analyticsSenderScopes.resolve(authentication, query);
-        AnalyticsSenderScope analyticsScope =
-            resolvedScope == null ? null : resolvedScope.scope();
+                ? null
+                : analyticsSenderScopes.resolve(authentication, query);
+        AnalyticsSenderScope analyticsScope = resolvedScope == null ? null : resolvedScope.scope();
         WorkspacePageModel workspace = resolvedScope == null
-            ? workspaceModelService.build(
-                WorkspaceRoute.SENDERS, query.account(), authentication)
-            : workspaceModelService.buildResolved(
-                WorkspaceRoute.SENDERS, query.account(),
-                resolvedScope.accountIds(), authentication);
+                ? workspaceModelService.build(
+                        WorkspaceRoute.SENDERS, query.account(), authentication)
+                : workspaceModelService.buildResolved(
+                        WorkspaceRoute.SENDERS, query.account(),
+                        resolvedScope.accountIds(), authentication);
         if (query.page() != 0) {
             throw new ResponseStatusException(
-                HttpStatus.BAD_REQUEST, "Invalid page query parameter");
+                    HttpStatus.BAD_REQUEST, "Invalid page query parameter");
         }
         DecisionPage<SenderDecisionRow> results = new DecisionPage<>(
-            List.of(),
-            0,
-            new DecisionPage.Metrics(0, 0, 0, 0),
-            0,
-            SenderQuery.PAGE_SIZE,
-            0,
-            Map.of(),
-            Map.of());
+                List.of(),
+                0,
+                new DecisionPage.Metrics(0, 0, 0, 0),
+                0,
+                SenderQuery.PAGE_SIZE,
+                0,
+                Map.of(),
+                Map.of());
         var categories = senderQueryService.categories(
-            workspace.selectedAccountIds(), query, analyticsScope);
+                workspace.selectedAccountIds(), query, analyticsScope);
         SenderQuery clear = SenderQuery.parse(Map.of("account", List.of(query.account())));
         return new SenderPageModel(
-            workspace,
-            workspace.unreadScopeCounts(),
-            query,
-            results,
-            query.canonicalParameters(),
-            "Window " + query.window().value() + ", type " + query.type().value()
-                + ", risk " + query.risk().value() + ", protected "
-                + query.protection().value(),
-            url("/senders", query.canonicalParameters()),
-            url("/senders", clear.canonicalParameters()),
-            url("/senders", results.previousQuery()),
-            url("/senders", results.nextQuery()),
-            List.of(PreviewAction.ARCHIVE, PreviewAction.TRASH, PreviewAction.MARK_READ,
-                PreviewAction.KEEP, PreviewAction.PROTECT, PreviewAction.REVIEW),
-            analyticsScope == null ? null
-                : "Showing the exact sender received from "
-                    + analyticsScope.startInclusive() + " through "
-                    + analyticsScope.endExclusive() + " UTC.",
-            cleanupAction,
-            categories,
-            categoryOptions(authentication, workspace),
-            workspace.selectedAccountIds().getFirst());
+                workspace,
+                workspace.unreadScopeCounts(),
+                query,
+                results,
+                query.canonicalParameters(),
+                "Window " + query.window().value() + ", type " + query.type().value()
+                        + ", risk " + query.risk().value() + ", protected "
+                        + query.protection().value(),
+                url("/senders", query.canonicalParameters()),
+                url("/senders", clear.canonicalParameters()),
+                url("/senders", results.previousQuery()),
+                url("/senders", results.nextQuery()),
+                List.of(PreviewAction.ARCHIVE, PreviewAction.TRASH, PreviewAction.MARK_READ,
+                        PreviewAction.KEEP, PreviewAction.PROTECT, PreviewAction.REVIEW),
+                analyticsScope == null ? null
+                        : "Showing the exact sender received from "
+                                + analyticsScope.startInclusive() + " through "
+                                + analyticsScope.endExclusive() + " UTC.",
+                cleanupAction,
+                categories,
+                categoryOptions(authentication, workspace),
+                workspace.selectedAccountIds().getFirst());
     }
 
     /**
@@ -524,46 +525,45 @@ public class WorkspaceController {
             OAuth2AuthenticationToken authentication) {
         CleanupAction cleanupAction = cleanupAction(parameters, CleanupAction.MARK_READ);
         UnreadQuery query = UnreadQuery.parse(withoutCleanupAction(parameters));
-        WorkspacePageModel workspace =
-            workspaceModelService.build(WorkspaceRoute.UNREAD, query.account(), authentication);
+        WorkspacePageModel workspace = workspaceModelService.build(WorkspaceRoute.UNREAD, query.account(),
+                authentication);
         if (query.page() != 0) {
             throw new ResponseStatusException(
-                HttpStatus.BAD_REQUEST, "Invalid page query parameter");
+                    HttpStatus.BAD_REQUEST, "Invalid page query parameter");
         }
         DecisionPage<UnreadDecisionRow> results = new DecisionPage<>(
-            List.of(),
-            0,
-            new DecisionPage.Metrics(0, 0, 0, 0),
-            0,
-            UnreadQuery.PAGE_SIZE,
-            0,
-            Map.of(),
-            Map.of());
-        var categorySnapshots =
-            unreadQueryService.categories(workspace.selectedAccountIds(), query);
+                List.of(),
+                0,
+                new DecisionPage.Metrics(0, 0, 0, 0),
+                0,
+                UnreadQuery.PAGE_SIZE,
+                0,
+                Map.of(),
+                Map.of());
+        var categorySnapshots = unreadQueryService.categories(workspace.selectedAccountIds(), query);
         var categories = categorySnapshots.stream()
-            .map(com.tidymail.dto.UnreadCategoryGroup::withoutRows)
-            .toList();
+                .map(com.tidymail.dto.UnreadCategoryGroup::withoutRows)
+                .toList();
         UnreadQuery clear = UnreadQuery.parse(Map.of("account", List.of(query.account())));
         return new UnreadPageModel(
-            workspace,
-            query,
-            results,
-            query.canonicalParameters(),
-            "Type " + query.type().value() + ", age " + query.age().value()
-                + ", waiting " + query.waiting().value() + ", provider "
-                + query.provider().value(),
-            url("/unread", query.canonicalParameters()),
-            url("/unread", clear.canonicalParameters()),
-            url("/unread", results.previousQuery()),
-            url("/unread", results.nextQuery()),
-            List.of(PreviewAction.ARCHIVE, PreviewAction.TRASH, PreviewAction.MARK_READ,
-                PreviewAction.KEEP, PreviewAction.REVIEW),
-            cleanupAction,
-            categories,
-            unreadCategoryUrls(query, cleanupAction, categorySnapshots),
-            categoryOptions(authentication, workspace),
-            workspace.selectedAccountIds().getFirst());
+                workspace,
+                query,
+                results,
+                query.canonicalParameters(),
+                "Type " + query.type().value() + ", age " + query.age().value()
+                        + ", waiting " + query.waiting().value() + ", provider "
+                        + query.provider().value(),
+                url("/unread", query.canonicalParameters()),
+                url("/unread", clear.canonicalParameters()),
+                url("/unread", results.previousQuery()),
+                url("/unread", results.nextQuery()),
+                List.of(PreviewAction.ARCHIVE, PreviewAction.TRASH, PreviewAction.MARK_READ,
+                        PreviewAction.KEEP, PreviewAction.REVIEW),
+                cleanupAction,
+                categories,
+                unreadCategoryUrls(query, cleanupAction, categorySnapshots),
+                categoryOptions(authentication, workspace),
+                workspace.selectedAccountIds().getFirst());
     }
 
     /**
@@ -574,10 +574,10 @@ public class WorkspaceController {
             OAuth2AuthenticationToken authentication, WorkspacePageModel workspace) {
         String ownerKey = ActionCommandController.ownerKey(authentication);
         return workspace.selectedAccountIds().stream()
-            .flatMap(accountId -> senderCategories.list(ownerKey, accountId).stream()
-                .map(category -> new SenderCategoryOption(
-                    category.getId(), accountId, category.getName())))
-            .toList();
+                .flatMap(accountId -> senderCategories.list(ownerKey, accountId).stream()
+                        .map(category -> new SenderCategoryOption(
+                                category.getId(), accountId, category.getName())))
+                .toList();
     }
 
     /**
@@ -587,10 +587,11 @@ public class WorkspaceController {
     private static CleanupAction cleanupAction(
             MultiValueMap<String, String> parameters, CleanupAction defaultValue) {
         List<String> values = parameters.get("cleanupAction");
-        if (values == null) return defaultValue;
+        if (values == null)
+            return defaultValue;
         if (values.size() != 1 || values.getFirst() == null) {
             throw new ResponseStatusException(
-                HttpStatus.BAD_REQUEST, "Invalid cleanupAction query parameter");
+                    HttpStatus.BAD_REQUEST, "Invalid cleanupAction query parameter");
         }
         return CleanupAction.parse(values.getFirst(), defaultValue);
     }
@@ -612,8 +613,7 @@ public class WorkspaceController {
      */
     private static MultiValueMap<String, String> withoutCategoryPaging(
             MultiValueMap<String, String> parameters) {
-        LinkedMultiValueMap<String, String> copy =
-            new LinkedMultiValueMap<>(withoutCleanupAction(parameters));
+        LinkedMultiValueMap<String, String> copy = new LinkedMultiValueMap<>(withoutCleanupAction(parameters));
         copy.remove("offset");
         copy.remove("loadAll");
         return copy;
@@ -629,7 +629,7 @@ public class WorkspaceController {
             return Long.parseLong(value);
         } catch (NumberFormatException error) {
             throw new ResponseStatusException(
-                HttpStatus.BAD_REQUEST, "Invalid category paging state");
+                    HttpStatus.BAD_REQUEST, "Invalid category paging state");
         }
     }
 
@@ -639,10 +639,12 @@ public class WorkspaceController {
      */
     private static boolean categoryLoadAll(MultiValueMap<String, String> parameters) {
         String value = singleCategoryParameter(parameters, "loadAll", "false");
-        if ("true".equals(value)) return true;
-        if ("false".equals(value)) return false;
+        if ("true".equals(value))
+            return true;
+        if ("false".equals(value))
+            return false;
         throw new ResponseStatusException(
-            HttpStatus.BAD_REQUEST, "Invalid category paging state");
+                HttpStatus.BAD_REQUEST, "Invalid category paging state");
     }
 
     /**
@@ -652,10 +654,11 @@ public class WorkspaceController {
     private static String singleCategoryParameter(
             MultiValueMap<String, String> parameters, String name, String defaultValue) {
         List<String> values = parameters.get(name);
-        if (values == null) return defaultValue;
+        if (values == null)
+            return defaultValue;
         if (values.size() != 1 || values.getFirst() == null) {
             throw new ResponseStatusException(
-                HttpStatus.BAD_REQUEST, "Invalid category paging state");
+                    HttpStatus.BAD_REQUEST, "Invalid category paging state");
         }
         return values.getFirst();
     }
@@ -666,12 +669,12 @@ public class WorkspaceController {
     private static Map<String, String> senderCategoryUrls(SenderPageModel page) {
         LinkedHashMap<String, String> urls = new LinkedHashMap<>();
         page.categories().forEach(category -> urls.put(
-            category.key(),
-            category.initialPage().hasMore()
-                ? senderCategoryUrl(
-                    page.query(), page.cleanupAction(), category.key(),
-                    category.initialPage().loadedCount(), false)
-                : ""));
+                category.key(),
+                category.initialPage().hasMore()
+                        ? senderCategoryUrl(
+                                page.query(), page.cleanupAction(), category.key(),
+                                category.initialPage().loadedCount(), false)
+                        : ""));
         return Map.copyOf(urls);
     }
 
@@ -685,8 +688,7 @@ public class WorkspaceController {
             String categoryKey,
             long offset,
             boolean loadAll) {
-        LinkedHashMap<String, String> parameters =
-            new LinkedHashMap<>(query.resetPage().canonicalParameters());
+        LinkedHashMap<String, String> parameters = new LinkedHashMap<>(query.resetPage().canonicalParameters());
         parameters.put("cleanupAction", cleanupAction.parameterValue());
         parameters.put("offset", Long.toString(offset));
         parameters.put("loadAll", Boolean.toString(loadAll));
@@ -702,8 +704,8 @@ public class WorkspaceController {
             List<com.tidymail.dto.UnreadCategoryGroup> categories) {
         LinkedHashMap<String, String> urls = new LinkedHashMap<>();
         categories.forEach(category -> urls.put(
-            category.key(),
-            unreadCategoryUrl(query, cleanupAction, category.key(), 0, false)));
+                category.key(),
+                unreadCategoryUrl(query, cleanupAction, category.key(), 0, false)));
         return Map.copyOf(urls);
     }
 
@@ -716,8 +718,7 @@ public class WorkspaceController {
             String categoryKey,
             long offset,
             boolean loadAll) {
-        LinkedHashMap<String, String> parameters =
-            new LinkedHashMap<>(query.resetPage().canonicalParameters());
+        LinkedHashMap<String, String> parameters = new LinkedHashMap<>(query.resetPage().canonicalParameters());
         parameters.put("cleanupAction", cleanupAction.parameterValue());
         parameters.put("offset", Long.toString(offset));
         parameters.put("loadAll", Boolean.toString(loadAll));
@@ -734,25 +735,25 @@ public class WorkspaceController {
             OAuth2AuthenticationToken authentication) {
         UnsubscribeQuery query = UnsubscribeQuery.parse(parameters);
         WorkspacePageModel workspace = workspaceModelService.build(
-            WorkspaceRoute.UNSUBSCRIBE, query.account(), authentication);
-        DecisionPage<com.tidymail.dto.UnsubscribeCandidateRow> results =
-            unsubscribeCandidateService.query(workspace.selectedAccountIds(), query);
+                WorkspaceRoute.UNSUBSCRIBE, query.account(), authentication);
+        DecisionPage<com.tidymail.dto.UnsubscribeCandidateRow> results = unsubscribeCandidateService
+                .query(workspace.selectedAccountIds(), query);
         requireExistingPage(query.page(), results.totalPages());
         UnsubscribeQuery clear = UnsubscribeQuery.parse(
-            Map.of("account", List.of(query.account())));
+                Map.of("account", List.of(query.account())));
         return new UnsubscribePageModel(
-            workspace,
-            query,
-            results,
-            query.canonicalParameters(),
-            "Category " + query.category().value() + ", exact range "
-                + query.from() + " to " + query.to() + ", default "
-                + query.defaultAction().value(),
-            unsubscribeSortLabel(query.sort()),
-            url("/unsubscribe", query.canonicalParameters()),
-            url("/unsubscribe", clear.canonicalParameters()),
-            url("/unsubscribe", results.previousQuery()),
-            url("/unsubscribe", results.nextQuery()));
+                workspace,
+                query,
+                results,
+                query.canonicalParameters(),
+                "Category " + query.category().value() + ", exact range "
+                        + query.from() + " to " + query.to() + ", default "
+                        + query.defaultAction().value(),
+                unsubscribeSortLabel(query.sort()),
+                url("/unsubscribe", query.canonicalParameters()),
+                url("/unsubscribe", clear.canonicalParameters()),
+                url("/unsubscribe", results.previousQuery()),
+                url("/unsubscribe", results.nextQuery()));
     }
 
     /**
@@ -791,7 +792,7 @@ public class WorkspaceController {
     private static void requireExistingPage(int page, int totalPages) {
         if (page > 0 && page >= totalPages) {
             throw new ResponseStatusException(
-                HttpStatus.BAD_REQUEST, "Invalid page query parameter");
+                    HttpStatus.BAD_REQUEST, "Invalid page query parameter");
         }
     }
 }

@@ -14,17 +14,19 @@ import org.springframework.web.server.ResponseStatusException;
  * Endpoint that lets the user trigger a metadata re-sync of their mailbox
  * from the UI (the &quot;Sync now&quot; action).
  *
- * <p>Product functionality supported: the <em>manual sync</em> control on the
+ * <p>
+ * Product functionality supported: the <em>manual sync</em> control on the
  * workspace pages. It validates that the return route is one of the known
  * workspace pages (to prevent open-redirect), resolves the target account(s)
  * the user owns, and schedules an incremental sync job for each before
- * redirecting back.</p>
+ * redirecting back.
+ * </p>
  */
 @Controller
 public class MetadataSyncController {
 
     private static final Set<String> WORKSPACE_ROUTES = Set.of(
-        "/senders", "/unread", "/unsubscribe", "/review", "/activity", "/analytics");
+            "/senders", "/unread", "/unsubscribe", "/review", "/activity", "/analytics");
 
     private final OwnedAccountScopeService accountScopeService;
     private final IncrementalSyncJob incrementalSyncJob;
