@@ -43,7 +43,7 @@ public class MessageMetadataSyncRepository {
         requireOwnedRow(row);
         return jdbc.update("""
             INSERT INTO message_metadata(
-                raw_from_values, label_evidence_known, dashboard_from_address, dashboard_unit_kind, dashboard_unit_key, dashboard_identity_reason,
+                snippet_text, snippet_state, raw_from_values, label_evidence_known, dashboard_from_address, dashboard_unit_kind, dashboard_unit_key, dashboard_identity_reason,
                 account_id, provider, provider_message_id, provider_thread_id,
                 from_address, from_display_name, from_domain, subject_header,
                 received_at, first_seen_at, last_synced_at, unread,
@@ -59,7 +59,7 @@ public class MessageMetadataSyncRepository {
                 unsubscribe_dkim_covers_list_unsubscribe_post,
                 unsubscribe_auth_reason
             ) VALUES (
-                :raw_from_values, :label_evidence_known, :dashboard_from_address, :dashboard_unit_kind, :dashboard_unit_key, :dashboard_identity_reason,
+                :snippet_text, :snippet_state, :raw_from_values, :label_evidence_known, :dashboard_from_address, :dashboard_unit_kind, :dashboard_unit_key, :dashboard_identity_reason,
                 :account_id, :provider, :provider_message_id, :provider_thread_id,
                 :from_address, :from_display_name, :from_domain, :subject_header,
                 :received_at, :first_seen_at, :last_synced_at, :unread,
@@ -94,6 +94,8 @@ public class MessageMetadataSyncRepository {
                        AND COALESCE(EXCLUDED.provider_revision,-1)<=COALESCE(message_metadata.provider_revision,-1)
                        THEN message_metadata.unread ELSE EXCLUDED.unread END,
                    size_estimate = EXCLUDED.size_estimate,
+                   snippet_text = CASE WHEN EXCLUDED.snippet_state='UNKNOWN' THEN message_metadata.snippet_text ELSE EXCLUDED.snippet_text END,
+                   snippet_state = CASE WHEN EXCLUDED.snippet_state='UNKNOWN' THEN message_metadata.snippet_state ELSE EXCLUDED.snippet_state END,
                    has_attachments = CASE
                        WHEN EXCLUDED.attachment_state = 'UNKNOWN'
                            THEN message_metadata.has_attachments
@@ -176,6 +178,8 @@ public class MessageMetadataSyncRepository {
 
     private static MapSqlParameterSource parameters(MessageMetadata row) {
         return new MapSqlParameterSource()
+            .addValue("snippet_text", row.getSnippetText())
+            .addValue("snippet_state", row.getSnippetState())
             .addValue("raw_from_values", array(row.getRawFromValues()))
             .addValue("label_evidence_known", row.isLabelEvidenceKnown())
             .addValue("dashboard_from_address", row.getDashboardFromAddress())

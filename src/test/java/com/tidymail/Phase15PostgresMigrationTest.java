@@ -74,7 +74,7 @@ class Phase15PostgresMigrationTest {
                     """.formatted(first, category));
         }
 
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(8);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(17);
         try (Connection connection = connection(); Statement statement = connection.createStatement()) {
             assertThat(queryLong(connection, """
                     SELECT COUNT(*) FROM sender_category_assignments

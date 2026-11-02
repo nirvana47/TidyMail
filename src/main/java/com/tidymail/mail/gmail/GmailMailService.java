@@ -717,7 +717,7 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
             for(String messageId:pending.ids()) {
                 var metadataRequest=gmail.users().messages().get(USER_ID_ME,messageId)
                     .setFormat("METADATA").setMetadataHeaders(new ArrayList<>(METADATA_HEADERS));
-                metadataRequest.setFields("id,threadId,internalDate,historyId,labelIds,sizeEstimate,payload(headers)");
+                metadataRequest.setFields("id,threadId,internalDate,historyId,labelIds,sizeEstimate,snippet,payload(headers)");
                 metadataRequest.queue(batch,new JsonBatchCallback<>() {
                     @Override public void onSuccess(Message message,HttpHeaders headers) {
                         if(!messageId.equals(message.getId()))throw new IllegalStateException("GMAIL_METADATA_ID_MISMATCH");
@@ -940,7 +940,8 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
         BigInteger providerRevision = gmailMessage.getHistoryId();
         return new MailMessage(
             id, threadId, provider, receivedAt, headers, labelIds,
-            sizeEstimate, providerRevision, AttachmentState.UNKNOWN);
+            sizeEstimate, providerRevision, AttachmentState.UNKNOWN, null,
+            com.tidymail.mail.EmailSnippet.observed(gmailMessage.getSnippet()));
     }
 
     private static void rejectBodyData(MessagePart part, String messageId) {

@@ -28,6 +28,18 @@ class DashboardClassificationTest extends PostgresJourneyTest {
     @Autowired DashboardPreviewService previews;
     @Autowired DashboardJobService jobs;
     long account;
+    @Test void explicitPersonalIdentitySurvivesLaterAutomatedClassificationRegrouping() {
+        UUID person=mail("alex@chase.com","Alex","Work update");
+        mail("alerts@chase.com","Chase","Account update");
+        finish();
+        classification.correctCategory(account,List.of(person),"PERSONAL",dashboard.revision(account));
+        assertThat(jdbc.queryForObject("SELECT automatic_group_key FROM sender_units WHERE account_id=? AND canonical_key='alex@chase.com'",String.class,account)).isEqualTo("address:alex@chase.com");
+        mail("statements@chase.com","Chase","Another update");
+        finish();
+        assertThat(jdbc.queryForObject("SELECT automatic_group_key FROM sender_units WHERE account_id=? AND canonical_key='alex@chase.com'",String.class,account)).isEqualTo("address:alex@chase.com");
+        assertThat(jdbc.queryForObject("SELECT count(DISTINCT group_id) FROM sender_group_members WHERE account_id=?",Long.class,account)).isEqualTo(2);
+        verifyNoInteractions(gmailProvider);
+    }
     @BeforeEach void setup(){reset(classifier);when(classifier.configured()).thenReturn(true);account=userAccounts.createAccount(OWNER);classification.automatic(account,false);
         when(classifier.classify(anyList())).thenAnswer(call->{assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();List<Evidence> items=call.getArgument(0);return result(items);});}
     Result result(List<Evidence> items){return new Result(items.stream().map(e->new Decision(e.subject().contains("offer")?"MARKETING":e.address().contains("amazon")?"RECEIPT":"PERSONAL",
@@ -193,8 +205,8 @@ class DashboardClassificationTest extends PostgresJourneyTest {
         assertThat(dashboard.details(account,filter("MARKETING"),group,0,"orders@amazon.com").messages()).isEmpty();
         assertThat(dashboard.details(account,filter(""),group,0,null).total()).isEqualTo(13);
     }
-    @Test void batchProgressLeavesUnfilteredDraftRevisionStableAndInvalidatesCategoryPreviews() {
-        for(int i=0;i<6;i++)mail("a@gene.com","A","Hello "+i);
+    @Test void batchProgressWithoutIdentityChangesLeavesDraftStableAndInvalidatesCategoryPreviews() {
+        for(int i=0;i<6;i++)mail("a@gmail.com","A","Hello "+i);
         classification.start(account);long revision=dashboard.revision(account);classification.runOnce();
         assertThat(dashboard.revision(account)).isEqualTo(revision);
         assertThat(dashboard.classificationRevision(account)).isPositive();

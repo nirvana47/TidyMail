@@ -24,6 +24,83 @@ class DashboardMigrationTest {
         return config.load();
     }
 
+    @Test void retainedV28PersonalCorrectionsRepairCompanyGroupingWithoutChangingManualMembership() {
+        flyway("28").clean();flyway("28").migrate();
+        var jdbc=new JdbcTemplate(new DriverManagerDataSource(POSTGRES.getJdbcUrl(),POSTGRES.getUsername(),POSTGRES.getPassword()));
+        long account=new UserAccountFixtures(jdbc).createAccount("personal-upgrade@example.test");
+        for(String address:java.util.List.of("alex@gene.com","taylor@gene.com"))jdbc.update("""
+            INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,dashboard_from_address,
+            dashboard_unit_kind,dashboard_unit_key,labels,label_evidence_known,classification_override)
+            VALUES(?,'google',?,?,?,'ADDRESS',?,ARRAY['INBOX'],true,'PERSONAL')
+            """,account,address,address,address,address);
+        assertThat(jdbc.queryForObject("SELECT count(DISTINCT group_id) FROM sender_group_members",Long.class)).isEqualTo(1);
+        jdbc.update("INSERT INTO sender_groups(account_id,group_key,label) VALUES(?,'separate:retained','Saved separation')",account);
+        jdbc.update("""
+            UPDATE sender_group_members SET group_id=(SELECT id FROM sender_groups WHERE account_id=? AND group_key='separate:retained')
+            WHERE unit_id=(SELECT id FROM sender_units WHERE account_id=? AND canonical_key='taylor@gene.com')
+            """,account,account);
+        var before=jdbc.queryForList("SELECT dashboard_message_id,classification_override FROM message_metadata ORDER BY id");
+        assertThat(flyway("29").migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(jdbc.queryForList("SELECT dashboard_message_id,classification_override FROM message_metadata ORDER BY id")).isEqualTo(before);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM sender_units WHERE automatic_group_key LIKE 'address:%'",Long.class)).isEqualTo(2);
+        assertThat(jdbc.queryForObject("""
+            SELECT g.group_key FROM sender_group_members member JOIN sender_groups g ON g.id=member.group_id
+            JOIN sender_units u ON u.id=member.unit_id WHERE u.canonical_key='taylor@gene.com'
+            """,String.class)).isEqualTo("separate:retained");
+    }
+    @Test void retainedV29MarketplaceRelaysRepairWithoutReclassifyingMessagesOrOverridingCorrections() {
+        flyway("29").clean();flyway("29").migrate();
+        var jdbc=new JdbcTemplate(new DriverManagerDataSource(POSTGRES.getJdbcUrl(),POSTGRES.getUsername(),POSTGRES.getPassword()));
+        long account=new UserAccountFixtures(jdbc).createAccount("relay-upgrade@example.test");
+        for(String address:java.util.List.of("orders@amazon.com","alias-a@marketplace.amazon.com","alias-b@marketplace.amazon.com"))jdbc.update("""
+            INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,dashboard_from_address,
+            dashboard_unit_kind,dashboard_unit_key,labels,label_evidence_known,classification_override)
+            VALUES(?,'google',?,?,?,'ADDRESS',?,ARRAY['INBOX'],true,'NOTIFICATION')
+            """,account,address,address,address,address);
+        assertThat(jdbc.queryForObject("SELECT count(DISTINCT group_id) FROM sender_group_members",Long.class)).isEqualTo(1);
+        jdbc.update("INSERT INTO sender_groups(account_id,group_key,label) VALUES(?,'separate:relay','Saved relay separation')",account);
+        jdbc.update("""
+            UPDATE sender_group_members SET group_id=(SELECT id FROM sender_groups WHERE account_id=? AND group_key='separate:relay')
+            WHERE unit_id=(SELECT id FROM sender_units WHERE account_id=? AND canonical_key='alias-b@marketplace.amazon.com')
+            """,account,account);
+        var before=jdbc.queryForList("SELECT dashboard_message_id,classification_override FROM message_metadata ORDER BY id");
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(jdbc.queryForList("SELECT dashboard_message_id,classification_override FROM message_metadata ORDER BY id")).isEqualTo(before);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM sender_units WHERE automatic_group_key LIKE 'address:%'",Long.class)).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT count(DISTINCT group_id) FROM sender_group_members",Long.class)).isEqualTo(3);
+        assertThat(jdbc.queryForObject("""
+            SELECT g.group_key FROM sender_group_members member JOIN sender_groups g ON g.id=member.group_id
+            JOIN sender_units u ON u.id=member.unit_id WHERE u.canonical_key='alias-b@marketplace.amazon.com'
+            """,String.class)).isEqualTo("separate:relay");
+    }
+
+    @Test
+    void retainedV24OrganizationRepairPreservesExplicitSeparationAndMessageCategories() {
+        flyway("24").clean(); flyway("24").migrate();
+        var jdbc=new JdbcTemplate(new DriverManagerDataSource(POSTGRES.getJdbcUrl(),POSTGRES.getUsername(),POSTGRES.getPassword()));
+        long account=new UserAccountFixtures(jdbc).createAccount("organization-upgrade@example.test");
+        for(String address:java.util.List.of("digest@quora.com","access@quora.com","personal@quora.com")) {
+            jdbc.update("""
+                INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,dashboard_from_address,
+                dashboard_unit_kind,dashboard_unit_key,labels,label_evidence_known,classification_override)
+                VALUES(?,'google',?,?,?,'ADDRESS',?,ARRAY['INBOX'],true,'SECURITY')
+                """,account,address,address,address,address);
+        }
+        jdbc.update("UPDATE sender_units SET automatic_group_key='address:'||canonical_key WHERE account_id=?",account);
+        jdbc.update("INSERT INTO sender_groups(account_id,group_key,label) VALUES(?,'separate:fixture','Keep this person separate')",account);
+        jdbc.update("""
+            UPDATE sender_group_members SET group_id=(SELECT id FROM sender_groups WHERE account_id=? AND group_key='separate:fixture')
+            WHERE unit_id=(SELECT id FROM sender_units WHERE account_id=? AND canonical_key='personal@quora.com')
+            """,account,account);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(6);
+        assertThat(jdbc.queryForObject("""
+            SELECT count(DISTINCT g.group_key) FROM sender_group_members member JOIN sender_groups g ON g.id=member.group_id
+            WHERE member.account_id=?
+            """,Long.class,account)).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM message_metadata WHERE account_id=? AND classification_override='SECURITY'",Long.class,account)).isEqualTo(3);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM message_evidence",Long.class)).isZero();
+    }
+
     @Test
     void freshAndRetainedUpgradePreserveCredentialsCursorsMetadataAndHistory() {
         flyway("15").clean();
@@ -81,7 +158,7 @@ class DashboardMigrationTest {
         jdbc.update(
                 "INSERT INTO dashboard_preview_targets(preview_id,account_id,ordinal,message_id,effective,reason) VALUES(?,?,0,?,true,'Eligible')",
                 missingPreview, account, java.util.UUID.randomUUID());
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(7);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(14);
         assertThat(jdbc.queryForObject("SELECT provider_message_id FROM dashboard_preview_targets WHERE preview_id=?",
                 String.class, retainedPreview)).isEqualTo("retained-1");
         assertThat(jdbc.queryForObject("SELECT invalidated_at IS NOT NULL FROM dashboard_previews WHERE public_id=?",
@@ -114,7 +191,7 @@ class DashboardMigrationTest {
                 account + 1)).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
         // A fresh installation also reaches V23 with all new tables and constraints.
         flyway(null).clean();
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(23);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(30);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM user_accounts", Long.class)).isZero();
         assertThat(
                 jdbc.queryForObject("SELECT count(*) FROM dashboard_domain_registry WHERE kind='SHARED'", Long.class))
@@ -149,7 +226,7 @@ class DashboardMigrationTest {
                 account, "separate:" + correction, unit);
         var messageIds = jdbc.queryForList("SELECT dashboard_message_id FROM message_metadata ORDER BY id");
         var unitIds = jdbc.queryForList("SELECT id,public_id FROM sender_units ORDER BY id");
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(4);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(11);
         assertThat(jdbc.queryForObject("SELECT count(DISTINCT group_id) FROM sender_group_members", Long.class))
                 .isEqualTo(2);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM sender_units WHERE automatic_group_key='domain:chase.com'",
@@ -198,7 +275,7 @@ class DashboardMigrationTest {
         jdbc.update(
                 "INSERT INTO cleanup_active_targets(account_id,target_fingerprint,job_id) VALUES(?,repeat('c',64),?)",
                 account, job);
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(6);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(13);
         assertThat(jdbc.queryForObject("SELECT pre_change_observed FROM cleanup_job_targets WHERE job_id=?",
                 Boolean.class, job)).isTrue();
         assertThat(jdbc.queryForObject("SELECT state FROM cleanup_job_targets WHERE job_id=?", String.class, job))
@@ -220,7 +297,7 @@ class DashboardMigrationTest {
         var job=java.util.UUID.randomUUID();
         jdbc.update("INSERT INTO dashboard_classification_jobs(public_id,account_id,status,total,done,cost_usd) VALUES(?,?,'COMPLETE',1,1,2)",job,account);
         var before=jdbc.queryForMap("SELECT classification_category,classification_override,classification_hash,classification_evidence_hash,classification_version,classified_at FROM message_metadata");
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(2);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(9);
         assertThat(jdbc.queryForMap("SELECT classification_category,classification_override,classification_hash,classification_evidence_hash,classification_version,classified_at FROM message_metadata")).isEqualTo(before);
         assertThat(jdbc.queryForObject("SELECT cost_usd FROM dashboard_classification_jobs",java.math.BigDecimal.class)).isEqualByComparingTo("2");
         assertThat(jdbc.queryForObject("SELECT reported FROM classification_budget",java.math.BigDecimal.class)).isEqualByComparingTo("0");

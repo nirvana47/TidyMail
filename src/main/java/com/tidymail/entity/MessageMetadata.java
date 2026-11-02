@@ -34,6 +34,15 @@ import org.hibernate.type.descriptor.jdbc.NumericJdbcType;
 )
 public class MessageMetadata {
 
+    @Column(name = "snippet_text")
+    private String snippetText;
+    @Column(name = "snippet_state", nullable = false)
+    private String snippetState = "UNKNOWN";
+    public String getSnippetText() { return snippetText; }
+    public void setSnippetText(String value) { snippetText = value; }
+    public String getSnippetState() { return snippetState; }
+    public void setSnippetState(String value) { snippetState = value; }
+
     @Column(name = "raw_from_values", nullable = false)
     @JdbcTypeCode(SqlTypes.ARRAY)
     private List<String> rawFromValues = new ArrayList<>();

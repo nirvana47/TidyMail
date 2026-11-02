@@ -101,7 +101,8 @@ class MailboxFreshnessJourneyTest extends PostgresJourneyTest {
         var page = new com.fasterxml.jackson.databind.ObjectMapper().readTree(body);
         assertThat(page.path("summary").path("messages").asInt()).isEqualTo(200);
         assertThat(page.path("groups").get(0).path("messages").asInt()).isEqualTo(200);
-        assertThat(page.path("groups").get(0).path("label").asText()).isEqualTo("sender@example.test");
+        assertThat(page.path("groups").get(0).path("label").asText()).isEqualTo("Batch Sender");
+        assertThat(page.path("groups").get(0).path("address").asText()).isEqualTo("sender@example.test");
         assertThat(page.path("sync").path("backfill_status").asText()).isEqualTo("RUNNING");
         assertThat(metadata.countByAccountIdIn(List.of(accountId))).isEqualTo(200);
         var state = states.findByAccountId(accountId).orElseThrow();

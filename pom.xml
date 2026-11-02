@@ -50,6 +50,12 @@
 
     <dependencies>
 
+        <dependency>
+            <groupId>org.mnode.ical4j</groupId>
+            <artifactId>ical4j</artifactId>
+            <version>4.4.0</version>
+        </dependency>
+
         <!-- A. Spring Boot Starters -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

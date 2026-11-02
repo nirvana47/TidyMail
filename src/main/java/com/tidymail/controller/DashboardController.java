@@ -14,6 +14,8 @@ import org.springframework.web.server.ResponseStatusException;
 @Controller
 @RequestMapping("/dashboard")
 public class DashboardController {
+    private final MessageEvidenceService evidence;
+    private final ReviewedPatternService patterns;
     private final OwnedAccountScopeService accounts;
     private final DashboardService dashboard;
     private final DashboardGroupingService grouping;
@@ -23,7 +25,9 @@ public class DashboardController {
 
     public DashboardController(OwnedAccountScopeService accounts, DashboardService dashboard,
             DashboardGroupingService grouping, DashboardPreviewService previews, DashboardRepository repository,
-            DashboardClassificationService classification) {
+            DashboardClassificationService classification, MessageEvidenceService evidence, ReviewedPatternService patterns) {
+        this.patterns = patterns;
+        this.evidence = evidence;
         this.accounts = accounts;
         this.dashboard = dashboard;
         this.grouping = grouping;
@@ -53,6 +57,23 @@ public class DashboardController {
     @ResponseBody
     public DashboardRepository.Page page(@RequestParam Map<String, String> parameters, OAuth2AuthenticationToken auth) {
         return dashboard.page(account(auth), DashboardFilter.from(parameters));
+    }
+
+    @PostMapping("/api/messages/{message}/evidence")
+    @ResponseBody
+    public com.fasterxml.jackson.databind.JsonNode evidence(@PathVariable UUID message, OAuth2AuthenticationToken auth) {
+        return evidence.inspect(account(auth), message);
+    }
+
+    @PostMapping("/api/patterns/preview")
+    @ResponseBody
+    public ReviewedPatternService.Preview patternPreview(@RequestBody Map<String,Integer> request,OAuth2AuthenticationToken auth) {
+        return patterns.preview(account(auth),request.getOrDefault("months",24));
+    }
+    @PostMapping("/api/patterns/{id}/apply")
+    @ResponseBody
+    public Map<String,Integer> patternApply(@PathVariable UUID id,@RequestBody ReviewedPatternService.Apply request,OAuth2AuthenticationToken auth) {
+        return Map.of("applied",patterns.apply(account(auth),id,request.messages()));
     }
 
     @GetMapping("/api/groups/{group}")

@@ -25,7 +25,10 @@ public class JevClassifier {
     private final String key;
     public record Evidence(UUID id,String hash,String address,String name,String subject,String unitKind,
                            List<String> gmailCategories,boolean reply,boolean unsubscribe) {}
-    public record Decision(String category,String kind,String stream,double confidence) {}
+    public record Judgment(String selected, String effective, double confidence, Map<String,Double> probabilities) {}
+    public record Decision(String category,String kind,String stream,double confidence,Map<String,Judgment> judgments) {
+        public Decision(String category,String kind,String stream,double confidence) { this(category,kind,stream,confidence,Map.of()); }
+    }
     public record Result(List<Decision> decisions,BigDecimal cost) {}
     public static final class Unavailable extends RuntimeException {
         private final boolean retryable;
@@ -112,12 +115,14 @@ public class JevClassifier {
             var category=answer(answers.path(id+"_category"),CATEGORIES,"UNCERTAIN");
             var kind=answer(answers.path(id+"_kind"),KINDS,"UNKNOWN");
             var stream=answer(answers.path(id+"_stream"),STREAMS,"GENERAL");
-            results.add(new Decision(category.value(),kind.value(),stream.value(),Math.min(category.confidence(),Math.min(kind.confidence(),stream.confidence()))));
+            results.add(new Decision(category.value(), kind.value(), stream.value(),
+                Math.min(category.confidence(), Math.min(kind.confidence(), stream.confidence())),
+                Map.of("purpose", category.judgment(), "senderKind", kind.judgment(), "serviceStream", stream.judgment())));
         }
         return new Result(results,reported);
     }
 
-    private record Answer(String value,double confidence) {}
+    private record Answer(String value,double confidence,Judgment judgment) {}
     private static Answer answer(JsonNode node,List<String> allowed,String fallback) {
         String choice=node.path("choice").asText();double confidence=node.path("confidence").asDouble(-1);
         JsonNode probabilities=node.path("probabilities");double total=0;
@@ -127,7 +132,10 @@ public class JevClassifier {
             if(!p.isNumber()||!Double.isFinite(value)||value<0||value>1)throw new Unavailable("Classification returned invalid probabilities.",false);total+=value;}
         if(Math.abs(total-1)>.02)throw new Unavailable("Classification returned invalid probabilities.",false);
         double certainty=Math.min(confidence,probabilities.path(choice).asDouble());
-        return new Answer(certainty>=THRESHOLD?choice:fallback,certainty);
+        var distribution=new LinkedHashMap<String,Double>();
+        for(String option:allowed) distribution.put(option,probabilities.path(option).doubleValue());
+        String effective=certainty>=THRESHOLD?choice:fallback;
+        return new Answer(effective,certainty,new Judgment(choice,effective,confidence,Map.copyOf(distribution)));
     }
     private static Map<String,String> criteria(List<String> values){var map=new LinkedHashMap<String,String>();values.forEach(v->map.put(v,v.toLowerCase(Locale.ROOT).replace('_',' ')));return map;}
     private static Map<String,Object> question(String instructions,Map<String,String> criteria) {

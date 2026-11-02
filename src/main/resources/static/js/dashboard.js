@@ -1,7 +1,7 @@
 'use strict';
 (() => {
   const $ = id => document.getElementById(id);
-  const state = { scope: 'inbox', page: 0, messagePage: 0, address: null, tab: 'messages', data: null, focused: null, details: null, action: 'MARK_READ', preview: null, targetPage: 0, revision: 0 };
+  const state = { scope: 'inbox', suggestion: '', page: 0, messagePage: 0, address: null, tab: 'messages', data: null, focused: null, details: null, action: 'MARK_READ', preview: null, targetPage: 0, revision: 0 };
   const selected = new Map(), expanded = new Map();
   let jobs = [], confirming = false, jobsRequest = 0, historyPage = 0, historyTotal = 0, historyLoading = false;
   const history = new Map();
@@ -93,7 +93,7 @@
       end = `${v('year')}-${v('month')}-${v('day')}`;
       const first = new Date(end + 'T12:00:00Z'); first.setUTCDate(first.getUTCDate() - 6); start = first.toISOString().slice(0, 10);
     }
-    return { scope: state.scope, q: $('search').value, start, end, zone: $('zone').value, page: state.page, category: $('category').value, sort: $('sort').value };
+    return { scope: state.scope, q: $('search').value, start, end, zone: $('zone').value, page: state.page, category: $('category').value, sort: $('sort').value, suggestion: state.suggestion };
   }
   const query = (value = filter()) => new URLSearchParams(Object.entries(value)).toString();
   function checkbox(label, count, match, onChange) {
@@ -160,6 +160,7 @@
       const c = data.coverage;
       $('coverage').textContent = Number(c.indexed) ? `Indexed dates: ${dateText(c.oldest)}–${dateText(c.newest)} · Results include indexed messages only · As of ${dateText(c.as_of)} · ${filter().zone}` : 'Coverage unavailable — no messages indexed yet.';
       const gaps = []; if (c.unknown_labels) gaps.push(`${fmt(c.unknown_labels)} messages have unknown labels and are excluded`); if (c.ambiguous_sent) gaps.push(`${fmt(c.ambiguous_sent)} Sent messages lack independent delivery evidence`); if (c.unknown_identity) gaps.push(`${fmt(c.unknown_identity)} identities are kept separate pending fresh metadata`); if (data.summary.undated) gaps.push(`${fmt(data.summary.undated)} matching messages are undated`);
+      $('coverage').textContent += ` · ${bytesText(data.summary.known_bytes)} estimated${Number(data.summary.unknown_sizes) ? ' · '+fmt(data.summary.unknown_sizes)+' sizes unknown' : ''}`;
       if (gaps.length) $('coverage').textContent += ' · ' + gaps.join(' · ');
       const sync = data.sync;
       $('syncStatus').textContent = sync.oauth_status === 'REAUTH_REQUIRED' || sync.lifecycle === 'REAUTH_REQUIRED' ? 'Reconnect required' : sync.error_code || sync.lifecycle === 'ERROR' ? 'Sync needs attention' : !sync.initial_batch_completed_at ? 'Fetching mail…' : sync.backfill_status === 'RUNNING' ? 'Fetching older mail…' : sync.incremental_last_success_at ? `Synced ${dateText(sync.incremental_last_success_at)}` : 'Waiting for successful sync';
@@ -188,7 +189,7 @@
       const row = node('tr'); if (state.focused?.id === g.id) row.classList.add('focused');
       const cell = node('td'); cell.append(checkbox(`Select all ${g.messages} matching messages from ${g.label}`, g.messages, selectedCount(g.id), checked => selectGroups([g.id], checked))); row.append(cell);
       const sender = node('td'), focus = node('button', undefined, 'sender-focus'), badge = node('span', g.label.slice(0, 1).toUpperCase(), 'brand'), text = node('span', undefined, 'sender-label');
-      text.append(node('strong', g.label), node('small', `${g.address ? g.address + " · " : ""}${g.addresses} sender ${g.addresses === 1 ? 'address' : 'addresses'}`, 'muted')); if (g.pending) text.append(node('small', `${fmt(g.pending)} cleanup pending / unresolved`, 'pending')); focus.dataset.focusKey = 'sender-' + g.id; focus.append(badge, text); focus.onclick = () => focusGroup(g); sender.append(focus); row.append(sender, node('td', fmt(g.messages)), node('td', fmt(g.unread)), node('td', dateText(g.latest)));
+      text.append(node('strong', g.label), node('small', `${g.address ? g.address + " · " : ""}${g.addresses} sender ${g.addresses === 1 ? 'address' : 'addresses'}`, 'muted')); text.append(node('small',`${bytesText(g.knownBytes)} estimated${g.unknownSizes ? ' · '+fmt(g.unknownSizes)+' sizes unknown' : ''}`,'muted')); if (g.pending) text.append(node('small', `${fmt(g.pending)} cleanup pending / unresolved`, 'pending')); focus.dataset.focusKey = 'sender-' + g.id; focus.append(badge, text); focus.onclick = () => focusGroup(g); sender.append(focus); row.append(sender, node('td', fmt(g.messages)), node('td', fmt(g.unread)), node('td', dateText(g.latest)));
       const expandCell = node('td'); if (g.addresses > 1) { const expand = node('button', expanded.has(g.id) ? '⌃' : '⌄'); expand.setAttribute('aria-label', `Show sender addresses for ${g.label}`); expand.setAttribute('aria-expanded', String(expanded.has(g.id))); expand.onclick = () => expandGroup(g); expandCell.append(expand); } row.append(expandCell); body.append(row);
       if (expanded.has(g.id)) {
         const detail = node('tr', undefined, 'address-row'), td = node('td'); td.colSpan = 6;
@@ -225,7 +226,7 @@
     if (state.tab === 'messages') {
       const visible = node('div', undefined, 'evidence'), count = detail.messages.filter(m => selected.has(m.id)).length;
       visible.append(checkbox(`Select visible messages (${detail.messages.length})`, detail.messages.length, count, checked => { for (const m of detail.messages) { if (checked) selected.set(m.id, m); else selected.delete(m.id); } invalidatePreview(); renderSelectionControls(); }), node('span', ' Select visible messages')); content.append(visible);
-      for (const m of detail.messages) { const row = node('div', undefined, 'message-row'), text = node('div', undefined, 'message-text'); text.append(node('span', m.subject || '(No subject)', 'message-subject'), node('small', `${m.displayName ? m.displayName+' · ' : ''}${m.address}`, 'muted'), node('small', `${dateText(m.receivedAt)} · ${m.unread ? 'Unread' : 'Read'} · ${categoryName(m.category)}${m.category === "UNCLASSIFIED" ? "" : m.categorySource === "MANUAL" ? " · Manual correction" : " · Jev"}`, 'muted')); if (m.pendingState) text.append(node('small', pendingText(m.pendingState), 'pending')); row.append(checkbox(`Select message ${m.subject || '(No subject)'}`, 1, selected.has(m.id) ? 1 : 0, checked => { if (checked) selected.set(m.id, m); else selected.delete(m.id); invalidatePreview(); renderSelectionControls(); }), text); content.append(row); }
+      for (const m of detail.messages) { const row = node('div', undefined, 'message-row'), text = node('div', undefined, 'message-text'); text.append(node('span', m.subject || '(No subject)', 'message-subject'), node('small', `${m.displayName ? m.displayName+' · ' : ''}${m.address}`, 'muted'), node('small', `${dateText(m.receivedAt)} · ${m.unread ? 'Unread' : 'Read'} · ${categoryName(m.category)}${m.category === "UNCLASSIFIED" ? "" : m.categorySource === "MANUAL" ? " · Manual correction" : " · Jev (sender and subject)"}`, 'muted')); if (m.reviewedPattern) text.append(node('small',`Reviewed pattern: ${categoryName(m.reviewedPattern)} · Importance is not determined by this pattern`, 'muted')); if (m.pendingState) text.append(node('small', pendingText(m.pendingState), 'pending')); appendEvidence(text,m); row.append(checkbox(`Select message ${m.subject || '(No subject)'}`, 1, selected.has(m.id) ? 1 : 0, checked => { if (checked) selected.set(m.id, m); else selected.delete(m.id); invalidatePreview(); renderSelectionControls(); }), text); content.append(row); }
       if (!detail.total) content.append(node('p', 'No matching messages in this group.', 'evidence'));
       const paging = node('div', undefined, 'paging'), prev = node('button', '‹'), next = node('button', '›'); prev.setAttribute('aria-label', 'Previous message page'); next.setAttribute('aria-label', 'Next message page'); prev.disabled = state.messagePage === 0; next.disabled = (state.messagePage + 1) * 10 >= detail.total;
       prev.dataset.focusKey = 'message-prev'; next.dataset.focusKey = 'message-next'; prev.onclick = () => { state.messagePage--; loadDetails(); }; next.onclick = () => { state.messagePage++; loadDetails(); }; paging.append(prev, node('span', detail.messages.length ? `${state.messagePage * 10 + 1}–${state.messagePage * 10 + detail.messages.length} of ${fmt(detail.total)}` : '0 messages'), next); content.append(paging);
@@ -246,9 +247,9 @@
       const action = preview.action === 'MARK_READ' ? `Mark ${fmt(preview.effective)} as read` : preview.action === 'ARCHIVE' ? `Archive ${fmt(preview.effective)} messages` : `Move ${fmt(preview.effective)} to Trash`;
       $('confirmTitle').textContent = action + '?'; $('confirmAction').textContent = action;
       $('confirmScope').textContent = `${preview.filter.scope === 'inbox' ? 'Inbox' : 'All received mail'} · ${preview.filter.start || 'All indexed dates'}${preview.filter.end ? ' through ' + preview.filter.end : ''} · ${preview.filter.zone}${preview.filter.q ? ' · Search: ' + preview.filter.q : ''}`;
-      $('confirmCounts').textContent = `${fmt(preview.selected)} fixed targets · ${fmt(preview.effective)} eligible changes · ${fmt(preview.skipped)} will be skipped (${fmt(preview.protectedCount)} protected)`;
+      $('confirmCounts').textContent = `${fmt(preview.selected)} fixed targets · ${fmt(preview.effective)} eligible changes · ${fmt(preview.skipped)} will be skipped (${fmt(preview.protectedCount)} protected) · ${bytesText(preview.knownBytes)} selected${preview.unknownSizes ? ' · '+fmt(preview.unknownSizes)+' sizes unknown' : ''}`;
       $('confirmCoverage').textContent = `Indexed messages only · ${dateText(preview.coverage.oldest)}–${dateText(preview.coverage.newest)} · As of ${dateText(preview.coverage.as_of)}`;
-      $('actionExplanation').textContent = preview.action === 'ARCHIVE' ? 'Archive removes selected eligible messages from Inbox. They remain in All received mail.' : preview.action === 'TRASH' ? 'Move to Trash is not permanent deletion.' : 'Already-read messages will be skipped.';
+      $('actionExplanation').textContent = preview.action === 'ARCHIVE' ? 'Archive removes mail from Inbox but does not free storage.' : preview.action === 'TRASH' ? `Move to Trash may reclaim approximately ${bytesText(preview.effectiveBytes)} after Gmail permanently deletes the emails, normally after 30 days.` : 'Already-read messages will be skipped.';
       $('confirm').querySelector('.dialog-notice')?.remove(); $('confirm').showModal(); await loadTargets();
     } catch (error) { notice(error.message); } finally { updateSelection(); }
   }
@@ -272,7 +273,108 @@
   }
   async function applyCorrection() { if (!correctionDraft) return; $('applyCorrection').disabled = true; try { await api('corrections', correctionDraft); $('correction').close(); state.focused = null; filtersChanged(); notice('Grouping updated. Draft selection was cleared.'); } catch (error) { $('correctionAffected').textContent = error.message; } }
 
-  const categoryName = value => ({ PERSONAL: 'Personal', MARKETING: 'Marketing', NEWSLETTER: 'Newsletter', RECEIPT: 'Receipt', SECURITY: 'Security', NOTIFICATION: 'Notification', OTHER: 'Other', UNCERTAIN: 'Uncertain', UNCLASSIFIED: 'Unclassified' }[value] || 'Unclassified');
+  function bytesText(value) {
+    if (value === null || value === undefined) return 'Size unknown';
+    const bytes = Number(value); return bytes >= 1000000 ? `${(bytes / 1000000).toFixed(1)} MB` : bytes >= 1000 ? `${(bytes / 1000).toFixed(1)} KB` : `${bytes} bytes`;
+  }
+  function calendarDate(value) {
+    if (!value) return 'unknown';
+    const match=/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/.exec(value);
+    if (!match) return 'unknown';
+    const [,year,month,day,hour,minute,second,utc]=match;
+    if (utc) return dateTimeText(`${year}-${month}-${day}T${hour}:${minute}:${second}Z`);
+    return `${month}/${day}/${year}${hour ? ' at '+hour+':'+minute : ' (all day)'}`;
+  }
+  function calendarDuration(value) {
+    const match=/^\+?P(?:(\d+)W|(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?)$/.exec(value || '');
+    if(!match)return 'Duration needs interpretation';
+    const units=['week','day','hour','minute','second'];
+    const parts=match.slice(1).map((v,i)=>v && Number(v)>0 ? `${Number(v)} ${units[i]}${Number(v)===1 ? '' : 's'}` : '').filter(Boolean);
+    return parts.length ? 'Duration '+parts.join(', ') : 'Zero duration';
+  }
+  const evidenceViews=new Map(), openEvidence=new Set();
+  function appendEvidence(text,m) {
+    text.append(node('small', `${bytesText(m.sizeEstimate)} · ${m.attachmentState === 'PRESENT' ? 'Attachment found' : m.attachmentState === 'ABSENT' ? 'No attachments observed' : 'Attachments not checked'}`, 'muted'));
+    if (m.snippet) text.append(node('p', m.snippet + (m.snippetState === 'TRUNCATED' ? '…' : ''), 'message-snippet'));
+    else text.append(node('small', m.snippetState === 'ABSENT' ? 'No preview text available' : 'Preview text not checked', 'muted'));
+    const details=node('details'), summary=node('summary','Email details'), output=node('div'), check=node('button','Check details');
+    details.open=openEvidence.has(m.id);
+    details.addEventListener('toggle',()=>{if(details.isConnected){if(details.open)openEvidence.add(m.id);else openEvidence.delete(m.id);}});
+    check.type='button'; check.dataset.focusKey='evidence-'+m.id;
+    const view=evidenceViews.get(m.id);
+    if (view?.pending) { check.disabled=true;output.append(node('p','Checking this email…')); }
+    if (view?.error) output.append(node('p',view.error));
+    if (view?.evidence) {
+      const evidence=view.evidence;
+      if (evidence.snippet?.text) output.append(node('p',evidence.snippet.text,'message-snippet'));
+      if (evidence.observedAt) output.append(node('small',`Checked ${dateTimeText(evidence.observedAt)}`, 'muted'));
+      output.append(node('small',evidence.structureState === 'TRUNCATED' ? 'Some email parts could not be checked.' : 'Email structure checked.','muted'));
+      for (const part of evidence.parts || []) if (part.filename || part.calendar || part.inline) output.append(node('p',`${part.filename || part.mimeType}${part.inline ? ' · Inline content' : ''}${part.bytes == null ? '' : ' · '+bytesText(part.bytes)}`));
+      for (const calendar of evidence.calendars || []) {
+        output.append(node('p',calendar.conclusion));
+        for (const event of calendar.events || []) output.append(node('small',`Starts ${calendarDate(event.start)} · ${event.end ? 'Ends '+calendarDate(event.end) : event.duration ? calendarDuration(event.duration) : 'No explicit end'}${event.timezone ? ' · '+event.timezone : ''}${event.recurring ? ' · Repeats or belongs to a series' : ''}${event.cancelled ? ' · Cancellation notice' : ''}`, 'muted'));
+      }
+      if (!(evidence.calendars || []).length) output.append(node('p',evidence.structureState === 'AVAILABLE' ? 'No calendar part observed.' : 'Calendar presence is unknown because some parts were not checked.'));
+      if (view.stale) output.append(node('p','Related calendar details were checked elsewhere. Refresh the comparison to include them.'));
+      for (const event of view.stale ? [] : evidence.reconciledEvents || []) {
+        output.append(node('p',event.reason));
+        if (event.latestObservedEndDate) output.append(node('small',`All-day schedule ends before ${event.latestObservedEndDate} (exclusive end date) · ${event.observedInstances} observed instance(s)`, 'muted'));
+        if (event.latestObservedEnd) output.append(node('small',`Latest observed end: ${dateTimeText(event.latestObservedEnd)} (${$('zone').value}) · ${event.messages.length} contributing email(s)`, 'muted'));
+      }
+      const retryable=(evidence.calendars || []).some(c=>c.state === 'FAILED');
+      const calendarPresent=(evidence.calendars || []).length>0;
+      check.textContent=retryable ? 'Try checking calendar again' : calendarPresent ? 'Refresh calendar comparison' : 'Details checked';check.disabled=!retryable && !calendarPresent;
+    }
+    check.onclick=async()=>{
+      if(evidenceViews.get(m.id)?.pending)return;
+      evidenceViews.set(m.id,{pending:true});renderDetail();
+      try {
+        const evidence=await api(`messages/${m.id}/evidence`,{});
+        const comparisons=new Map((evidence.reconciledEvents || []).map(e=>[e.uidHash+':'+e.organizerHash,JSON.stringify(e)]));
+        for (const [id,other] of evidenceViews) if(id!==m.id && other.evidence && (other.evidence.reconciledEvents || []).some(e=>comparisons.has(e.uidHash+':'+e.organizerHash) && comparisons.get(e.uidHash+':'+e.organizerHash)!==JSON.stringify(e))) other.stale=true;
+        evidenceViews.set(m.id,{evidence});
+        await loadDetails();
+      }
+      catch(error) { evidenceViews.set(m.id,{error:error.message}); }
+      if(evidenceViews.size>100)evidenceViews.delete(evidenceViews.keys().next().value);
+      renderDetail();
+    };
+    details.append(summary,node('p','Checks this email’s preview, attachment names and calendar information. Only calendar files are read; other attachments stay unopened. Nothing is sent to a model.','muted'),check,output);text.append(details);
+  }
+  function setSuggestion(value) {
+    state.suggestion=value; $('activeSuggestion').hidden=!value; filtersChanged();
+  }
+  let patternReview=null, patternEpoch=0;
+  const patternChoices=new Set();
+  $('patternsOpen').onclick=()=>{ $('patterns').showModal(); };
+  $('patternMonths').onchange=()=>{patternEpoch++;patternReview=null;patternChoices.clear();$('patternResults').replaceChildren();$('applyPatterns').disabled=true;};
+  $('previewPatterns').onclick=async()=>{
+    const epoch=++patternEpoch;patternReview=null;patternChoices.clear();$('patternResults').replaceChildren(node('p','Checking saved examples…'));$('applyPatterns').disabled=true;$('previewPatterns').disabled=true;
+    try {
+      const result=await api('patterns/preview',{months:Number($('patternMonths').value)});if(epoch!==patternEpoch)return;patternReview=result;
+      const output=$('patternResults');output.replaceChildren(node('p',result.reason));
+      if(!result.matches.length)output.append(node('p','No reusable matches found. Correct an example’s category in the email inspector, then preview again.'));
+      for(const match of result.matches){
+        const row=node('div'),choice=node('input');choice.type='checkbox';choice.setAttribute('aria-label',`Review pattern match ${match.subject}`);
+        choice.onchange=()=>{if(choice.checked)patternChoices.add(match.id);else patternChoices.delete(match.id);$('applyPatterns').disabled=!patternChoices.size;};
+        const label=node('label');label.append(choice,document.createTextNode(`${match.subject} · ${match.address} · ${categoryName(match.label)} · Review importance separately`));
+        row.append(label,node('small',`Template: ${match.template} · Corrected example: ${match.sourceSubject}`, 'muted'));output.append(row);
+      }
+      if(result.limited)output.append(node('p','Preview limit reached. Only the visible matches can be reviewed.'));
+      if(result.nearMisses.length){const misses=node('details');misses.append(node('summary','Changed templates and excluded examples (up to 20)'));for(const m of result.nearMisses)misses.append(node('p',`${m.subject || '(No subject)'} · ${m.address}${m.reviewReason ? ' · '+m.reviewReason : ''}`));output.append(misses);}
+    } catch(error){notice(error.message);} finally{$('previewPatterns').disabled=false;}
+  };
+  $('applyPatterns').onclick=async()=>{
+    if(!patternReview||!patternChoices.size)return;$('applyPatterns').disabled=true;
+    try{const result=await api(`patterns/${patternReview.id}/apply`,{messages:[...patternChoices]});patternReview=null;patternChoices.clear();$('patterns').close();notice(`Added ${result.applied} reviewed inspection labels. No mail was moved.`);await loadPage();}
+    catch(error){notice(error.message);patternReview=null;patternChoices.clear();}
+  };
+  $('suggestionsView').onclick=()=>{ $('suggestionsPanel').hidden=false; $('suggestionsView').setAttribute('aria-pressed','true'); $('sendersView').setAttribute('aria-pressed','false'); };
+  $('sendersView').onclick=()=>{ $('suggestionsPanel').hidden=true; $('suggestionsView').setAttribute('aria-pressed','false'); $('sendersView').setAttribute('aria-pressed','true'); setSuggestion(''); };
+  $('largeEmails').onclick=()=>{state.scope='all'; document.querySelectorAll('[data-scope]').forEach(b=>{b.classList.toggle('active',b.dataset.scope==='all');b.setAttribute('aria-pressed',String(b.dataset.scope==='all'));});setSuggestion('large');};
+  $('clearSuggestion').onclick=()=>setSuggestion('');
+
+  const categoryName = value => ({ PERSONAL: 'Personal', MARKETING: 'Marketing', NEWSLETTER: 'Newsletter', RECEIPT: 'Receipt', SECURITY: 'Security', NOTIFICATION: 'Notification', OTHER: 'Other', UNCERTAIN: 'Other', UNCLASSIFIED: 'Unclassified' }[value] || 'Unclassified');
   let classification = null, classificationLoading = false;
   const classifying = value => value && ['QUEUED', 'RUNNING'].includes(value.state);
   function renderClassification() {

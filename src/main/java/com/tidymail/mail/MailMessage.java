@@ -8,11 +8,11 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * A metadata-only projection of a mail message.
+ * A message projection with headers, labels, size and bounded preview text.
  * <p>
  * Product functionality supported: metadata-only mailbox sync. This record
- * deliberately carries only facts (headers, labels, size estimate) and never
- * message bodies, upholding the privacy contract.
+ * keeps full message bodies unavailable. Optional MIME/calendar evidence is
+ * acquired through a separate, bounded read path.
  */
 public record MailMessage(
     String id,
@@ -24,15 +24,21 @@ public record MailMessage(
     Long sizeEstimate,
     BigInteger providerRevision,
     AttachmentState attachmentState,
-    Instant observationStartedAt
+    Instant observationStartedAt,
+    EmailSnippet snippet
 ) {
+    public MailMessage(String id,String threadId,String provider,Instant receivedAt,
+            Map<String,List<String>> headers,Set<String> labelIds,Long sizeEstimate,
+            BigInteger providerRevision,AttachmentState attachmentState,Instant observationStartedAt) {
+        this(id,threadId,provider,receivedAt,headers,labelIds,sizeEstimate,providerRevision,attachmentState,observationStartedAt,EmailSnippet.unknown());
+    }
     public MailMessage(String id,String threadId,String provider,Instant receivedAt,
             Map<String,List<String>> headers,Set<String> labelIds,Long sizeEstimate,
             BigInteger providerRevision,AttachmentState attachmentState) {
         this(id,threadId,provider,receivedAt,headers,labelIds,sizeEstimate,providerRevision,attachmentState,null);
     }
     public MailMessage observedSince(Instant startedAt) {
-        return new MailMessage(id,threadId,provider,receivedAt,headers,labelIds,sizeEstimate,providerRevision,attachmentState,startedAt);
+        return new MailMessage(id,threadId,provider,receivedAt,headers,labelIds,sizeEstimate,providerRevision,attachmentState,startedAt,snippet);
     }
     public MailMessage(
             String id,
@@ -46,6 +52,7 @@ public record MailMessage(
     }
 
     public MailMessage {
+        if (snippet == null) snippet = EmailSnippet.unknown();
         if (sizeEstimate != null && sizeEstimate < 0) {
             throw new IllegalArgumentException("sizeEstimate is the non-negative full message size");
         }

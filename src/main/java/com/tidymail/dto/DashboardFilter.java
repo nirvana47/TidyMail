@@ -9,7 +9,10 @@ import org.springframework.web.server.ResponseStatusException;
 
 /** One predicate for browsing, expansion, selection and preview. */
 public record DashboardFilter(String scope, String q, String start, String end, String zone, int page,
-        String category, String sort) {
+        String category, String sort, String suggestion) {
+    public DashboardFilter(String scope, String q, String start, String end, String zone, int page, String category, String sort) {
+        this(scope,q,start,end,zone,page,category,sort,"");
+    }
     public DashboardFilter(String scope, String q, String start, String end, String zone, int page, String category) {
         this(scope, q, start, end, zone, page, category, "messages");
     }
@@ -19,14 +22,17 @@ public record DashboardFilter(String scope, String q, String start, String end, 
     }
 
     public DashboardFilter {
+        suggestion = suggestion == null ? "" : suggestion;
         sort = sort == null ? "messages" : sort;
         category = category == null ? "" : category;
+        if (category.equals("UNCERTAIN")) category="OTHER";
         scope = scope == null ? "inbox" : scope;
         q = q == null ? "" : q.strip();
         start = start == null ? "" : start;
         end = end == null ? "" : end;
         zone = zone == null || zone.isBlank() ? "UTC" : zone;
         try {
+            if (!java.util.Set.of("", "large").contains(suggestion)) throw new IllegalArgumentException();
             if (!java.util.Set.of("messages", "unread").contains(sort))
                 throw new IllegalArgumentException();
             if (!scope.equals("inbox") && !scope.equals("all") || q.length() > 200 || page < 0 || page > 1_000_000)
@@ -49,7 +55,7 @@ public record DashboardFilter(String scope, String q, String start, String end, 
     public static DashboardFilter from(Map<String, String> values) {
         try {
             return new DashboardFilter(values.get("scope"), values.get("q"), values.get("start"), values.get("end"),
-                    values.get("zone"), Integer.parseInt(values.getOrDefault("page", "0")), values.get("category"), values.get("sort"));
+                    values.get("zone"), Integer.parseInt(values.getOrDefault("page", "0")), values.get("category"), values.get("sort"), values.get("suggestion"));
         } catch (NumberFormatException invalid) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid page");
         }
@@ -64,6 +70,6 @@ public record DashboardFilter(String scope, String q, String start, String end, 
     }
 
     public DashboardFilter firstPage() {
-        return new DashboardFilter(scope, q, start, end, zone, 0, category, sort);
+        return new DashboardFilter(scope, q, start, end, zone, 0, category, sort, suggestion);
     }
 }

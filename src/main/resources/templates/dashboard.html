@@ -28,6 +28,8 @@
                         sync…</span><button id="activityOpen">Activity</button></div>
             </div>
         </header>
+        <nav class="row" aria-label="Mailbox views"><button id="sendersView" aria-pressed="true">Senders</button><button id="suggestionsView" aria-pressed="false">Suggestions</button></nav>
+        <section id="suggestionsPanel" class="surface evidence" hidden><h2>Suggestions</h2><button id="largeEmails">Large emails (&gt;5 MB)</button><button id="patternsOpen">Review Amazon / Quora patterns</button><p>Find large messages, including archived mail. Review and select emails before taking action.</p></section>
         <section class="surface filters" aria-label="Mailbox filters">
             <div class="row">
                 <div class="scope" role="group" aria-label="Mail scope"><button class="active" data-scope="inbox"
@@ -59,7 +61,6 @@
                         <option value="SECURITY">Security</option>
                         <option value="NOTIFICATION">Notifications</option>
                         <option value="OTHER">Other</option>
-                        <option value="UNCERTAIN">Uncertain</option>
                         <option value="UNCLASSIFIED">Unclassified</option>
                     </select></label>
                 <label>Sort by <select id="sort" aria-label="Sort senders">
@@ -76,6 +77,7 @@
             </div>
             <p class="coverage" id="coverage">Coverage is unavailable until indexed metadata arrives.</p>
         </section>
+        <p id="activeSuggestion" class="evidence" hidden>Large emails (&gt;5 MB) · Whole-message size, including inline images. <button id="clearSuggestion">Show all sizes</button></p>
         <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
         <section class="workspace">
             <div class="list">
@@ -167,7 +169,6 @@
                     <option value="SECURITY">Security</option>
                     <option value="NOTIFICATION">Notifications</option>
                     <option value="OTHER">Other</option>
-                    <option value="UNCERTAIN">Uncertain</option>
                     <option value="RESET">Use Jev's category again</option>
                 </select></label><button id="categoryCorrectionApply" disabled>Save category</button></div>
     </dialog>
@@ -210,6 +211,13 @@
                         pattern="DELETE" required autocomplete="off"></label><button>Delete local data and sign
                     out</button></form>
         </details>
+    </dialog>
+    <dialog id="patterns" aria-labelledby="patternsTitle">
+        <div class="row spread"><h2 id="patternsTitle">Review repeated patterns</h2><button data-close="patterns">Close</button></div>
+        <p>Uses your saved category corrections as examples. Review each match before adding an inspection label. Nothing is selected for cleanup. Matching categories can have different importance, such as a subscription reminder and a routine delivery update.</p>
+        <label>Example window <select id="patternMonths"><option value="24">Last 24 months</option><option value="12">Last 12 months</option></select></label>
+        <button id="previewPatterns">Preview patterns</button><div id="patternResults" role="status"></div>
+        <button id="applyPatterns" disabled>Add labels to reviewed matches</button>
     </dialog>
     <dialog id="correction" aria-labelledby="correctionTitle">
         <div class="row spread">

@@ -24,7 +24,7 @@ public class DashboardPreviewService {
     public record Request(DashboardFilter filter,List<UUID> ids,String action,long revision,Long classificationRevision) {
         public Request(DashboardFilter filter,List<UUID> ids,String action,long revision){this(filter,ids,action,revision,null);}
     }
-    public record Preview(UUID id,String action,int selected,int effective,int skipped,int protectedCount,DashboardFilter filter,Map<String,Object> coverage,Instant expiresAt) {}
+    public record Preview(UUID id,String action,int selected,int effective,int skipped,int protectedCount,DashboardFilter filter,Map<String,Object> coverage,Instant expiresAt,long knownBytes,int unknownSizes,long effectiveBytes) {}
     public record Targets(List<Map<String,Object>> rows,long total,int page) {}
 
     @Transactional(isolation=Isolation.REPEATABLE_READ)
@@ -38,7 +38,7 @@ public class DashboardPreviewService {
         var ids=request.ids().stream().distinct().toList();
         var p=repository.parameters(account,request.filter()).addValue("ids",ids);
         var targets=jdbc.queryForList(DashboardRepository.FILTERED+"""
-          SELECT m.provider_message_id,m.dashboard_message_id,m.subject_header,
+          SELECT m.provider_message_id,m.dashboard_message_id,m.subject_header,m.size_estimate,
             COALESCE(m.dashboard_from_address,m.from_address,'Unknown sender') address,m.received_at,
             f.id IS NOT NULL AS eligible,'INBOX'=ANY(m.labels) inbox,m.unread,
             EXISTS(SELECT 1 FROM protected_senders protected WHERE protected.account_id=m.account_id
@@ -47,7 +47,7 @@ public class DashboardPreviewService {
           WHERE m.account_id=:account AND m.dashboard_message_id IN (:ids) ORDER BY m.provider_message_id
           """,p);
         if(targets.size()!=ids.size()) throw new ResponseStatusException(HttpStatus.NOT_FOUND,"Some selected messages are unavailable for this account. Refresh selection.");
-        int effective=0,protectedCount=0;
+        int effective=0,protectedCount=0,unknownSizes=0; long knownBytes=0,effectiveBytes=0;
         for(var target:targets) {
             boolean protectedTarget=Boolean.TRUE.equals(target.get("protected"));if(protectedTarget) protectedCount++;
             String reason=!Boolean.TRUE.equals(target.get("eligible")) ? "No longer matches these filters or received-mail eligibility"
@@ -55,6 +55,7 @@ public class DashboardPreviewService {
                 : request.action().equals("ARCHIVE") && !Boolean.TRUE.equals(target.get("inbox")) ? "Already outside Inbox"
                 : request.action().equals("MARK_READ") && !Boolean.TRUE.equals(target.get("unread")) ? "Already read" : "Eligible";
             boolean applies=reason.equals("Eligible");if(applies) effective++;
+            if (target.get("size_estimate") instanceof Number size) { knownBytes+=size.longValue(); if(applies)effectiveBytes+=size.longValue(); } else unknownSizes++;
             target.put("effective",applies);target.put("reason",reason);
         }
         var providerIds=targets.stream().map(t->t.get("provider_message_id").toString()).toList();
@@ -86,10 +87,10 @@ public class DashboardPreviewService {
         var rows=new org.springframework.jdbc.core.namedparam.MapSqlParameterSource[targets.size()];
         for(int i=0;i<targets.size();i++) {var t=targets.get(i);rows[i]=new org.springframework.jdbc.core.namedparam.MapSqlParameterSource(t).addValue("preview",id).addValue("account",account).addValue("ordinal",i);}
         jdbc.batchUpdate("""
-          INSERT INTO dashboard_preview_targets(preview_id,account_id,ordinal,message_id,provider_message_id,subject_header,sender_address,received_at,effective,reason)
-          VALUES(:preview,:account,:ordinal,:dashboard_message_id,:provider_message_id,:subject_header,:address,:received_at,:effective,:reason)
+          INSERT INTO dashboard_preview_targets(preview_id,account_id,ordinal,message_id,provider_message_id,subject_header,sender_address,received_at,effective,reason,size_estimate)
+          VALUES(:preview,:account,:ordinal,:dashboard_message_id,:provider_message_id,:subject_header,:address,:received_at,:effective,:reason,:size_estimate)
           """,rows);
-        return new Preview(id,request.action(),targets.size(),effective,targets.size()-effective,protectedCount,request.filter().firstPage(),coverage,expires);
+        return new Preview(id,request.action(),targets.size(),effective,targets.size()-effective,protectedCount,request.filter().firstPage(),coverage,expires,knownBytes,unknownSizes,effectiveBytes);
     }
 
     @Transactional(readOnly=true,isolation=Isolation.REPEATABLE_READ)
@@ -99,7 +100,7 @@ public class DashboardPreviewService {
         var available=repository.jdbc().queryForList("SELECT selected_count,grouping_revision FROM dashboard_previews WHERE public_id=:preview AND account_id=:account AND expires_at>now() AND invalidated_at IS NULL",p);
         if(available.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND,"Preview expired or unavailable");
         if(((Number)available.getFirst().get("grouping_revision")).longValue()!=repository.revision(account)) throw conflict("Grouping changed. Create a new preview.");
-        return new Targets(repository.jdbc().queryForList("SELECT ordinal,message_id,subject_header,sender_address,received_at,effective,reason FROM dashboard_preview_targets WHERE preview_id=:preview AND account_id=:account ORDER BY ordinal LIMIT 10 OFFSET :offset",p),((Number)available.getFirst().get("selected_count")).longValue(),page);
+        return new Targets(repository.jdbc().queryForList("SELECT ordinal,message_id,subject_header,sender_address,received_at,effective,reason,size_estimate FROM dashboard_preview_targets WHERE preview_id=:preview AND account_id=:account ORDER BY ordinal LIMIT 10 OFFSET :offset",p),((Number)available.getFirst().get("selected_count")).longValue(),page);
     }
     @Transactional
     public void invalidate(long account,UUID preview) {

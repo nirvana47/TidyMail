@@ -19,6 +19,8 @@ import org.springframework.mock.web.MockHttpSession;
 class DashboardBrowserFixture extends PostgresJourneyTest {
     @org.springframework.boot.test.mock.mockito.MockBean
     com.tidymail.service.JevClassifier classifier;
+    @org.springframework.boot.test.mock.mockito.MockBean
+    com.tidymail.mail.gmail.GmailEvidenceReader evidenceReader;
     @org.springframework.beans.factory.annotation.Autowired
     com.tidymail.job.DashboardCleanupWorker cleanupWorker;
     @org.springframework.beans.factory.annotation.Autowired
@@ -34,6 +36,7 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
     @Test
     void serveSyntheticDashboardForBrowserAcceptance() throws Exception {
         long account = userAccounts.createAccount("browser-fixture@example.test");
+        classification.automatic(account,false);
         jdbc.update(
                 """
                         INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,from_display_name,
@@ -75,6 +78,49 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
                   'Synthetic offer '||i,ARRAY['INBOX'],true,true,'offers@lender.example','LIST',
                   'spc.142003.1.sparkpostmail.com',now() FROM generate_series(1,3) i
                 """, account);
+        jdbc.update("""
+            INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,from_display_name,subject_header,
+            labels,label_evidence_known,dashboard_from_address,dashboard_unit_kind,dashboard_unit_key,received_at,classification_override)
+            SELECT ?,'google','pattern-'||i,'orders@amazon.com','Amazon','Order '||(123455+i)||' confirmed',
+            ARRAY['INBOX'],true,'orders@amazon.com','ADDRESS','orders@amazon.com',now(),CASE WHEN i=1 THEN 'RECEIPT' END
+            FROM generate_series(1,3) i
+            """,account);
+        jdbc.update("""
+            INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,from_display_name,subject_header,
+            labels,label_evidence_known,dashboard_from_address,dashboard_unit_kind,dashboard_unit_key,received_at,in_reply_to_values)
+            VALUES(?,'google','pattern-reply','orders@amazon.com','Amazon','Order 123459 confirmed',ARRAY['INBOX'],true,
+            'orders@amazon.com','ADDRESS','orders@amazon.com',now(),ARRAY['<synthetic-reply@example.test>'])
+            """,account);
+        jdbc.update("""
+            INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,from_display_name,subject_header,
+            labels,label_evidence_known,dashboard_from_address,dashboard_unit_kind,dashboard_unit_key,received_at,classification_override)
+            VALUES(?,'google','personal-work','spouse@gene.com','Spouse','Synthetic work-address invitation',ARRAY['INBOX'],true,
+            'spouse@gene.com','ADDRESS','spouse@gene.com',now(),'PERSONAL')
+            """,account);
+        jdbc.update("UPDATE message_metadata SET size_estimate=2000+(id%50)*400 WHERE account_id=?",account);
+        jdbc.update("UPDATE message_metadata SET attachment_state='ABSENT',attachment_source='SYNTHETIC_FIXTURE',attachment_observed_at=now(),has_attachments=false WHERE account_id=? AND provider_message_id LIKE 'pattern-%'",account);
+        for (String id : java.util.List.of("calendar-master","calendar-update")) {
+            jdbc.update("""
+                INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,from_display_name,subject_header,
+                labels,label_evidence_known,dashboard_from_address,dashboard_unit_kind,dashboard_unit_key,received_at,
+                size_estimate,classification_override,snippet_text,snippet_state)
+                VALUES(?,'google',?,'spouse@gmail.com','Spouse',?,ARRAY['INBOX'],true,'spouse@gmail.com','ADDRESS','spouse@gmail.com',now(),8000,'PERSONAL','Synthetic all-day invitation','AVAILABLE')
+                """,account,id,id.equals("calendar-master") ? "Calendar sample: monthly family plan" : "Calendar sample: updated family plan");
+        }
+        jdbc.update("UPDATE message_metadata SET size_estimate=6000000,snippet_text='A bounded preview for checking the email inspector.',snippet_state='AVAILABLE' WHERE account_id=? AND provider_message_id IN ('browser-1','browser-2','browser-3')",account);
+        org.mockito.Mockito.when(evidenceReader.read(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.anyString())).thenAnswer(call -> {
+            String id=call.getArgument(1);
+            String properties=id.equals("calendar-master")
+                ? "UID:all-day-fixture\r\nDTSTART;VALUE=DATE:20260930\r\nRRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1;COUNT=2\r\nSEQUENCE:1"
+                : id.equals("calendar-update")
+                ? "UID:all-day-fixture\r\nRECURRENCE-ID;VALUE=DATE:20261030\r\nDTSTART;VALUE=DATE:20261107\r\nDURATION:P2D\r\nSEQUENCE:2"
+                : "UID:fixture\r\nDTSTART:20260101T090000Z\r\nDTEND:20260101T100000Z";
+            var facts=new com.tidymail.service.CalendarEvidenceParser().parse("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\nORGANIZER:mailto:person@example.test\r\n"+properties+"\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n").source("1","synthetic-"+id);
+            return new com.tidymail.mail.gmail.GmailEvidenceReader.Evidence(com.tidymail.mail.gmail.GmailEvidenceReader.VERSION,
+                com.tidymail.mail.EmailSnippet.observed("Synthetic calendar preview"),"AVAILABLE","PRESENT",
+                java.util.List.of(new com.tidymail.mail.gmail.GmailEvidenceReader.Part("1","text/calendar","invite.ics",450L,false,true)),
+                java.util.List.of(facts),2,1000);
+        });
         var classificationExecutor = java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
         classificationExecutor.scheduleWithFixedDelay(classification::runOnce, 1, 1,
                 java.util.concurrent.TimeUnit.SECONDS);
@@ -147,6 +193,10 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
                     for (String value : response.getHeaders(header))
                         exchange.getResponseHeaders().add(header, value);
                 byte[] body = response.getContentAsByteArray();
+                if (exchange.getRequestURI().getPath().equals("/dashboard")) {
+                    String html=new String(body,java.nio.charset.StandardCharsets.UTF_8);
+                    body=html.replace("<h1>TidyMail</h1>","<h1>TidyMail</h1><p><strong>Synthetic test mailbox — no real emails.</strong></p>").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                }
                 exchange.sendResponseHeaders(response.getStatus(), body.length == 0 ? -1 : body.length);
                 if (body.length > 0)
                     exchange.getResponseBody().write(body);

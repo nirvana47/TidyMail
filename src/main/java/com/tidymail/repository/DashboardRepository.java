@@ -41,8 +41,8 @@ public class DashboardRepository {
             """ + DELIVERY + ")";
     // Read pending state once. A scalar initplan keeps its map out of the row joins
     // and avoids a correlated target query for every matching message.
-    public static final String CATEGORY = "COALESCE(m.classification_override,CASE WHEN m.classification_hash=m.classification_evidence_hash AND m.classification_version='"
-            + com.tidymail.service.JevClassifier.VERSION + "' THEN m.classification_category END,'UNCLASSIFIED')";
+    public static final String CATEGORY = "replace(COALESCE(m.classification_override,CASE WHEN m.classification_hash=m.classification_evidence_hash AND m.classification_version='"
+            + com.tidymail.service.JevClassifier.VERSION + "' THEN m.classification_category END,'UNCLASSIFIED'),'UNCERTAIN','OTHER')";
     public static final String FILTERED = """
             WITH pending AS MATERIALIZED (
             SELECT COALESCE(jsonb_object_agg(message_id,state),'{}'::jsonb) AS states FROM (
@@ -68,6 +68,7 @@ public class DashboardRepository {
                     AND (:category='' OR
                     """ + CATEGORY + """
                       =:category)
+                    AND (:suggestion<>'large' OR m.size_estimate>5000000)
                     AND (:scope='all' OR 'INBOX'=ANY(m.labels))
                     AND (CAST(:start AS timestamptz) IS NULL OR m.received_at>=:start)
                     AND (CAST(:end AS timestamptz) IS NULL OR m.received_at<:end)
@@ -79,7 +80,7 @@ public class DashboardRepository {
 
     public MapSqlParameterSource parameters(long account, DashboardFilter filter) {
         return new MapSqlParameterSource("account", account).addValue("scope", filter.scope())
-                .addValue("category", filter.category()).addValue("q", filter.q())
+                .addValue("suggestion", filter.suggestion()).addValue("category", filter.category()).addValue("q", filter.q())
                 .addValue("start", timestamp(filter.startInstant()))
                 .addValue("end", timestamp(filter.endInstant())).addValue("offset", filter.page() * 10L);
     }
@@ -87,14 +88,15 @@ public class DashboardRepository {
     public Page page(long account, DashboardFilter filter) {
         var p = parameters(account, filter);
         var summary = jdbc.queryForMap(FILTERED
-                + " SELECT count(*) messages,count(*) FILTER(WHERE unread) unread,count(DISTINCT group_public_id) groups,count(*) FILTER(WHERE received_at IS NULL) undated FROM filtered",
+                + " SELECT count(*) messages,count(*) FILTER(WHERE unread) unread,count(DISTINCT group_public_id) groups,count(*) FILTER(WHERE received_at IS NULL) undated,COALESCE(sum(size_estimate),0) known_bytes,count(*) FILTER(WHERE size_estimate IS NULL) unknown_sizes FROM filtered",
                 p);
         var mailingLists = new ArrayList<UUID>();
         var groups = jdbc.query(
                 FILTERED + """
                         SELECT group_public_id,group_key,group_label,count(*) messages,count(*) FILTER(WHERE unread) unread,
                         max(received_at) latest,count(DISTINCT address) addresses,
-                        CASE WHEN group_key LIKE 'address:%' THEN max(NULLIF(from_display_name,'')) END display_name,
+                        COALESCE(sum(size_estimate),0) known_bytes,count(*) FILTER(WHERE size_estimate IS NULL) unknown_sizes,
+                        NULL::text display_name,
                         CASE WHEN group_key LIKE 'address:%' THEN min(address) END exact_address,count(*) FILTER(WHERE pending_state IS NOT NULL) pending
                         FROM filtered GROUP BY group_public_id,group_key,group_label
                         ORDER BY
@@ -104,10 +106,10 @@ public class DashboardRepository {
                 (r, n) -> {
                     UUID id = uuid(r, "group_public_id");
                     String key = r.getString("group_key"), label = r.getString("group_label");
-                    if (key.equals("list:" + label)) mailingLists.add(id);
+                    if (key.equals("list:" + label) || key.startsWith("address:")) mailingLists.add(id);
                     return new Group(id, r.getString("display_name")==null?label:r.getString("display_name"), r.getLong("messages"),
                         r.getLong("unread"), instant(r, "latest"), r.getLong("addresses"),
-                        groupingEvidence(key), r.getLong("pending"),r.getString("exact_address"));
+                        groupingEvidence(key), r.getLong("pending"),r.getString("exact_address"),r.getLong("known_bytes"),r.getLong("unknown_sizes"));
                 });
         groups = labelMailingLists(account, groups, mailingLists);
         var coverage = jdbc.queryForMap(
@@ -133,7 +135,7 @@ public class DashboardRepository {
         return new Page(groups, summary, coverage, state, revision, filter, classificationRevision(account));
     }
 
-    /** Display evidence never changes list membership or overrides a saved label.
+    /** Display evidence never changes membership or overrides a saved label.
      * Read the whole received group so a search/category/page cannot hide conflicting names. */
     private List<Group> labelMailingLists(long account, List<Group> groups, List<UUID> mailingLists) {
         if (mailingLists.isEmpty()) return groups;
@@ -154,7 +156,7 @@ public class DashboardRepository {
                 });
         return groups.stream().map(g -> names.containsKey(g.id())
                 ? new Group(g.id(), names.get(g.id()), g.messages(), g.unread(), g.latest(), g.addresses(),
-                        g.evidence(), g.pending(), g.address())
+                        g.evidence(), g.pending(), g.address(),g.knownBytes(),g.unknownSizes())
                 : g).toList();
     }
 
@@ -186,9 +188,20 @@ public class DashboardRepository {
         String inGroup=allGroup+" AND (CAST(:address AS text) IS NULL OR address=:address)" + (unreadOnly ? " AND unread" : "");
         long total = jdbc.queryForObject(FILTERED + "SELECT count(*)" + inGroup, p, Long.class);
         List<Message> messages = jdbc.query(
-                FILTERED + "SELECT *" + inGroup
+                FILTERED + """
+                SELECT filtered.*,(SELECT p.label FROM dashboard_pattern_labels p
+                JOIN dashboard_pattern_reviews review ON review.account_id=p.account_id AND review.id=p.review_id
+                JOIN message_metadata source ON source.account_id=p.account_id AND source.dashboard_message_id=p.source_id
+                JOIN message_metadata target ON target.account_id=p.account_id AND target.dashboard_message_id=p.message_id
+                WHERE p.account_id=filtered.account_id AND p.message_id=filtered.dashboard_message_id
+                AND review.version='"""+com.tidymail.service.ReviewedPatternService.VERSION+"'"+"""
+                AND dashboard_pattern_hash(target)=p.evidence_hash AND dashboard_pattern_hash(source)=p.source_hash
+                AND source.classification_override=p.label
+                AND NOT EXISTS(SELECT 1 FROM message_evidence e WHERE e.account_id=target.account_id
+                  AND e.provider_message_id IN (target.provider_message_id,source.provider_message_id) AND jsonb_array_length(e.facts->'calendars')>0)) reviewed_pattern
+                """ + inGroup
                         + " ORDER BY received_at DESC NULLS LAST,provider_message_id LIMIT 10 OFFSET :message_offset",
-                p, (r, n) -> message(r));
+                p, (r, n) -> message(r,r.getString("reviewed_pattern")));
         var addresses = jdbc.query(
                 FILTERED + "SELECT address,max(NULLIF(from_display_name,'')) display_name,count(*) messages,count(*) FILTER(WHERE unread) unread" + allGroup
                         + " GROUP BY address ORDER BY address",
@@ -221,10 +234,12 @@ public class DashboardRepository {
                         r.getString("address")));
     }
 
-    public static Message message(ResultSet r) throws SQLException {
+    public static Message message(ResultSet r) throws SQLException { return message(r,null); }
+    private static Message message(ResultSet r,String pattern) throws SQLException {
         return new Message(uuid(r, "dashboard_message_id"), r.getString("subject_header"), r.getString("address"),
                 instant(r, "received_at"), r.getBoolean("unread"), uuid(r, "group_public_id"),
-                r.getString("pending_state"), r.getString("category"),r.getString("from_display_name"),r.getString("classification_override")!=null?"MANUAL":"JEV");
+                r.getString("pending_state"), r.getString("category"),r.getString("from_display_name"),r.getString("classification_override")!=null?"MANUAL":r.getString("category").equals("UNCLASSIFIED")?"NONE":"JEV",
+                r.getObject("size_estimate",Long.class),r.getString("attachment_state"),r.getString("snippet_text"),r.getString("snippet_state"),pattern);
     }
 
     public static UUID uuid(ResultSet r, String column) throws SQLException {
@@ -247,6 +262,8 @@ public class DashboardRepository {
             return "Kept separate by your saved correction";
         if (key.startsWith("classified-domain:"))
             return "Grouped by Jev classification of organization and service";
+        if (key.startsWith("organization:"))
+            return "Reviewed organization domain; message types remain separate";
         if (key.startsWith("domain:"))
             return "Grouped by organization domain, including subdomains";
         if (key.startsWith("list:"))
@@ -256,11 +273,12 @@ public class DashboardRepository {
     }
 
     public record Group(UUID id, String label, long messages, long unread, Instant latest, long addresses,
-            String evidence, long pending,String address) {
+            String evidence, long pending,String address,long knownBytes,long unknownSizes) {
     }
 
     public record Message(UUID id, String subject, String address, Instant receivedAt, boolean unread, UUID groupId,
-            String pendingState, String category,String displayName,String categorySource) {
+            String pendingState, String category,String displayName,String categorySource,
+            Long sizeEstimate,String attachmentState,String snippet,String snippetState,String reviewedPattern) {
     }
 
     public record Address(String address, long messages, long unread,String displayName) {

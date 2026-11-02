@@ -155,6 +155,10 @@ public class DashboardClassificationService {
         }
         return null;
     }
+    private String encodeJudgments(Object judgments) {
+        try { return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(judgments); }
+        catch(com.fasterxml.jackson.core.JsonProcessingException error) { throw new IllegalStateException("Could not save classification evidence",error); }
+    }
     private void save(Claim claim,Result result) {
         tx.executeWithoutResult(s->{
             lockAccount(claim.account());if(!ownedLease(claim))return;
@@ -162,11 +166,11 @@ public class DashboardClassificationService {
             var values=new ArrayList<Object[]>();
             for(int i=0;i<claim.evidence().size();i++) {
                 var e=claim.evidence().get(i);var d=result.decisions().get(i);
-                values.add(new Object[]{d.category(),d.kind(),d.stream(),d.confidence(),e.hash(),JevClassifier.VERSION,claim.account(),e.id(),e.hash()});
+                values.add(new Object[]{d.category(),d.kind(),d.stream(),d.confidence(),e.hash(),JevClassifier.VERSION,encodeJudgments(d.judgments()),claim.account(),e.id(),e.hash()});
             }
             int[] savedCounts=jdbc.batchUpdate("""
                 UPDATE message_metadata m SET classification_category=?,classification_kind=?,classification_stream=?,classification_confidence=?,
-                    classification_hash=?,classification_version=?,classified_at=now()
+                    classification_hash=?,classification_version=?,classification_judgments=CAST(? AS jsonb),classified_at=now()
                 FROM user_accounts a WHERE a.id=m.account_id AND m.account_id=? AND m.dashboard_message_id=? AND m.classification_evidence_hash=? AND
                 """+DashboardRepository.RECEIVED,values);
             int completed=0;var outcomes=new ArrayList<Object[]>();
@@ -208,16 +212,17 @@ public class DashboardClassificationService {
           SELECT u.id,u.canonical_key,dashboard_organization_domain(split_part(u.canonical_key,'@',2)) organization,
             bool_and(COALESCE(m.classification_hash=m.classification_evidence_hash AND m.classification_version=?,false)) fresh,
             bool_and(COALESCE(m.classification_kind='AUTOMATED' AND m.classification_confidence>=0.85,false)) automated,
+            bool_or(COALESCE(m.classification_override='PERSONAL' OR m.classification_kind IN ('PERSON','RELAY'),false)) personal,
             count(DISTINCT m.classification_stream) streams,min(m.classification_stream) stream
           FROM sender_units u JOIN message_sender_units link ON link.account_id=u.account_id AND link.unit_id=u.id
           JOIN message_metadata m ON m.account_id=link.account_id AND m.id=link.metadata_id
-          WHERE u.account_id=? AND u.kind='ADDRESS'
+          WHERE u.account_id=? AND u.kind='ADDRESS' AND u.automatic_group_key NOT LIKE 'organization:%'
           GROUP BY u.id HAVING count(m.classified_at)>0
           """,JevClassifier.VERSION,account);
         var updates=new ArrayList<Object[]>();
         for(var unit:units) {
             String address=(String)unit.get("canonical_key"),domain=(String)unit.get("organization"),stream=(String)unit.get("stream");
-            boolean automated=Boolean.TRUE.equals(unit.get("fresh"))&&Boolean.TRUE.equals(unit.get("automated"))&&((Number)unit.get("streams")).intValue()==1;
+            boolean automated=!Boolean.TRUE.equals(unit.get("personal"))&&Boolean.TRUE.equals(unit.get("fresh"))&&Boolean.TRUE.equals(unit.get("automated"))&&((Number)unit.get("streams")).intValue()==1;
             // Google Voice's encoded local part is a correspondent, never an organization identity.
             String host=address.substring(address.indexOf('@')+1);
             boolean relay=host.equals("txt.voice.google.com")||host.endsWith(".txt.voice.google.com");

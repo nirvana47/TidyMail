@@ -63,13 +63,19 @@ public class MessageMetadataMapper {
         entity.setLastSyncedAt(syncedAt);
         entity.setUnread(message.isUnread());
         entity.setSizeEstimate(message.sizeEstimate());
-        entity.setHasAttachments(message.hasAttachments());
+        if (!message.snippet().state().equals("UNKNOWN")) {
+            entity.setSnippetText(message.snippet().text());
+            entity.setSnippetState(message.snippet().state());
+        }
+        if (message.attachmentState() != AttachmentState.UNKNOWN || target == null)
+            entity.setHasAttachments(message.hasAttachments());
         entity.setProviderRevision(message.providerRevision());
-        entity.setAttachmentState(message.attachmentState());
-        if (message.attachmentState() == AttachmentState.UNKNOWN) {
+        if (message.attachmentState() != AttachmentState.UNKNOWN || target == null)
+            entity.setAttachmentState(message.attachmentState());
+        if (message.attachmentState() == AttachmentState.UNKNOWN && target == null) {
             entity.setAttachmentObservedAt(null);
             entity.setAttachmentSource(null);
-        } else {
+        } else if (message.attachmentState() != AttachmentState.UNKNOWN) {
             entity.setAttachmentObservedAt(syncedAt);
             entity.setAttachmentSource("PROVIDER_METADATA");
         }

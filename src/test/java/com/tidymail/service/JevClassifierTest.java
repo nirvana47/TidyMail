@@ -37,7 +37,12 @@ class JevClassifierTest {
     }
     @Test void uncertaintyIsExplicitAndCategoriesAreNotInvented() {
         var root=response();answer((ObjectNode)root.path("answers"),"email_0_category",JevClassifier.CATEGORIES,"PERSONAL",.6);
-        assertThat(JevClassifier.parse(root,1).decisions().getFirst().category()).isEqualTo("UNCERTAIN");
+        var decision=JevClassifier.parse(root,1).decisions().getFirst();
+        assertThat(decision.category()).isEqualTo("UNCERTAIN");
+        assertThat(decision.judgments().get("purpose").selected()).isEqualTo("PERSONAL");
+        assertThat(decision.judgments().get("purpose").probabilities()).containsEntry("PERSONAL",.6);
+        assertThat(decision.judgments().get("senderKind").confidence()).isEqualTo(.98);
+        assertThat(decision.judgments().get("senderKind").effective()).isEqualTo("PERSON");
         ((ObjectNode)root.path("answers").path("email_0_kind")).put("choice","Shivani Tewari");
         assertThatThrownBy(()->JevClassifier.parse(root,1)).isInstanceOf(JevClassifier.Unavailable.class);
     }

@@ -50,6 +50,7 @@ class DashboardPerformanceTest extends PostgresJourneyTest {
                 var stop=new AtomicBoolean();var writes=new AtomicInteger();
                 var marked=ConcurrentHashMap.<String>newKeySet();
                 var dispatched=new CountDownLatch(1);
+                var releaseCleanup=new CountDownLatch(1);
                 when(gmailProvider.getCleanupMetadata(any(),anyList())).thenAnswer(call->{
                     List<String> ids=call.getArgument(1);
                     return ids.stream().map(id->{
@@ -59,7 +60,7 @@ class DashboardPerformanceTest extends PostgresJourneyTest {
                         return new com.tidymail.mail.MailMessage(id,"synthetic-thread","google",java.time.Instant.now(),Map.of(),labels);
                     }).toList();
                 });
-                doAnswer(call->{dispatched.countDown();Thread.sleep(1000);marked.addAll(call.getArgument(1));return null;})
+                doAnswer(call->{dispatched.countDown();assertThat(releaseCleanup.await(2,TimeUnit.MINUTES)).isTrue();marked.addAll(call.getArgument(1));return null;})
                     .when(gmailProvider).markReadOnce(any(),anyList());
                 UUID job=concurrent?jobs.confirm(account,previews.create(account,new DashboardPreviewService.Request(all,
                     jdbc.queryForList("SELECT dashboard_message_id FROM message_metadata WHERE account_id=? ORDER BY id LIMIT 5000",UUID.class,account),"MARK_READ",0)).id()).id():null;
@@ -81,7 +82,7 @@ class DashboardPerformanceTest extends PostgresJourneyTest {
                             System.out.printf(Locale.ROOT,"DASHBOARD_PERFORMANCE rows=%d concurrent=%s preview_ids=%d elapsed_ms=%.2f%n",size,concurrent,count,(System.nanoTime()-start)/1e6);
                         }
                         if(concurrent)assertThat(jobs.get(account,job).remaining()).as("Cleanup still active during measurements").isPositive();
-                    } finally {stop.set(true);if(concurrent)jobs.cancel(account,job);worker.get(30,TimeUnit.SECONDS);cleaner.get(30,TimeUnit.SECONDS);}
+                    } finally {stop.set(true);if(concurrent)jobs.cancel(account,job);releaseCleanup.countDown();worker.get(30,TimeUnit.SECONDS);cleaner.get(30,TimeUnit.SECONDS);}
                     if(concurrent)assertThat(writes.get()).isPositive();
                     if(concurrent){var result=jobs.get(account,job);assertThat(result.changed()).isPositive();assertThat(result.remaining()+result.failed()+result.unresolved()).isZero();assertThat(result.changed()+result.skipped()+result.cancelled()).isEqualTo(5000);System.out.printf("DASHBOARD_PERFORMANCE rows=%d cleanup_changed=%d cleanup_skipped=%d cleanup_cancelled=%d%n",size,result.changed(),result.skipped(),result.cancelled());}
                     System.out.printf("DASHBOARD_PERFORMANCE rows=%d concurrent=%s write_batches=%d%n",size,concurrent,writes.get());

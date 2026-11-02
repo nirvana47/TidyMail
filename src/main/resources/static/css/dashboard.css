@@ -20,3 +20,5 @@ button{min-height: 44px}@media(max-width:375px){.app{padding-left:12px;padding-r
 #jobProgress{max-height:24vh;overflow:auto;overscroll-behavior:contain}.dock{max-height:50vh;overflow:auto}.job-progress>div{flex:1}.target button{margin-top:10px}button:focus-visible,a:focus-visible{scroll-margin-bottom:calc(var(--dock-height,0px) + 24px)}
 
 #notice.notice-link{padding:0}.notice-action{display:block;width:100%;border:0;border-radius:0;background:transparent;color:inherit;padding:14px 18px;text-align:left}.notice-action:hover{background:rgba(127,127,127,.08)}.notice-action:focus-visible{outline-offset:-3px}
+
+.message-snippet{white-space:pre-wrap;overflow-wrap:anywhere;color:#475569;margin:8px 0}.message-text details{margin-top:8px}.message-text details p{margin:8px 0}.message-text summary{cursor:pointer}
