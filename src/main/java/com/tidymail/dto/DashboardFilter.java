@@ -38,7 +38,7 @@ public record DashboardFilter(String scope, String q, String start, String end, 
             if (!scope.equals("inbox") && !scope.equals("all") || q.length() > 200 || page < 0 || page > 1_000_000)
                 throw new IllegalArgumentException();
             if (!category.isEmpty() && !java.util.Set.of("PERSONAL", "MARKETING", "NEWSLETTER", "RECEIPT", "SECURITY",
-                    "NOTIFICATION", "OTHER", "UNCERTAIN", "UNCLASSIFIED").contains(category))
+                    "NOTIFICATION", "SOCIAL", "OTHER", "UNCERTAIN", "UNCLASSIFIED").contains(category))
                 throw new IllegalArgumentException();
             ZoneId.of(zone);
             if (!start.isEmpty())

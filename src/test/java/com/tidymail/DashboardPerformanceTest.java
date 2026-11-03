@@ -20,6 +20,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 class DashboardPerformanceTest extends PostgresJourneyTest {
     @Autowired DashboardService dashboard;
+    @Autowired com.tidymail.service.CorrespondentHistory relationships;
     @Autowired DashboardPreviewService previews;
     @Autowired com.tidymail.service.DashboardJobService jobs;
     @Autowired com.tidymail.job.DashboardCleanupWorker cleanup;
@@ -64,12 +65,15 @@ class DashboardPerformanceTest extends PostgresJourneyTest {
                     .when(gmailProvider).markReadOnce(any(),anyList());
                 UUID job=concurrent?jobs.confirm(account,previews.create(account,new DashboardPreviewService.Request(all,
                     jdbc.queryForList("SELECT dashboard_message_id FROM message_metadata WHERE account_id=? ORDER BY id LIMIT 5000",UUID.class,account),"MARK_READ",0)).id()).id():null;
-                try(var executor=Executors.newFixedThreadPool(2)) {
+                try(var executor=Executors.newFixedThreadPool(3)) {
                     var worker=executor.submit(()->{while(concurrent&&!stop.get()){jdbc.update("WITH locked AS MATERIALIZED (SELECT id FROM message_metadata WHERE account_id=? ORDER BY provider_message_id LIMIT 200 FOR UPDATE) UPDATE message_metadata m SET last_synced_at=clock_timestamp() FROM locked WHERE m.id=locked.id",account);writes.incrementAndGet();try{Thread.sleep(100);}catch(InterruptedException error){Thread.currentThread().interrupt();throw new RuntimeException(error);}}});
                     var cleaner=executor.submit(()->{while(concurrent&&!stop.get()){jdbc.update("UPDATE cleanup_jobs SET next_attempt_at=now() WHERE public_id=?",job);cleanup.runOnce();}});
+                    var indexed=new AtomicInteger();
+                    var indexer=executor.submit(()->{while(concurrent&&!stop.get())indexed.addAndGet(relationships.processBatch(200));});
                     try {
                         if(concurrent)assertThat(dispatched.await(10,TimeUnit.SECONDS)).isTrue();
                         double pageBudget=size==10000?500:2000, detailBudget=size==10000?250:500;
+                        measure(size,concurrent,"relationship_batch_lookup",50,()->relationships.lookup(account,List.of("sender1@example.test","sender2@example.test","sender3@example.test")));
                         measure(size,concurrent,"summary_page",pageBudget,()->dashboard.page(account,all));
                         measure(size,concurrent,"search_date",pageBudget,()->dashboard.page(account,filtered));
                         measure(size,concurrent,"sender_page_10",pageBudget,()->dashboard.page(account,later));
@@ -82,8 +86,10 @@ class DashboardPerformanceTest extends PostgresJourneyTest {
                             System.out.printf(Locale.ROOT,"DASHBOARD_PERFORMANCE rows=%d concurrent=%s preview_ids=%d elapsed_ms=%.2f%n",size,concurrent,count,(System.nanoTime()-start)/1e6);
                         }
                         if(concurrent)assertThat(jobs.get(account,job).remaining()).as("Cleanup still active during measurements").isPositive();
-                    } finally {stop.set(true);if(concurrent)jobs.cancel(account,job);releaseCleanup.countDown();worker.get(30,TimeUnit.SECONDS);cleaner.get(30,TimeUnit.SECONDS);}
+                    } finally {stop.set(true);if(concurrent)jobs.cancel(account,job);releaseCleanup.countDown();worker.get(30,TimeUnit.SECONDS);cleaner.get(30,TimeUnit.SECONDS);indexer.get(30,TimeUnit.SECONDS);}
                     if(concurrent)assertThat(writes.get()).isPositive();
+                    if(concurrent)assertThat(indexed.get()).isPositive();
+                    System.out.printf("CORRESPONDENCE_PERFORMANCE rows=%d concurrent=%s indexed_during_browsing=%d%n",size,concurrent,indexed.get());
                     if(concurrent){var result=jobs.get(account,job);assertThat(result.changed()).isPositive();assertThat(result.remaining()+result.failed()+result.unresolved()).isZero();assertThat(result.changed()+result.skipped()+result.cancelled()).isEqualTo(5000);System.out.printf("DASHBOARD_PERFORMANCE rows=%d cleanup_changed=%d cleanup_skipped=%d cleanup_cancelled=%d%n",size,result.changed(),result.skipped(),result.cancelled());}
                     System.out.printf("DASHBOARD_PERFORMANCE rows=%d concurrent=%s write_batches=%d%n",size,concurrent,writes.get());
                 }

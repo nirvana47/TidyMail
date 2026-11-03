@@ -218,9 +218,8 @@ public class DashboardRepository {
                         + " ORDER BY received_at DESC NULLS LAST,provider_message_id LIMIT 10 OFFSET :message_offset",
                 p, (r, n) -> message(r,r.getString("reviewed_pattern")));
         var addresses = jdbc.query(
-                FILTERED + "SELECT address,max(NULLIF(from_display_name,'')) display_name,count(*) me
-
-            + " GROUP BY address ORDER BY address",
+                FILTERED + "SELECT address,max(NULLIF(from_display_name,'')) display_name,count(*) messages,count(*) FILTER(WHERE unread) unread" + allGroup
+                        + " GROUP BY address ORDER BY address",
                 p, (r, n) -> new Address(r.getString("address"), r.getLong("messages"), r.getLong("unread"),r.getString("display_name")));
         var units = jdbc.query(
                 FILTERED + "SELECT DISTINCT unit_public_id,unit_kind,unit_key,evidence_reason" + allGroup
@@ -241,8 +240,7 @@ public class DashboardRepository {
                 "SELECT count(*) FROM sender_groups WHERE account_id=:account AND public_id IN (:groups)", p,
                 Long.class) != groups.stream().distinct().count())
             throw new org.springframework.web.server.ResponseStatusException(
-
-
+                    org.springframework.http.HttpStatus.NOT_FOUND, "Sender group unavailable for this account");
         return jdbc.query(FILTERED
                 + "SELECT dashboard_message_id,group_public_id,address FROM filtered WHERE group_public_id IN (:groups) AND (CAST(:address AS text) IS NULL OR address=:address)"
                 + (unreadOnly ? " AND unread" : "") + " ORDER BY provider_message_id",

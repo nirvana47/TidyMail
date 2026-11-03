@@ -18,6 +18,8 @@ public class JevClassifier {
     public static final String VERSION=MODEL+":metadata-v1";
     public static final double THRESHOLD=.85;
     public static final List<String> CATEGORIES=List.of("PERSONAL","MARKETING","NEWSLETTER","RECEIPT","SECURITY","NOTIFICATION","OTHER","UNCERTAIN");
+    // New user-visible corrections are independent of the qualified legacy model contract.
+    public static final List<String> SUPPORTED_CATEGORIES=java.util.stream.Stream.concat(CATEGORIES.stream(),java.util.stream.Stream.of("SOCIAL")).toList();
     public static final List<String> KINDS=List.of("PERSON","AUTOMATED","RELAY","UNKNOWN");
     public static final List<String> STREAMS=List.of("GENERAL","VOICE","AI_PRODUCT","DEVICE_SUPPORT","SECURITY","BANKING","SHOPPING","TRAVEL","SOCIAL","WORK");
     private final RestClient client;

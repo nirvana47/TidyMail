@@ -54,6 +54,19 @@ class DashboardClassificationTest extends PostgresJourneyTest {
           """,UUID.class,account,UUID.randomUUID().toString(),address,name,subject,identity.address(),identity.key());
     }
     DashboardFilter filter(String category){return new DashboardFilter("all","","","","UTC",0,category);}
+    @Test void socialCategoryCanBeCorrectedAndFilteredWithoutSwallowingMarketplaceReceipts() {
+        UUID purchase=mail("noreply@marketplace.facebook.com","Facebook Marketplace","You placed an order: Watch");
+        UUID activity=mail("notification@facebookmail.com","Facebook","New comments in your group");
+        finish();
+        classification.correctCategory(account,List.of(activity),"SOCIAL",dashboard.revision(account));
+        classification.correctCategory(account,List.of(purchase),"RECEIPT",dashboard.revision(account));
+        var social=dashboard.page(account,filter("SOCIAL"));
+        assertThat(social.summary().get("messages")).isEqualTo(1L);
+        assertThat(dashboard.selection(account,filter("SOCIAL"),social.groups().stream().map(DashboardRepository.Group::id).toList(),null))
+                .extracting(DashboardRepository.Selected::id).containsExactly(activity);
+        assertThat(dashboard.page(account,filter("RECEIPT")).summary().get("messages")).isEqualTo(1L);
+        verifyNoInteractions(gmailProvider,outlookProvider);
+    }
     void finish(){classification.start(account);for(int i=0;i<20&&Set.of("RUNNING","QUEUED").contains(classification.status(account).state());i++)classification.runOnce();assertThat(classification.status(account).state()).isEqualTo("COMPLETE");}
     @Test void personalAddressesStayDistinctWhileAmazonPurposesShareFixedCategories() {
         mail("shivani.tewari@gene.com","Shivani Tewari","Dinner tonight?");mail("shivani.tewari2016@gmail.com","Shivani Tewari","Our plans");mail("shivani.tewari20166@gmail.com","Shivani Tewari","A different address");

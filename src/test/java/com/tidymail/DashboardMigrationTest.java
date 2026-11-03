@@ -64,7 +64,7 @@ class DashboardMigrationTest {
             WHERE unit_id=(SELECT id FROM sender_units WHERE account_id=? AND canonical_key='alias-b@marketplace.amazon.com')
             """,account,account);
         var before=jdbc.queryForList("SELECT dashboard_message_id,classification_override FROM message_metadata ORDER BY id");
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(3);
         assertThat(jdbc.queryForList("SELECT dashboard_message_id,classification_override FROM message_metadata ORDER BY id")).isEqualTo(before);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM sender_units WHERE automatic_group_key LIKE 'address:%'",Long.class)).isEqualTo(2);
         assertThat(jdbc.queryForObject("SELECT count(DISTINCT group_id) FROM sender_group_members",Long.class)).isEqualTo(3);
@@ -92,7 +92,7 @@ class DashboardMigrationTest {
             UPDATE sender_group_members SET group_id=(SELECT id FROM sender_groups WHERE account_id=? AND group_key='separate:fixture')
             WHERE unit_id=(SELECT id FROM sender_units WHERE account_id=? AND canonical_key='personal@quora.com')
             """,account,account);
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(6);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(8);
         assertThat(jdbc.queryForObject("""
             SELECT count(DISTINCT g.group_key) FROM sender_group_members member JOIN sender_groups g ON g.id=member.group_id
             WHERE member.account_id=?
@@ -158,7 +158,7 @@ class DashboardMigrationTest {
         jdbc.update(
                 "INSERT INTO dashboard_preview_targets(preview_id,account_id,ordinal,message_id,effective,reason) VALUES(?,?,0,?,true,'Eligible')",
                 missingPreview, account, java.util.UUID.randomUUID());
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(14);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(16);
         assertThat(jdbc.queryForObject("SELECT provider_message_id FROM dashboard_preview_targets WHERE preview_id=?",
                 String.class, retainedPreview)).isEqualTo("retained-1");
         assertThat(jdbc.queryForObject("SELECT invalidated_at IS NOT NULL FROM dashboard_previews WHERE public_id=?",
@@ -191,7 +191,7 @@ class DashboardMigrationTest {
                 account + 1)).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
         // A fresh installation also reaches V23 with all new tables and constraints.
         flyway(null).clean();
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(30);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(32);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM user_accounts", Long.class)).isZero();
         assertThat(
                 jdbc.queryForObject("SELECT count(*) FROM dashboard_domain_registry WHERE kind='SHARED'", Long.class))
@@ -226,7 +226,7 @@ class DashboardMigrationTest {
                 account, "separate:" + correction, unit);
         var messageIds = jdbc.queryForList("SELECT dashboard_message_id FROM message_metadata ORDER BY id");
         var unitIds = jdbc.queryForList("SELECT id,public_id FROM sender_units ORDER BY id");
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(11);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(13);
         assertThat(jdbc.queryForObject("SELECT count(DISTINCT group_id) FROM sender_group_members", Long.class))
                 .isEqualTo(2);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM sender_units WHERE automatic_group_key='domain:chase.com'",
@@ -275,7 +275,7 @@ class DashboardMigrationTest {
         jdbc.update(
                 "INSERT INTO cleanup_active_targets(account_id,target_fingerprint,job_id) VALUES(?,repeat('c',64),?)",
                 account, job);
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(13);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(15);
         assertThat(jdbc.queryForObject("SELECT pre_change_observed FROM cleanup_job_targets WHERE job_id=?",
                 Boolean.class, job)).isTrue();
         assertThat(jdbc.queryForObject("SELECT state FROM cleanup_job_targets WHERE job_id=?", String.class, job))
@@ -297,7 +297,7 @@ class DashboardMigrationTest {
         var job=java.util.UUID.randomUUID();
         jdbc.update("INSERT INTO dashboard_classification_jobs(public_id,account_id,status,total,done,cost_usd) VALUES(?,?,'COMPLETE',1,1,2)",job,account);
         var before=jdbc.queryForMap("SELECT classification_category,classification_override,classification_hash,classification_evidence_hash,classification_version,classified_at FROM message_metadata");
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(9);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(11);
         assertThat(jdbc.queryForMap("SELECT classification_category,classification_override,classification_hash,classification_evidence_hash,classification_version,classified_at FROM message_metadata")).isEqualTo(before);
         assertThat(jdbc.queryForObject("SELECT cost_usd FROM dashboard_classification_jobs",java.math.BigDecimal.class)).isEqualByComparingTo("2");
         assertThat(jdbc.queryForObject("SELECT reported FROM classification_budget",java.math.BigDecimal.class)).isEqualByComparingTo("0");

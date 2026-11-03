@@ -53,7 +53,7 @@ public class DashboardClassificationService {
         return status(account);
     }
     public void correctCategory(long account,List<UUID> ids,String category,long revision) {
-        if(ids==null||ids.isEmpty()||ids.size()>5000||category==null||!JevClassifier.CATEGORIES.contains(category)&&!category.equals("RESET"))throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Choose messages and a valid category");
+        if(ids==null||ids.isEmpty()||ids.size()>5000||category==null||!JevClassifier.SUPPORTED_CATEGORIES.contains(category)&&!category.equals("RESET"))throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Choose messages and a valid category");
         var unique=ids.stream().distinct().toList();
         tx.executeWithoutResult(s->{lockAccount(account);
             long current=jdbc.queryForObject("SELECT COALESCE((SELECT grouping_revision FROM dashboard_account_settings WHERE account_id=?),0)",Long.class,account);

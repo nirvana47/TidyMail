@@ -374,7 +374,7 @@
   $('largeEmails').onclick=()=>{state.scope='all'; document.querySelectorAll('[data-scope]').forEach(b=>{b.classList.toggle('active',b.dataset.scope==='all');b.setAttribute('aria-pressed',String(b.dataset.scope==='all'));});setSuggestion('large');};
   $('clearSuggestion').onclick=()=>setSuggestion('');
 
-  const categoryName = value => ({ PERSONAL: 'Personal', MARKETING: 'Marketing', NEWSLETTER: 'Newsletter', RECEIPT: 'Receipt', SECURITY: 'Security', NOTIFICATION: 'Notification', OTHER: 'Other', UNCERTAIN: 'Other', UNCLASSIFIED: 'Unclassified' }[value] || 'Unclassified');
+  const categoryName = value => ({ PERSONAL: 'Personal', MARKETING: 'Marketing', NEWSLETTER: 'Newsletter', SOCIAL: 'Social / community', RECEIPT: 'Receipt', SECURITY: 'Security', NOTIFICATION: 'Notification', OTHER: 'Other', UNCERTAIN: 'Other', UNCLASSIFIED: 'Unclassified' }[value] || 'Unclassified');
   let classification = null, classificationLoading = false;
   const classifying = value => value && ['QUEUED', 'RUNNING'].includes(value.state);
   function renderClassification() {
