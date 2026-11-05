@@ -7,11 +7,12 @@ import com.tidymail.repository.UserAccountRepository;
 import com.tidymail.service.DashboardJobService;
 import com.tidymail.service.DashboardJobService.*;
 import jakarta.annotation.PreDestroy;
+import jakarta.annotation.PostConstruct;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.LoggerFactory;
-import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
@@ -22,12 +23,20 @@ public class DashboardCleanupWorker {
     private final DashboardJobService jobs;
     private final UserAccountRepository accounts;
     private final Map<String,MailProvider> providers;
-    private final ExecutorService executor=Executors.newSingleThreadExecutor(r->{var t=new Thread(r,"dashboard-cleanup");t.setDaemon(true);return t;});
+    private final ScheduledExecutorService executor=Executors.newSingleThreadScheduledExecutor(r->{var t=new Thread(r,"dashboard-cleanup");t.setDaemon(true);return t;});
     private final AtomicBoolean running=new AtomicBoolean();
     public DashboardCleanupWorker(DashboardJobService jobs,UserAccountRepository accounts,Map<String,MailProvider> providers) {
         this.jobs=jobs;this.accounts=accounts;this.providers=providers;
     }
-    @Scheduled(fixedDelayString="${app.cleanup.poll-ms:1000}",initialDelayString="${app.cleanup.startup-delay-ms:10000}")
+    @Value("${app.cleanup.worker.enabled:${spring.task.scheduling.enabled:true}}") private boolean enabled;
+    @Value("${app.cleanup.poll-ms:1000}") private long pollMs;
+    @Value("${app.cleanup.startup-delay-ms:10000}") private long startupDelayMs;
+
+    /** Explicit cleanup polling can run while sync and paid scheduling stay disabled. */
+    @PostConstruct
+    public void startPolling() {
+        if(enabled)executor.scheduleWithFixedDelay(this::tick,Math.max(0,startupDelayMs),Math.max(1,pollMs),TimeUnit.MILLISECONDS);
+    }
     public void tick() {
         if(running.compareAndSet(false,true))executor.submit(()->{
             try{runOnce();}catch(Exception error){LoggerFactory.getLogger(getClass()).warn("Dashboard cleanup worker deferred after {}",error.getClass().getSimpleName());}

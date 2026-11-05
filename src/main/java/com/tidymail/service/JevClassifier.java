@@ -72,6 +72,39 @@ public class JevClassifier {
         }
         var payload=Map.of("model",MODEL,"state",state,"questions",questions,
             "provider",Map.of("only",List.of("typesafe"),"allow_fallbacks",false,"zdr",true,"data_collection","deny"));
+        return parse(submit(payload),batch.size());
+    }
+
+    /** Shared guarded transport. Callers must reserve and record exposure before invoking. */
+    public JsonNode submitRecommendation(com.fasterxml.jackson.databind.node.ObjectNode request) {
+        if(!MODEL.equals(request.path("model").asText()) || !request.path("provider").equals(
+                json.valueToTree(Map.of("only",List.of("typesafe"),"allow_fallbacks",false,"zdr",true,"data_collection","deny"))))
+            throw new IllegalArgumentException("Unpinned recommendation route");
+        return submit(request);
+    }
+    /** Public route metadata only; pin the same upper input/free-output bounds as the pilot. */
+    public JsonNode recommendationPricing() {
+        try {
+            JsonNode prices=client.get().uri("/api/v1/models/typesafe/jev-1.14/endpoints").exchange((request,response)->{
+                byte[] body=response.getBody().readNBytes(262145);
+                if(response.getStatusCode().value()!=200 || body.length>262144)throw new IllegalStateException();
+                return json.readTree(body);
+            });
+            boolean found=false;
+            for(var endpoint:prices.path("data").path("endpoints")) {
+                if(!endpoint.path("provider_name").asText().equalsIgnoreCase("TypeSafe"))continue;
+                var pricing=endpoint.path("pricing");
+                var prompt=new BigDecimal(pricing.path("prompt").asText());
+                if(prompt.signum()<0 || prompt.compareTo(LabelingPipeline.INPUT_PRICE)>0
+                    || new BigDecimal(pricing.path("completion").asText()).signum()!=0)throw new IllegalStateException();
+                found=true;
+            }
+            if(!found)throw new IllegalStateException();
+            return prices;
+        } catch(Exception error){throw new Unavailable("Pinned Jev pricing could not be verified; labeling is paused.",false);}
+    }
+    private JsonNode submit(Object payload) {
+        if(!configured()) throw new Unavailable("Jev is not configured",false);
         try {
             return client.post().uri("/api/alpha/decisions")
                 .header(HttpHeaders.AUTHORIZATION,"Bearer "+key).header("X-OpenRouter-Cache","false")
@@ -90,7 +123,7 @@ public class JevClassifier {
                         default -> "Classification service unavailable. No mailbox actions were taken.";
                     },status==429||status>=500).withCost(returned);
                     }
-                    return parse(json.readTree(body),batch.size());
+                    return json.readTree(body);
                 });
         } catch(Unavailable safe){throw safe;}
         catch(Exception suppressed){throw new Unavailable("Classification could not reach a verified Jev response. Retry later.",true);}

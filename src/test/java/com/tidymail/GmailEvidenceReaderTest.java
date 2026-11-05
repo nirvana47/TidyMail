@@ -78,4 +78,18 @@ class GmailEvidenceReaderTest {
         var snippet=EmailSnippet.observed("😀".repeat(400));
         assertThat(snippet.state()).isEqualTo("TRUNCATED");assertThat(snippet.text().getBytes(StandardCharsets.UTF_8)).hasSize(1024);
     }
+    @Test void backgroundDiscoveryFetchesOnlyOneMimeProjectionWithoutSnippetOrCalendarBytes() {
+        structure="""
+            {"id":"one","payload":{"mimeType":"multipart/mixed","parts":[
+              {"partId":"1","mimeType":"text/calendar","body":{"size":20,"attachmentId":"calendar"}},
+              {"partId":"2","mimeType":"text/plain","body":{"size":1000}}]}}
+            """;
+        var evidence=reader.readPresence(account,"one");
+        assertThat(evidence.version()).isEqualTo(GmailEvidenceReader.PRESENCE_VERSION);
+        assertThat(evidence.requests()).isEqualTo(1);assertThat(attachments.get()).isZero();
+        assertThat(evidence.parts()).anyMatch(GmailEvidenceReader.Part::calendar);
+        assertThat(evidence.calendars()).isEmpty();
+        assertThat(requests.getFirst()).doesNotContain("snippet","body(data)","/attachments/");
+    }
+
 }

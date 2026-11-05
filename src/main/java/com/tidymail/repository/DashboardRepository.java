@@ -1,6 +1,7 @@
 package com.tidymail.repository;
 
 import com.tidymail.dto.DashboardFilter;
+import com.tidymail.service.RecommendationSql;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
@@ -44,8 +45,43 @@ public class DashboardRepository {
     public static final String CATEGORY = "replace(COALESCE(m.classification_override,CASE WHEN m.classification_hash=m.classification_evidence_hash AND m.classification_version='"
             + com.tidymail.service.JevClassifier.VERSION
             + "' THEN m.classification_category END,'UNCLASSIFIED'),'UNCERTAIN','OTHER')";
+    private static final String SEMANTIC_LABEL_MATCH="(:label=ANY(sl.labels) AND sl.input_hash="+RecommendationSql.SEMANTIC_HASH+")";
+    private static final String LABELING_CATEGORY="COALESCE(m.classification_override,CASE WHEN sl.input_hash="+RecommendationSql.SEMANTIC_HASH
+        +" THEN NULLIF(sl.purpose,'UNKNOWN') END,"+CATEGORY+")";
+    private static final String RECOMMENDATION_FILTERS = """
+                    AND (:recommendation='' OR CASE WHEN saved.message_id IS NULL THEN 'PENDING'
+                      WHEN """+RecommendationSql.CURRENT+"""
+                      THEN saved.result->>'action' ELSE 'STALE' END=:recommendation)
+                    AND (:importance='' OR ("""+RecommendationSql.CURRENT+"""
+                      AND saved.result->>'importance'=:importance))
+                    AND (:label='' OR CASE :label
+                      WHEN 'CONTACT' THEN COALESCE(h.sent_count,0)>0
+                      WHEN 'LARGE_MESSAGE' THEN m.size_estimate>1000000
+                      WHEN 'SENT' THEN 'SENT'=ANY(m.labels)
+                      WHEN 'HAS_ATTACHMENTS' THEN m.attachment_state='PRESENT'
+                      WHEN 'CALENDAR_INVITE' THEN """+SEMANTIC_LABEL_MATCH+"""
+                        OR COALESCE(jsonb_path_exists(e.facts,'$.parts[*] ? (@.calendar == true)'),false)
+                        OR COALESCE(jsonb_array_length(e.facts->'calendars'),0)>0
+                        OR ("""+RecommendationSql.CURRENT+"""
+                          AND saved.result->>'purpose'='CALENDAR_INVITE')
+                      ELSE ("""+RecommendationSql.CURRENT+"""
+                        AND (jsonb_exists(saved.result->'facets',:label) OR saved.result->>'purpose'=
+                          CASE :label WHEN 'HUMAN_CORRESPONDENCE' THEN 'PERSONAL' ELSE :label END)) OR """+SEMANTIC_LABEL_MATCH+"""
+                        END)
+        """;
+    private static final String GROUPING_LOOKUP = """
+                    JOIN LATERAL (
+                      SELECT g.public_id group_public_id,g.group_key,g.label group_label,
+                        u.public_id unit_public_id,u.kind unit_kind,u.canonical_key unit_key,u.evidence_reason
+                      FROM sender_units u JOIN sender_group_members member ON member.account_id=u.account_id AND member.unit_id=u.id
+                      JOIN sender_groups g ON g.account_id=member.account_id AND g.id=member.group_id
+                      WHERE u.account_id=link.account_id AND u.id=link.unit_id OFFSET 0
+                    ) identity ON true
+        """;
+    // Keep membership as a keyed per-unit lookup even when freshness selectivity is underestimated.
     public static final String FILTERED = """
-            WITH pending AS MATERIALIZED (
+            WITH """+RecommendationSql.ACCOUNT_CONTEXT+"""
+            , pending AS MATERIALIZED (
             SELECT COALESCE(jsonb_object_agg(message_id,state),'{}'::jsonb) AS states FROM (
               SELECT message_id,CASE min(CASE state WHEN 'AWAITING_VERIFICATION' THEN 0 WHEN 'DISPATCH_INTENT' THEN 1 ELSE 2 END)
                 WHEN 0 THEN 'AWAITING_VERIFICATION' WHEN 1 THEN 'DISPATCH_INTENT' ELSE 'QUEUED' END AS state
@@ -54,34 +90,67 @@ public class DashboardRepository {
             ) outcomes
             ), filtered AS (
             SELECT m.*,"""
-            + CATEGORY + """
-                      AS category,g.public_id AS group_public_id,g.group_key,g.label AS group_label,
-                      u.public_id AS unit_public_id,u.kind AS unit_kind,u.canonical_key AS unit_key,u.evidence_reason,
+            + LABELING_CATEGORY + """
+                      AS category,identity.group_public_id,identity.group_key,identity.group_label,
+                      identity.unit_public_id,identity.unit_kind,identity.unit_key,identity.evidence_reason,
                       COALESCE(m.dashboard_from_address,m.from_address,'Unknown sender') AS address,
                       (SELECT states FROM pending)->>m.dashboard_message_id::text AS pending_state
-                    FROM message_metadata m JOIN user_accounts a ON a.id=m.account_id
+                    FROM message_metadata m JOIN account_context a ON a.id=m.account_id
+                    """+RecommendationSql.JOINS+"""
                     JOIN message_sender_units link ON link.account_id=m.account_id AND link.metadata_id=m.id
-                    JOIN sender_units u ON u.account_id=link.account_id AND u.id=link.unit_id
-                    JOIN sender_group_members member ON member.account_id=u.account_id AND member.unit_id=u.id
-                    JOIN sender_groups g ON g.account_id=member.account_id AND g.id=member.group_id
+                    """+GROUPING_LOOKUP+"""
                     WHERE m.account_id=:account AND
-                    """ + RECEIVED + """
+                    """ + "(:scope='indexed' OR " + RECEIVED + """
+                    OR (:suggestion='large' AND 'SENT'=ANY(m.labels)
+                        AND NOT(m.labels && ARRAY['SPAM','TRASH','DRAFT'])))
                     AND (:category='' OR
-                    """ + CATEGORY + """
+                    """ + LABELING_CATEGORY + """
                       =:category)
-                    AND (:suggestion<>'large' OR m.size_estimate>5000000)
-                    AND (:scope='all' OR 'INBOX'=ANY(m.labels))
+                    AND (:suggestion<>'large' OR m.size_estimate>1000000)
+                    """+RECOMMENDATION_FILTERS+"""
+                    AND (:scope IN ('all','indexed') OR 'INBOX'=ANY(m.labels))
                     AND (CAST(:start AS timestamptz) IS NULL OR m.received_at>=:start)
                     AND (CAST(:end AS timestamptz) IS NULL OR m.received_at<:end)
-                    AND (:q='' OR position(lower(:q) in lower(g.label))>0
+                    AND (:q='' OR position(lower(:q) in lower(identity.group_label))>0
                       OR position(lower(:q) in lower(COALESCE(m.dashboard_from_address,m.from_address,'')))>0
                       OR position(lower(:q) in lower(COALESCE(m.from_display_name,'')))>0
                       OR position(lower(:q) in lower(COALESCE(m.subject_header,'')))>0))
                     """;
 
+    private static final String BASIC_FILTERED = FILTERED
+            .replace(RecommendationSql.ACCOUNT_CONTEXT+", pending", " pending")
+            .replace("JOIN account_context a ON a.id=m.account_id", "JOIN user_accounts a ON a.id=m.account_id")
+            .replace(RecommendationSql.JOINS, "")
+            .replace(GROUPING_LOOKUP,"""
+                JOIN sender_units u ON u.account_id=link.account_id AND u.id=link.unit_id
+                JOIN sender_group_members member ON member.account_id=u.account_id AND member.unit_id=u.id
+                JOIN sender_groups g ON g.account_id=member.account_id AND g.id=member.group_id
+                """)
+            .replace("identity.group_public_id","g.public_id AS group_public_id")
+            .replace("identity.group_key","g.group_key").replace("identity.group_label,","g.label AS group_label,")
+            .replace("identity.unit_public_id","u.public_id AS unit_public_id").replace("identity.unit_kind","u.kind AS unit_kind")
+            .replace("identity.unit_key","u.canonical_key AS unit_key").replace("identity.evidence_reason","u.evidence_reason")
+            .replace("lower(identity.group_label)","lower(g.label)")
+            .replace(LABELING_CATEGORY, CATEGORY)
+            .replace(RECOMMENDATION_FILTERS, "");
+    private static final String CURRENT_ACTION_FILTERED = FILTERED.replace(RECOMMENDATION_FILTERS,
+        "AND saved.result->>'action'=:recommendation AND "+RecommendationSql.CURRENT+"\n"
+        +"AND (:importance='' OR saved.result->>'importance'=:importance)\n"
+        +"AND (:label='' OR jsonb_exists(saved.result->'facets',:label) OR saved.result->>'purpose'="
+        +"CASE :label WHEN 'HUMAN_CORRESPONDENCE' THEN 'PERSONAL' ELSE :label END)\n")
+        .replace(LABELING_CATEGORY,"COALESCE(m.classification_override,NULLIF(saved.result->>'purpose','UNKNOWN'),"+CATEGORY+")");
+    /** Avoid enrichment joins entirely on the ordinary browsing path. */
+    public String filtered(DashboardFilter filter) {
+        if(filter.category().isEmpty() && filter.recommendation().isEmpty() && filter.importance().isEmpty() && filter.label().isEmpty()) return BASIC_FILTERED;
+        if(!filter.recommendation().isEmpty() && !java.util.Set.of("PENDING","STALE").contains(filter.recommendation())) return CURRENT_ACTION_FILTERED;
+        return FILTERED;
+    }
+
     public MapSqlParameterSource parameters(long account, DashboardFilter filter) {
         return new MapSqlParameterSource("account", account).addValue("scope", filter.scope())
                 .addValue("suggestion", filter.suggestion()).addValue("category", filter.category())
+                .addValue("recommendation",filter.recommendation()).addValue("importance",filter.importance()).addValue("label",filter.label())
+                .addValue("asOf",timestamp(Instant.now()))
                 .addValue("q", filter.q())
                 .addValue("start", timestamp(filter.startInstant()))
                 .addValue("end", timestamp(filter.endInstant())).addValue("offset", filter.page() * 10L);
@@ -89,35 +158,39 @@ public class DashboardRepository {
 
     public Page page(long account, DashboardFilter filter) {
         var p = parameters(account, filter);
-        var summary = jdbc.queryForMap(FILTERED
-                + " SELECT count(*) messages,count(*) FILTER(WHERE unread) unread,count(DISTINCT group_public_id) groups,count(*) FILTER(WHERE received_at IS NULL) undated,COALESCE(sum(size_estimate),0) known_bytes,count(*) FILTER(WHERE size_estimate IS NULL) unknown_sizes FROM filtered",
-                p);
+        var summary = new java.util.LinkedHashMap<String,Object>();
         var mailingLists = new ArrayList<UUID>();
-        var groups = jdbc.query(
-                FILTERED + """
-                        SELECT group_public_id,group_key,group_label,count(*) messages,count(*) FILTER(WHERE unread) unread,
-                        max(received_at) latest,count(DISTINCT address) addresses,
-                        COALESCE(sum(size_estimate),0) known_bytes,count(*) FILTER(WHERE size_estimate IS NULL) unknown_sizes,
-                        NULL::text display_name,
-                        CASE WHEN group_key LIKE 'address:%' THEN min(address) END exact_address,count(*) FILTER(WHERE pending_state IS NOT NULL) pending
-                        FROM filtered GROUP BY group_public_id,group_key,group_label
-                        ORDER BY
-                        """
-                        + (filter.sort().equals("unread") ? "count(*) FILTER(WHERE unread) DESC," : "")
-                        + "count(*) DESC,group_key LIMIT 10 OFFSET :offset",
-                p,
-                (r, n) -> {
-                    UUID id = uuid(r, "group_public_id");
-                    String key = r.getString("group_key"), label = r.getString("group_label");
-                    if (key.equals("list:" + label) || key.startsWith("address:"))
-                        mailingLists.add(id);
-                    return new Group(id, r.getString("display_name") == null ? label : r.getString("display_name"),
-                            r.getLong("messages"),
-                            r.getLong("unread"), instant(r, "latest"), r.getLong("addresses"),
-                            groupingEvidence(key), r.getLong("pending"), r.getString("exact_address"),
-                            r.getLong("known_bytes"), r.getLong("unknown_sizes"));
-                });
-        groups = labelMailingLists(account, groups, mailingLists);
+        var collected = new ArrayList<Group>();
+        // Count and page one grouped snapshot instead of scanning the enriched mailbox twice.
+        jdbc.query(filtered(filter)+"""
+                , group_counts AS MATERIALIZED (
+                  SELECT group_public_id,group_key,group_label,count(*) messages,count(*) FILTER(WHERE unread) unread,
+                    max(received_at) latest,count(DISTINCT address) addresses,
+                    COALESCE(sum(size_estimate),0) known_bytes,count(*) FILTER(WHERE size_estimate IS NULL) unknown_sizes,
+                    count(*) FILTER(WHERE received_at IS NULL) undated,NULL::text display_name,
+                    CASE WHEN group_key LIKE 'address:%' THEN min(address) END exact_address,
+                    count(*) FILTER(WHERE pending_state IS NOT NULL) pending
+                  FROM filtered GROUP BY group_public_id,group_key,group_label
+                ), totals AS (
+                  SELECT COALESCE(sum(messages),0)::bigint messages,COALESCE(sum(unread),0)::bigint unread,count(*) groups,
+                    COALESCE(sum(undated),0)::bigint undated,COALESCE(sum(known_bytes),0) known_bytes,
+                    COALESCE(sum(unknown_sizes),0)::bigint unknown_sizes FROM group_counts
+                ), page_groups AS (
+                  SELECT * FROM group_counts ORDER BY
+                """+(filter.sort().equals("unread")?"unread DESC,":"")+"""
+                  messages DESC,group_key LIMIT 10 OFFSET :offset
+                ) SELECT totals.messages total_messages,totals.unread total_unread,totals.groups total_groups,
+                    totals.undated total_undated,totals.known_bytes total_known_bytes,totals.unknown_sizes total_unknown_sizes,page_groups.*
+                  FROM totals LEFT JOIN page_groups ON true
+                """,p,(org.springframework.jdbc.core.RowCallbackHandler)r->{
+            for(String key:List.of("messages","unread","groups","undated","known_bytes","unknown_sizes"))summary.put(key,r.getObject("total_"+key));
+            UUID id=uuid(r,"group_public_id");if(id==null)return;
+            String key=r.getString("group_key"),label=r.getString("group_label");
+            if(key.equals("list:"+label) || key.startsWith("address:"))mailingLists.add(id);
+            collected.add(new Group(id,label,r.getLong("messages"),r.getLong("unread"),instant(r,"latest"),r.getLong("addresses"),
+                groupingEvidence(key),r.getLong("pending"),r.getString("exact_address"),r.getLong("known_bytes"),r.getLong("unknown_sizes")));
+        });
+        var groups = labelMailingLists(account,collected,mailingLists);
         var coverage = jdbc.queryForMap(
                 """
                         SELECT count(*) indexed,min(m.received_at) oldest,max(m.received_at) newest,
@@ -201,10 +274,17 @@ public class DashboardRepository {
                     org.springframework.http.HttpStatus.NOT_FOUND, "Sender group unavailable for this account");
         String allGroup = " FROM filtered WHERE group_public_id=:group";
         String inGroup=allGroup+" AND (CAST(:address AS text) IS NULL OR address=:address)" + (unreadOnly ? " AND unread" : "");
-        long total = jdbc.queryForObject(FILTERED + "SELECT count(*)" + inGroup, p, Long.class);
+        long total = jdbc.queryForObject(filtered(filter) + "SELECT count(*)" + inGroup, p, Long.class);
         List<Message> messages = jdbc.query(
-                FILTERED + """
-                SELECT filtered.*,(SELECT p.label FROM dashboard_pattern_labels p
+                filtered(filter) + """
+                SELECT filtered.*,
+                EXISTS(SELECT 1 FROM correspondent_summary h WHERE h.account_id=filtered.account_id
+                  AND h.address=filtered.dashboard_from_address AND h.sent_count>0) contact,
+                EXISTS(SELECT 1 FROM message_evidence e WHERE e.account_id=filtered.account_id
+                  AND e.provider_message_id=filtered.provider_message_id
+                  AND (jsonb_path_exists(e.facts,'$.parts[*] ? (@.calendar == true)')
+                    OR jsonb_array_length(COALESCE(e.facts->'calendars','[]'::jsonb))>0)) calendar_invite,
+                (SELECT p.label FROM dashboard_pattern_labels p
                 JOIN dashboard_pattern_reviews review ON review.account_id=p.account_id AND review.id=p.review_id
                 JOIN message_metadata source ON source.account_id=p.account_id AND source.dashboard_message_id=p.source_id
                 JOIN message_metadata target ON target.account_id=p.account_id AND target.dashboard_message_id=p.message_id
@@ -218,11 +298,11 @@ public class DashboardRepository {
                         + " ORDER BY received_at DESC NULLS LAST,provider_message_id LIMIT 10 OFFSET :message_offset",
                 p, (r, n) -> message(r,r.getString("reviewed_pattern")));
         var addresses = jdbc.query(
-                FILTERED + "SELECT address,max(NULLIF(from_display_name,'')) display_name,count(*) messages,count(*) FILTER(WHERE unread) unread" + allGroup
+                filtered(filter) + "SELECT address,max(NULLIF(from_display_name,'')) display_name,count(*) messages,count(*) FILTER(WHERE unread) unread" + allGroup
                         + " GROUP BY address ORDER BY address",
                 p, (r, n) -> new Address(r.getString("address"), r.getLong("messages"), r.getLong("unread"),r.getString("display_name")));
         var units = jdbc.query(
-                FILTERED + "SELECT DISTINCT unit_public_id,unit_kind,unit_key,evidence_reason" + allGroup
+                filtered(filter) + "SELECT DISTINCT unit_public_id,unit_kind,unit_key,evidence_reason" + allGroup
                         + " ORDER BY unit_public_id",
                 p, (r, n) -> new Unit(uuid(r, "unit_public_id"), r.getString("unit_kind"), r.getString("unit_key"),
                         r.getString("evidence_reason")));
@@ -241,7 +321,7 @@ public class DashboardRepository {
                 Long.class) != groups.stream().distinct().count())
             throw new org.springframework.web.server.ResponseStatusException(
                     org.springframework.http.HttpStatus.NOT_FOUND, "Sender group unavailable for this account");
-        return jdbc.query(FILTERED
+        return jdbc.query(filtered(filter)
                 + "SELECT dashboard_message_id,group_public_id,address FROM filtered WHERE group_public_id IN (:groups) AND (CAST(:address AS text) IS NULL OR address=:address)"
                 + (unreadOnly ? " AND unread" : "") + " ORDER BY provider_message_id",
                 p,
@@ -255,7 +335,7 @@ public class DashboardRepository {
         return new Message(uuid(r, "dashboard_message_id"), r.getString("subject_header"), r.getString("address"),
                 instant(r, "received_at"), r.getBoolean("unread"), uuid(r, "group_public_id"),
                 r.getString("pending_state"), r.getString("category"),r.getString("from_display_name"),r.getString("classification_override")!=null?"MANUAL":r.getString("category").equals("UNCLASSIFIED")?"NONE":"JEV",
-                r.getObject("size_estimate",Long.class),r.getString("attachment_state"),r.getString("snippet_text"),r.getString("snippet_state"),pattern);
+                r.getObject("size_estimate",Long.class),r.getString("attachment_state"),r.getString("snippet_text"),r.getString("snippet_state"),pattern,java.util.Arrays.asList((String[])r.getArray("labels").getArray()).contains("SENT"),r.getBoolean("contact"),r.getBoolean("calendar_invite"));
     }
 
     public static UUID uuid(ResultSet r, String column) throws SQLException {
@@ -300,7 +380,7 @@ public class DashboardRepository {
 
     public record Message(UUID id, String subject, String address, Instant receivedAt, boolean unread, UUID groupId,
             String pendingState, String category,String displayName,String categorySource,
-            Long sizeEstimate,String attachmentState,String snippet,String snippetState,String reviewedPattern) {
+            Long sizeEstimate,String attachmentState,String snippet,String snippetState,String reviewedPattern,boolean sent,boolean contact,boolean calendarInvite) {
     }
 
     public record Address(String address, long messages, long unread,String displayName) {
@@ -313,7 +393,13 @@ public class DashboardRepository {
     }
 
     public record Details(List<Message> messages, List<Address> addresses, List<Unit> units, long total, int page,
-            long revision,long classificationRevision) {
+            long revision,long classificationRevision, java.util.List<com.tidymail.service.RecommendationService.View> recommendations) {
+        public Details(List<Message> messages,List<Address> addresses,List<Unit> units,long total,int page,long revision,long classificationRevision) {
+            this(messages,addresses,units,total,page,revision,classificationRevision,List.of());
+        }
+        public Details withRecommendations(java.util.List<com.tidymail.service.RecommendationService.View> views) {
+            return new Details(messages,addresses,units,total,page,revision,classificationRevision,views);
+        }
     }
 
     public record Page(List<Group> groups, Map<String, Object> summary, Map<String, Object> coverage,

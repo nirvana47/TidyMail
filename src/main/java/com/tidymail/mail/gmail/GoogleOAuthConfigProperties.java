@@ -22,7 +22,8 @@ import org.springframework.stereotype.Component;
  * Reads the Google OAuth developer credentials (client ID / secret) from the
  * environment and reports whether they are configured.
  *
- * <p>Product functionality supported: Gmail provider OAuth configuration.
+ * <p>
+ * Product functionality supported: Gmail provider OAuth configuration.
  */
 @Component
 public class GoogleOAuthConfigProperties {
@@ -43,6 +44,6 @@ public class GoogleOAuthConfigProperties {
 
     public boolean isConfigured() {
         return clientId != null && !clientId.isBlank()
-            && clientSecret != null && !clientSecret.isBlank();
+                && clientSecret != null && !clientSecret.isBlank();
     }
 }

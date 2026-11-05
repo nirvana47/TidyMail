@@ -27,6 +27,7 @@ class MessageEvidenceJourneyTest extends PostgresJourneyTest {
     @Autowired MessageMetadataSyncRepository metadata;
     @Autowired MessageMetadataMapper mapper;
     @Autowired DashboardGroupingService grouping;
+    @Autowired CorrespondentHistory history;
     long account;
     @BeforeEach void setup(){account=userAccounts.createAccount(OWNER);reset(reader,classifier);}
     UUID mail(String id,String address,String labels,Long size,String kind,String unit) {
@@ -38,21 +39,27 @@ class MessageEvidenceJourneyTest extends PostgresJourneyTest {
     }
     DashboardFilter filter(String suggestion) {return new DashboardFilter("all","","","","UTC",0,"","messages",suggestion);}
     @Test void largeSuggestionsUseWholeMessageSizeAndExactFrozenSelectionBytes() {
-        UUID large=mail("large","a@quora.com","{INBOX}",5000001L,"ADDRESS","a@quora.com");
+        UUID large=mail("large","a@quora.com","{INBOX}",1000001L,"ADDRESS","a@quora.com");
         UUID archived=mail("archived","b@quora.com","{}",9000000L,"ADDRESS","b@quora.com");
-        mail("boundary","a@quora.com","{INBOX}",5000000L,"ADDRESS","a@quora.com");
-        mail("below","a@quora.com","{INBOX}",4999999L,"ADDRESS","a@quora.com");
+        mail("boundary","a@quora.com","{INBOX}",1000000L,"ADDRESS","a@quora.com");
+        mail("below","a@quora.com","{INBOX}",999999L,"ADDRESS","a@quora.com");
         mail("unknown","a@quora.com","{INBOX}",null,"ADDRESS","a@quora.com");
         mail("trash","a@quora.com","{TRASH}",99000000L,"ADDRESS","a@quora.com");
-        mail("sent","a@quora.com","{SENT}",99000000L,"ADDRESS","a@quora.com");
-        var page=dashboard.page(account,filter("large"));assertThat(page.summary()).containsEntry("messages",2L);
-        var group=page.groups().getFirst().id();
-        assertThat(dashboard.selection(account,filter("large"),List.of(group),null)).extracting(DashboardRepository.Selected::id).containsExactlyInAnyOrder(large,archived);
-        var preview=previews.create(account,new DashboardPreviewService.Request(filter("large"),List.of(large,archived,large),"TRASH",page.revision()));
-        assertThat(preview.selected()).isEqualTo(2);assertThat(preview.knownBytes()).isEqualTo(14000001);assertThat(preview.unknownSizes()).isZero();
+        UUID sent=mail("sent","sent@example.test","{SENT}",2000001L,"ADDRESS","sent@example.test");
+        var page=dashboard.page(account,filter("large"));assertThat(page.summary()).containsEntry("messages",3L);
+        assertThat(dashboard.selection(account,filter("large"),page.groups().stream().map(DashboardRepository.Group::id).toList(),null)).extracting(DashboardRepository.Selected::id).containsExactlyInAnyOrder(large,archived,sent);
+        assertThat(dashboard.page(account,filter("")).summary()).containsEntry("messages",5L);
+        assertThat(dashboard.details(account,filter("large"),page.groups().stream().filter(g->"sent@example.test".equals(g.address())).findFirst().orElseThrow().id(),0).messages().getFirst().sent()).isTrue();
+        var preview=previews.create(account,new DashboardPreviewService.Request(filter("large"),List.of(large,archived,sent,large),"TRASH",page.revision()));
+        assertThat(preview.selected()).isEqualTo(3);assertThat(preview.knownBytes()).isEqualTo(12000002);assertThat(preview.unknownSizes()).isZero();
         assertThat(previews.targets(account,preview.id(),0).rows()).allMatch(r->r.get("size_estimate")!=null);
         var job=jobs.confirm(account,preview.id());
         assertThat(jdbc.queryForObject("SELECT snapshot->'filter'->>'suggestion' FROM cleanup_jobs WHERE public_id=?",String.class,job.id())).isEqualTo("large");
+        var claim=jobs.claim();
+        var verified=new DashboardJobService.Claim(claim.job(),claim.account(),claim.worker(),claim.generation(),claim.filter(),claim.targets(),false,claim.action(),"VERIFIED");
+        var observations=new HashMap<String,MailMessage>();
+        for(var target:claim.targets()) observations.put(target.providerId(),new MailMessage(target.providerId(),"thread","google",Instant.now(),Map.of(),target.messageId().equals(sent)?Set.of("SENT"):target.messageId().equals(large)?Set.of("INBOX"):Set.of()));
+        assertThat(jobs.dispatch(verified,observations).targets()).extracting(DashboardJobService.Target::messageId).containsExactlyInAnyOrder(large,archived,sent);
         verifyNoInteractions(reader,classifier,gmailProvider);
     }
     @Test void checkingOneOwnedEmailIsReadOnlyCachedAndSurvivesMetadataSync() throws Exception {
@@ -63,6 +70,12 @@ class MessageEvidenceJourneyTest extends PostgresJourneyTest {
         assertThatThrownBy(()->evidence.inspect(other,id)).hasMessageContaining("unavailable");verifyNoInteractions(reader);
         mockMvc.perform(post("/dashboard/api/messages/{id}/evidence",id).with(authenticatedAs(OWNER)).with(csrfToken())).andExpect(status().isOk()).andExpect(jsonPath("$.snippet.text").value("Private preview"));
         evidence.inspect(account,id);verify(reader,times(1)).read(any(),eq("one"));
+        UUID outgoing=mail("outgoing",OWNER,"{SENT}",100L,"ADDRESS",OWNER);
+        jdbc.update("UPDATE message_metadata SET to_values=ARRAY['person@gmail.com'] WHERE dashboard_message_id=?",outgoing);
+        history.processBatch(200);
+        var details=dashboard.details(account,filter(""),dashboard.page(account,filter("")).groups().getFirst().id(),0);
+        assertThat(details.messages().getFirst().contact()).isTrue();
+        assertThat(details.messages().getFirst().calendarInvite()).isTrue();
         var message=new MailMessage("one","thread","google",Instant.now(),Map.of("From",List.of("person@gmail.com")),Set.of("INBOX"));
         metadata.upsertMetadata(mapper.apply(account,message,null,Instant.now()));
         var row=jdbc.queryForMap("SELECT snippet_text,attachment_state,attachment_source FROM message_metadata WHERE account_id=? AND provider_message_id='one'",account);
@@ -82,6 +95,26 @@ class MessageEvidenceJourneyTest extends PostgresJourneyTest {
         mail("another","digest@quora.com","{INBOX}",1L,"LIST","one.quora");
         assertThat(dashboard.page(account,filter("")).groups()).hasSize(2);
         assertThat(details.messages()).extracting(DashboardRepository.Message::id).contains(routine,security);
+    }
+    @Test void scopedReadPermissionIsCheckedOnlyAtTheActualUncachedRead() {
+        UUID id=mail("scoped","person@gmail.com","{INBOX}",100L,"ADDRESS","person@gmail.com");
+        var reservations=new java.util.concurrent.atomic.AtomicInteger();
+        assertThatThrownBy(()->evidence.inspectPresence(account,id,()->{reservations.incrementAndGet();return false;}))
+            .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+        verifyNoInteractions(reader);assertThat(reservations.get()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM message_evidence",Long.class)).isZero();
+
+        when(reader.readPresence(any(),eq("scoped"))).thenReturn(new GmailEvidenceReader.Evidence(
+            GmailEvidenceReader.PRESENCE_VERSION,EmailSnippet.observed(null),"AVAILABLE","ABSENT",List.of(),List.of(),0,100));
+        evidence.inspectPresence(account,id,()->{reservations.incrementAndGet();return true;});
+        evidence.inspectPresence(account,id,()->{throw new AssertionError("Cached evidence must not reserve a read");});
+        assertThat(reservations.get()).isEqualTo(2);verify(reader,times(1)).readPresence(any(),eq("scoped"));
+
+        // If a previously cached observation disappears, a subsequent read must reserve again.
+        jdbc.update("DELETE FROM message_evidence WHERE account_id=?",account);
+        assertThatThrownBy(()->evidence.inspectPresence(account,id,()->false))
+            .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+        verify(reader,times(1)).readPresence(any(),eq("scoped"));
     }
     @Test void previewReportsUnknownSizesWithoutCountingThemAsZeroCoverage() {
         UUID a=mail("a","a@gmail.com","{INBOX}",null,"ADDRESS","a@gmail.com");

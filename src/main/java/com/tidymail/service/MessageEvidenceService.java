@@ -14,7 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
-/** One explicit message read, durable facts and no model or mailbox mutation. */
+/** Bounded explicit/scoped background reads, durable facts and no model or mailbox mutation. */
 @Service
 public class MessageEvidenceService {
     private final JdbcTemplate jdbc;
@@ -27,44 +27,54 @@ public class MessageEvidenceService {
     public MessageEvidenceService(JdbcTemplate jdbc,UserAccountRepository accounts,GmailEvidenceReader reader,ObjectMapper json,TransactionTemplate tx,CalendarReconciler reconciler) {
         this.jdbc=jdbc;this.accounts=accounts;this.reader=reader;this.json=json;this.tx=tx;this.reconciler=reconciler;
     }
-    public JsonNode inspect(long account,UUID message) {
+    public JsonNode inspect(long account,UUID message) { return inspect(account,message,false,()->true); }
+    public JsonNode inspectPresence(long account,UUID message) { return inspectPresence(account,message,()->true); }
+    /** Scoped workers reserve their read allowance here; cached observations consume no new read. */
+    public JsonNode inspectPresence(long account,UUID message,java.util.function.BooleanSupplier beforeRead) {
+        return inspect(account,message,true,Objects.requireNonNull(beforeRead));
+    }
+    private JsonNode inspect(long account,UUID message,boolean presenceOnly,java.util.function.BooleanSupplier beforeRead) {
         String provider=jdbc.query("SELECT provider_message_id FROM message_metadata WHERE account_id=? AND dashboard_message_id=? AND provider='google'",
             (r,n)->r.getString(1),account,message).stream().findFirst().orElseThrow(()->new ResponseStatusException(HttpStatus.NOT_FOUND,"Email unavailable for this account"));
-        var saved=jdbc.query("SELECT facts::text FROM message_evidence WHERE account_id=? AND provider_message_id=? AND evidence_version=?",
-            (r,n)->r.getString(1),account,provider,GmailEvidenceReader.VERSION);
+        var saved=jdbc.query("SELECT facts::text FROM message_evidence WHERE account_id=? AND provider_message_id=? AND (evidence_version=? OR (? AND evidence_version=?))",
+            (r,n)->r.getString(1),account,provider,GmailEvidenceReader.VERSION,presenceOnly,GmailEvidenceReader.PRESENCE_VERSION);
         try {
             if(!saved.isEmpty()) {
                 var previous=json.readTree(saved.getFirst());
                 boolean retryable=false;
                 for(var calendar:previous.path("calendars")) if(calendar.path("state").asText().equals("FAILED")) retryable=true;
-                if(!retryable)return reconcile(account,provider,previous);
+                if(presenceOnly || !retryable)return reconcile(account,provider,previous);
             }
         }
         catch(Exception ignored){throw new IllegalStateException("Saved evidence could not be read");}
         String key=account+":"+provider;
         if(!reading.add(key))throw new ResponseStatusException(HttpStatus.CONFLICT,"This email is already being checked");
         try {
-            var evidence=reader.read(accounts.findById(account).orElseThrow(),provider);
+            if(!beforeRead.getAsBoolean())throw new ResponseStatusException(HttpStatus.CONFLICT,"The reviewed read allowance is unavailable");
+            var owner=accounts.findById(account).orElseThrow();
+            var evidence=presenceOnly?reader.readPresence(owner,provider):reader.read(owner,provider);
             var facts=json.valueToTree(evidence);
             ((com.fasterxml.jackson.databind.node.ObjectNode)facts).put("observedAt",Instant.now().toString());
             String encoded=json.writeValueAsString(facts);
             // Do not hold a transaction/row lock during provider I/O. A deleted message stays deleted.
             tx.executeWithoutResult(status->{
+                // Same account-before-message lock order as local composition; never held over Gmail I/O.
+                jdbc.queryForList("SELECT id FROM user_accounts WHERE id=? FOR KEY SHARE",Long.class,account);
                 var rows=jdbc.queryForList("SELECT id FROM message_metadata WHERE account_id=? AND provider_message_id=? FOR UPDATE",Long.class,account,provider);
                 if(rows.isEmpty())throw new ResponseStatusException(HttpStatus.NOT_FOUND,"Email no longer indexed");
                 jdbc.update("""
                     INSERT INTO message_evidence(account_id,provider_message_id,evidence_version,evidence_hash,observed_at,facts)
                     VALUES(?,?,?,?,?,CAST(? AS jsonb)) ON CONFLICT(account_id,provider_message_id) DO UPDATE
                     SET evidence_version=EXCLUDED.evidence_version,evidence_hash=EXCLUDED.evidence_hash,observed_at=EXCLUDED.observed_at,facts=EXCLUDED.facts
-                    """,account,provider,GmailEvidenceReader.VERSION,CalendarEvidenceParser.hash(encoded),Timestamp.from(Instant.now()),encoded);
+                    """,account,provider,evidence.version(),CalendarEvidenceParser.hash(encoded),Timestamp.from(Instant.now()),encoded);
                 jdbc.update("""
-                    UPDATE message_metadata SET snippet_text=?,snippet_state=?,
+                    UPDATE message_metadata SET snippet_text=CASE WHEN ? THEN snippet_text ELSE ? END,snippet_state=CASE WHEN ? THEN snippet_state ELSE ? END,
                     attachment_state=CASE WHEN ?<>'UNKNOWN' THEN ? ELSE attachment_state END,
                     has_attachments=CASE WHEN ?<>'UNKNOWN' THEN (?='PRESENT') ELSE has_attachments END,
                     attachment_source=CASE WHEN ?<>'UNKNOWN' THEN 'MIME_STRUCTURE_V1' ELSE attachment_source END,
                     attachment_observed_at=CASE WHEN ?<>'UNKNOWN' THEN now() ELSE attachment_observed_at END
                     WHERE account_id=? AND provider_message_id=?
-                    """,evidence.snippet().text(),evidence.snippet().state(),evidence.attachmentState(),evidence.attachmentState(),evidence.attachmentState(),evidence.attachmentState(),evidence.attachmentState(),evidence.attachmentState(),account,provider);
+                    """,presenceOnly,evidence.snippet().text(),presenceOnly,evidence.snippet().state(),evidence.attachmentState(),evidence.attachmentState(),evidence.attachmentState(),evidence.attachmentState(),evidence.attachmentState(),evidence.attachmentState(),account,provider);
             });
             return reconcile(account,provider,json.readTree(encoded));
         } catch(ResponseStatusException error){throw error;}

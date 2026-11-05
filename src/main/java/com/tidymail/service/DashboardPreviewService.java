@@ -36,8 +36,8 @@ public class DashboardPreviewService {
         if(request.revision()!=repository.revision(account)) throw conflict("Grouping changed. Create a new preview.");
         if(!request.filter().category().isEmpty() && request.classificationRevision()!=null && request.classificationRevision()!=repository.classificationRevision(account))throw conflict("Categories changed. Create a new preview.");
         var ids=request.ids().stream().distinct().toList();
-        var p=repository.parameters(account,request.filter()).addValue("ids",ids);
-        var targets=jdbc.queryForList(DashboardRepository.FILTERED+"""
+        var p=repository.parameters(account,request.filter().cleanupScope()).addValue("ids",ids);
+        var targets=jdbc.queryForList(repository.filtered(request.filter().cleanupScope())+"""
           SELECT m.provider_message_id,m.dashboard_message_id,m.subject_header,m.size_estimate,
             COALESCE(m.dashboard_from_address,m.from_address,'Unknown sender') address,m.received_at,
             f.id IS NOT NULL AS eligible,'INBOX'=ANY(m.labels) inbox,m.unread,

@@ -47,6 +47,11 @@ public class GmailSyncConfigProperties {
     @Value("${SYNC_GMAIL_BACKFILL_QUOTA_UNITS_PER_MINUTE:2400}")
     private int backfillQuotaUnitsPerMinute = 2400;
 
+    @Value("${app.sync.gmail-history-window-pages:256}")
+    private int historyWindowPages = 1;
+    public int getHistoryWindowPages(){return historyWindowPages;}
+    public void setHistoryWindowPages(int value){historyWindowPages=value;}
+
     @Value("${app.sync.initial-page-size:200}")
     private int initialPageSize = 200;
 
@@ -133,7 +138,7 @@ public class GmailSyncConfigProperties {
 
     @PostConstruct
     public void validate() {
-        if(metadataBatchSize<1||metadataBatchSize>25||quotaUnitsPerMinute<0||backfillQuotaUnitsPerMinute<0
+        if(historyWindowPages<1||historyWindowPages>256||metadataBatchSize<1||metadataBatchSize>25||quotaUnitsPerMinute<0||backfillQuotaUnitsPerMinute<0
                 ||(quotaUnitsPerMinute>0&&backfillQuotaUnitsPerMinute>quotaUnitsPerMinute))
             throw new IllegalStateException("Invalid Gmail metadata batch size or quota budget");
         if (apiConcurrency < 1) {

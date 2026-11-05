@@ -14,6 +14,11 @@ import org.springframework.web.server.ResponseStatusException;
 @Controller
 @RequestMapping("/dashboard")
 public class DashboardController {
+    private final LabelingPipeline labeling;
+    private final LabelingReviewService labelingReview;
+    private final com.tidymail.job.LabelingWorker labelingWorker;
+    private final RecommendationService recommendations;
+    private final RecommendationProcessingService processing;
     private final MessageEvidenceService evidence;
     private final ReviewedPatternService patterns;
     private final OwnedAccountScopeService accounts;
@@ -25,7 +30,11 @@ public class DashboardController {
 
     public DashboardController(OwnedAccountScopeService accounts, DashboardService dashboard,
             DashboardGroupingService grouping, DashboardPreviewService previews, DashboardRepository repository,
-            DashboardClassificationService classification, MessageEvidenceService evidence, ReviewedPatternService patterns) {
+            DashboardClassificationService classification, MessageEvidenceService evidence, ReviewedPatternService patterns,
+            RecommendationService recommendations, RecommendationProcessingService processing, LabelingPipeline labeling,
+            LabelingReviewService labelingReview,com.tidymail.job.LabelingWorker labelingWorker) {
+        this.labelingReview=labelingReview;this.labelingWorker=labelingWorker;
+        this.recommendations=recommendations; this.processing=processing;this.labeling=labeling;
         this.patterns = patterns;
         this.evidence = evidence;
         this.accounts = accounts;
@@ -76,11 +85,99 @@ public class DashboardController {
         return Map.of("applied",patterns.apply(account(auth),id,request.messages()));
     }
 
+    public record LabelingRequest(List<UUID> messages,String kind,RecommendationSemanticContract.Variant variant,java.math.BigDecimal maxSpend) {}
+    public record LabelingApproval(String hash) {}
+    public record LabelingBatch(LabelingReviewService.Request selection,java.math.BigDecimal maxSpend) {}
+    public record LabelingAllowance(String baseHash,java.math.BigDecimal newLimit,String reviewHash) {}
+    @PostMapping("/api/labeling/scopes/{scope}/allowance-review") @ResponseBody
+    public LabelingPipeline.AllowanceReview reviewLabelingAllowance(@PathVariable UUID scope,@RequestBody LabelingAllowance request,OAuth2AuthenticationToken auth) {
+        try{return labeling.reviewAllowance(account(auth),scope,request.baseHash(),request.newLimit());}
+        catch(IllegalArgumentException invalid){throw new ResponseStatusException(HttpStatus.CONFLICT,invalid.getMessage());}
+    }
+    @PostMapping("/api/labeling/scopes/{scope}/allowance") @ResponseBody
+    public LabelingPipeline.ScopeStatus increaseLabelingAllowance(@PathVariable UUID scope,@RequestBody LabelingAllowance request,OAuth2AuthenticationToken auth) {
+        try{return labeling.confirmAllowance(account(auth),scope,request.baseHash(),request.newLimit(),request.reviewHash());}
+        catch(IllegalArgumentException invalid){throw new ResponseStatusException(HttpStatus.CONFLICT,invalid.getMessage());}
+    }
+    @PostMapping("/api/labeling/preview") @ResponseBody
+    public LabelingReviewService.Preview previewLabels(@RequestBody LabelingReviewService.Request request,OAuth2AuthenticationToken auth) {
+        try{return labelingReview.preview(account(auth),request);}
+        catch(IllegalArgumentException invalid){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,invalid.getMessage());}
+    }
+    @PostMapping("/api/labeling/prepare") @ResponseBody
+    public LabelingPipeline.Prepared prepareLabels(@RequestBody LabelingBatch request,OAuth2AuthenticationToken auth) {
+        try{return labelingReview.prepare(account(auth),request.selection(),request.maxSpend());}
+        catch(IllegalArgumentException invalid){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,invalid.getMessage());}
+    }
+    @GetMapping("/api/labeling/scopes") @ResponseBody
+    public List<LabelingReviewService.Recent> recentLabels(OAuth2AuthenticationToken auth){return labelingReview.recent(account(auth));}
+    @GetMapping("/api/labeling/scopes/{scope}/running") @ResponseBody
+    public Map<String,Boolean> labelingRunning(@PathVariable UUID scope,OAuth2AuthenticationToken auth) {
+        long account=account(auth);labeling.progress(account,scope);return Map.of("running",labelingWorker.active(account,scope));
+    }
+    public record LabelingProgress(LabelingPipeline.ScopeStatus status,boolean running) {}
+    @GetMapping("/api/labeling/scopes/{scope}/progress") @ResponseBody
+    public LabelingProgress labelingProgress(@PathVariable UUID scope,OAuth2AuthenticationToken auth) {
+        long account=account(auth);return new LabelingProgress(labeling.progress(account,scope),labelingWorker.active(account,scope));
+    }
+    @PostMapping("/api/labeling/scopes/{scope}/start") @ResponseBody
+    public LabelingPipeline.ScopeStatus startLabeling(@PathVariable UUID scope,@RequestBody LabelingApproval request,OAuth2AuthenticationToken auth) {
+        long account=account(auth);
+        try{labelingWorker.startReviewed(account,scope,request.hash());return labeling.progress(account,scope);}
+        catch(IllegalArgumentException invalid){throw new ResponseStatusException(HttpStatus.CONFLICT,invalid.getMessage());}
+    }
+    @GetMapping("/api/labeling/scopes/{scope}") @ResponseBody
+    public LabelingPipeline.ScopeStatus labelingStatus(@PathVariable UUID scope,OAuth2AuthenticationToken auth) {
+        return labeling.scopeStatus(account(auth),scope);
+    }
+    @PostMapping("/api/labeling/scopes") @ResponseBody
+    public LabelingPipeline.Prepared prepareLabeling(@RequestBody LabelingRequest request,OAuth2AuthenticationToken auth) {
+        try {return labeling.prepare(account(auth),request.messages(),request.kind(),request.variant(),request.maxSpend());}
+        catch(IllegalArgumentException invalid){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,invalid.getMessage());}
+    }
+    @PostMapping("/api/labeling/scopes/{scope}/authorize") @ResponseBody
+    public Map<String,Boolean> authorizeLabeling(@PathVariable UUID scope,@RequestBody LabelingApproval request,OAuth2AuthenticationToken auth) {
+        try {labeling.authorize(account(auth),scope,request.hash());return Map.of("authorized",true);}
+        catch(IllegalArgumentException invalid){throw new ResponseStatusException(HttpStatus.CONFLICT,"Reviewed labeling scope unavailable for this account");}
+    }
+    @PostMapping("/api/labeling/scopes/{scope}/pause") @ResponseBody
+    public Map<String,Boolean> pauseLabeling(@PathVariable UUID scope,OAuth2AuthenticationToken auth) {
+        labeling.pause(account(auth),scope);return Map.of("paused",true);
+    }
+    @PostMapping("/api/labeling/scopes/{scope}/resume") @ResponseBody
+    public Map<String,Boolean> resumeLabeling(@PathVariable UUID scope,@RequestBody LabelingApproval request,OAuth2AuthenticationToken auth) {
+        try {labeling.resume(account(auth),scope,request.hash());return Map.of("paused",false);}
+        catch(IllegalArgumentException invalid){throw new ResponseStatusException(HttpStatus.CONFLICT,"Reviewed labeling scope unavailable for this account");}
+    }
+    @PostMapping("/api/labeling/scopes/{scope}/retry-mime") @ResponseBody
+    public Map<String,Boolean> retryLabelingMime(@PathVariable UUID scope,@RequestBody LabelingApproval request,OAuth2AuthenticationToken auth) {
+        try {labeling.retryMime(account(auth),scope,request.hash());return Map.of("retryPrepared",true);}
+        catch(IllegalArgumentException invalid){throw new ResponseStatusException(HttpStatus.CONFLICT,"Reviewed MIME scope unavailable for this account");}
+    }
+
+    public record RecommendationCorrection(MessageRecommendation.Action action, MessageRecommendation.Importance importance, long revision) {}
+    @GetMapping("/api/recommendations") @ResponseBody
+    public RecommendationProcessingService.Status recommendationStatus(OAuth2AuthenticationToken auth) { return processing.status(account(auth)); }
+    public record RecommendationProcessing(boolean enabled) {}
+    @PostMapping("/api/recommendations/processing") @ResponseBody
+    public RecommendationProcessingService.Status recommendationProcessing(@RequestBody RecommendationProcessing request,OAuth2AuthenticationToken auth) {
+        return processing.enable(account(auth),request.enabled());
+    }
+    @PostMapping("/api/messages/{message}/recommendation") @ResponseBody
+    public RecommendationService.View recommendationCorrection(@PathVariable UUID message,@RequestBody RecommendationCorrection correction,OAuth2AuthenticationToken auth) {
+        long account=account(auth);
+        recommendations.correct(account,message,correction.action(),correction.importance(),correction.revision());
+        recommendations.recompute(account,List.of(message));
+        return recommendations.read(account,List.of(message)).getFirst();
+    }
+
     @GetMapping("/api/groups/{group}")
     @ResponseBody
     public DashboardRepository.Details details(@PathVariable UUID group, @RequestParam Map<String, String> parameters,
             @RequestParam(defaultValue = "0") int messagePage, @RequestParam(defaultValue = "false") boolean unreadOnly, OAuth2AuthenticationToken auth) {
-        return dashboard.details(account(auth), DashboardFilter.from(parameters), group, messagePage,parameters.get("address"),unreadOnly);
+        long account=account(auth);
+        var details=dashboard.details(account, DashboardFilter.from(parameters), group, messagePage,parameters.get("address"),unreadOnly);
+        return details;
     }
 
     public record Selection(DashboardFilter filter, List<UUID> groups, String address, long revision, boolean unreadOnly) {

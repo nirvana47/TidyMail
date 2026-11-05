@@ -34,3 +34,8 @@ upgrade, regression and user-selected live-action checks, with their limits.
 Gmail is the implemented mailbox backend. Microsoft sign-in wiring exists, but Outlook cleanup is incomplete. Ordinary logout retains indexed data; explicit confirmed deletion removes it.
 
 Licensed under [GPL v3](LICENSE).
+
+Start the installed local package with `./tools/run-local.sh`. This enables the
+five-minute Gmail sync cycle, cleanup, and local recommendation refresh while
+keeping paid classification/labeling workers off. It validates and applies packaged database migrations before startup.
+Do not use a global scheduling-off verification command as the everyday launcher.

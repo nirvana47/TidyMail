@@ -21,7 +21,8 @@ import org.springframework.stereotype.Component;
  * limits and an inter-request delay, reserving capacity for freshness
  * operations so backfill/rescan work cannot starve live sync.
  *
- * <p>Product functionality supported: Gmail provider rate limiting.
+ * <p>
+ * Product functionality supported: Gmail provider rate limiting.
  */
 @Component
 public class GmailRateLimiter {
@@ -34,48 +35,102 @@ public class GmailRateLimiter {
     private Semaphore backfillCapacity;
     private int delayMs;
     private long nextMetadataBatchNanos;
-    private final ConcurrentHashMap<Long,AccountBudget> budgets=new ConcurrentHashMap<>();
-    private final Bucket projectBudget=new Bucket(960000);
+    private final ConcurrentHashMap<Long, AccountBudget> budgets = new ConcurrentHashMap<>();
+    private final Bucket projectBudget = new Bucket(960000);
 
-    /** Weighted per-account admission shared by cleanup and sync, with background headroom. */
-    public void charge(Long accountId,int units,boolean backfill) {
-        if(units<1||units>500)throw new IllegalArgumentException("Gmail reservation must cost 1–500 units");
-        if(accountId==null||config.getQuotaUnitsPerMinute()==0)return;
-        var budget=budgets.computeIfAbsent(accountId,id->new AccountBudget(config));
-        for(;;) {
+    /**
+     * Weighted per-account admission shared by cleanup and sync, with background
+     * headroom.
+     */
+    public void charge(Long accountId, int units, boolean backfill) {
+        if (units < 1 || units > 500)
+            throw new IllegalArgumentException("Gmail reservation must cost 1–500 units");
+        if (accountId == null || config.getQuotaUnitsPerMinute() == 0)
+            return;
+        var budget = budgets.computeIfAbsent(accountId, id -> new AccountBudget(config));
+        for (;;) {
             long wait;
-            synchronized(budget) {
-                long now=System.nanoTime();
-                long cooldown=budget.cooldownUntil- now;
-                if(cooldown>0)throw new CleanupProviderException(429,Long.toString(Math.max(1,TimeUnit.NANOSECONDS.toSeconds(cooldown)+1)),true);
-                synchronized(projectBudget) {
-                    wait=Math.max(budget.total.waitNanos(units,now),projectBudget.waitNanos(units,now));
-                    if(backfill)wait=Math.max(wait,budget.background.waitNanos(units,now));
-                    if(wait<=0){budget.total.take(units);projectBudget.take(units);if(backfill)budget.background.take(units);return;}
+            synchronized (budget) {
+                long now = System.nanoTime();
+                long cooldown = budget.cooldownUntil - now;
+                if (cooldown > 0)
+                    throw new CleanupProviderException(429,
+                            Long.toString(Math.max(1, TimeUnit.NANOSECONDS.toSeconds(cooldown) + 1)), true);
+                synchronized (projectBudget) {
+                    wait = Math.max(budget.total.waitNanos(units, now), projectBudget.waitNanos(units, now));
+                    if (backfill)
+                        wait = Math.max(wait, budget.background.waitNanos(units, now));
+                    if (wait <= 0) {
+                        budget.total.take(units);
+                        projectBudget.take(units);
+                        if (backfill)
+                            budget.background.take(units);
+                        return;
+                    }
                 }
             }
-            // Never sleep holding the budget monitor; foreground requests can use their reservation.
-            sleep(Math.min(1000,Math.max(1,TimeUnit.NANOSECONDS.toMillis(wait)+1)));
+            // Never sleep holding the budget monitor; foreground requests can use their
+            // reservation.
+            sleep(Math.min(1000, Math.max(1, TimeUnit.NANOSECONDS.toMillis(wait) + 1)));
         }
     }
 
-    public void recordThrottle(Long accountId,HttpHeaders headers) {
-        if(accountId==null||config.getQuotaUnitsPerMinute()==0)return;
-        long seconds=30;
-        if(headers!=null&&headers.getRetryAfter()!=null)try{seconds=Math.max(seconds,Long.parseLong(headers.getRetryAfter()));}
-        catch(NumberFormatException error){try{seconds=Math.max(seconds,ZonedDateTime.parse(headers.getRetryAfter(),DateTimeFormatter.RFC_1123_DATE_TIME).toEpochSecond()-Instant.now().getEpochSecond());}catch(DateTimeParseException ignored){}}
-        var budget=budgets.computeIfAbsent(accountId,id->new AccountBudget(config));
-        synchronized(budget){budget.cooldownUntil=Math.max(budget.cooldownUntil,System.nanoTime()+TimeUnit.SECONDS.toNanos(Math.min(seconds,86400)));}
+    public void recordThrottle(Long accountId, HttpHeaders headers) {
+        if (accountId == null || config.getQuotaUnitsPerMinute() == 0)
+            return;
+        long seconds = 30;
+        if (headers != null && headers.getRetryAfter() != null)
+            try {
+                seconds = Math.max(seconds, Long.parseLong(headers.getRetryAfter()));
+            } catch (NumberFormatException error) {
+                try {
+                    seconds = Math.max(seconds,
+                            ZonedDateTime.parse(headers.getRetryAfter(), DateTimeFormatter.RFC_1123_DATE_TIME)
+                                    .toEpochSecond() - Instant.now().getEpochSecond());
+                } catch (DateTimeParseException ignored) {
+                }
+            }
+        var budget = budgets.computeIfAbsent(accountId, id -> new AccountBudget(config));
+        synchronized (budget) {
+            budget.cooldownUntil = Math.max(budget.cooldownUntil,
+                    System.nanoTime() + TimeUnit.SECONDS.toNanos(Math.min(seconds, 86400)));
+        }
     }
+
     private static final class AccountBudget {
-        final Bucket total,background;long cooldownUntil;
-        AccountBudget(GmailSyncConfigProperties config){total=new Bucket(config.getQuotaUnitsPerMinute());background=new Bucket(config.getBackfillQuotaUnitsPerMinute());}
+        final Bucket total, background;
+        long cooldownUntil;
+
+        AccountBudget(GmailSyncConfigProperties config) {
+            total = new Bucket(config.getQuotaUnitsPerMinute());
+            background = new Bucket(config.getBackfillQuotaUnitsPerMinute());
+        }
     }
+
     private static final class Bucket {
-        final int perMinute;final double capacity;double tokens;long at=System.nanoTime();
-        Bucket(int perMinute){this.perMinute=perMinute;capacity=Math.max(500,perMinute/12.0);tokens=capacity;}
-        long waitNanos(int cost,long now){if(perMinute==0)return 0;tokens=Math.min(capacity,tokens+(now-at)*perMinute/60_000_000_000.0);at=now;return (long)Math.ceil(Math.max(0,cost-tokens)*60_000_000_000.0/perMinute);}
-        void take(int cost){if(perMinute>0)tokens-=cost;}
+        final int perMinute;
+        final double capacity;
+        double tokens;
+        long at = System.nanoTime();
+
+        Bucket(int perMinute) {
+            this.perMinute = perMinute;
+            capacity = Math.max(500, perMinute / 12.0);
+            tokens = capacity;
+        }
+
+        long waitNanos(int cost, long now) {
+            if (perMinute == 0)
+                return 0;
+            tokens = Math.min(capacity, tokens + (now - at) * perMinute / 60_000_000_000.0);
+            at = now;
+            return (long) Math.ceil(Math.max(0, cost - tokens) * 60_000_000_000.0 / perMinute);
+        }
+
+        void take(int cost) {
+            if (perMinute > 0)
+                tokens -= cost;
+        }
     }
 
     public GmailRateLimiter(GmailSyncConfigProperties config) {
@@ -87,14 +142,14 @@ public class GmailRateLimiter {
         int concurrency = config.getApiConcurrency();
         this.totalCapacity = new Semaphore(concurrency, true);
         this.backfillCapacity = new Semaphore(
-            concurrency - config.getFreshnessReservedCapacity(), true);
+                concurrency - config.getFreshnessReservedCapacity(), true);
         this.delayMs = config.getBatchDelayMs();
 
         if (concurrency > 10) {
             logger.warn(
-                "Gmail API concurrency set to {} (>10) — risk of Gmail concurrency throttling;"
-                    + " prefer 5 or lower unless you know your project quota",
-                concurrency);
+                    "Gmail API concurrency set to {} (>10) — risk of Gmail concurrency throttling;"
+                            + " prefer 5 or lower unless you know your project quota",
+                    concurrency);
         }
     }
 
@@ -113,13 +168,13 @@ public class GmailRateLimiter {
             sleep(TimeUnit.NANOSECONDS.toMillis(remaining) + 1);
         }
         nextMetadataBatchNanos = System.nanoTime()
-            + TimeUnit.MILLISECONDS.toNanos(config.getMetadataBatchDelayMs());
+                + TimeUnit.MILLISECONDS.toNanos(config.getMetadataBatchDelayMs());
     }
 
     /** Bounded exponential backoff with jitter; respect Google's Retry-After. */
     public void pauseBeforeRetry(int retry, HttpHeaders headers) {
         long delay = (1000L << Math.min(retry, 5))
-            + ThreadLocalRandom.current().nextLong(251);
+                + ThreadLocalRandom.current().nextLong(251);
         String retryAfter = headers == null ? null : headers.getRetryAfter();
         if (retryAfter != null) {
             try {
@@ -127,8 +182,8 @@ public class GmailRateLimiter {
             } catch (NumberFormatException exception) {
                 try {
                     long until = ZonedDateTime.parse(
-                        retryAfter, DateTimeFormatter.RFC_1123_DATE_TIME)
-                        .toInstant().toEpochMilli() - System.currentTimeMillis();
+                            retryAfter, DateTimeFormatter.RFC_1123_DATE_TIME)
+                            .toInstant().toEpochMilli() - System.currentTimeMillis();
                     delay = Math.max(delay, until);
                 } catch (DateTimeParseException ignored) {
                     // Malformed provider headers do not disable bounded retries.
@@ -167,7 +222,10 @@ public class GmailRateLimiter {
         return new Permit(totalCapacity, backfillCapacity);
     }
 
-    /** Cleanup and verification share the background lane, preserving freshness capacity. */
+    /**
+     * Cleanup and verification share the background lane, preserving freshness
+     * capacity.
+     */
     public <T> T supplyWithCleanupPermit(Supplier<T> supplier) {
         return supplyWithBackfillRescanPermit(supplier);
     }
@@ -194,7 +252,7 @@ public class GmailRateLimiter {
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException(
-                "Interrupted acquiring " + capacity + " request capacity", ex);
+                    "Interrupted acquiring " + capacity + " request capacity", ex);
         }
     }
 

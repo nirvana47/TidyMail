@@ -7,12 +7,11 @@ package com.tidymail.mail;
  * and unread counts for inbox cleanup decisions.
  */
 public record MailFolderOrLabel(
-    String id,
-    String name,
-    String type,
-    long totalItems,
-    long unreadItems
-) {
+        String id,
+        String name,
+        String type,
+        long totalItems,
+        long unreadItems) {
     /**
      * Builds a label-style container with zero item counts.
      */

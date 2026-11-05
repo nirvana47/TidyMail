@@ -273,42 +273,49 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
         Gmail gmail = clientFactory.buildFor(account);
         return rateLimiter.supplyWithFreshnessPermit(() -> {
             try {
-                Gmail.Users.History.List list = gmail.users().history().list(USER_ID_ME)
-                    .setStartHistoryId(startRevision)
-                    .setMaxResults((long) request.maxResults());
-                if (request.pageToken() != null) {
-                    list.setPageToken(request.pageToken());
-                }
-                ListHistoryResponse response = readWithRetry(account.getId(),2,false,list::execute);
-                Set<String> changed = new TreeSet<>();
-                Set<String> deleted = new TreeSet<>();
-                String completeRevision = null;
-                if (response.getHistory() != null) {
-                    for (History history : response.getHistory()) {
-                        collectChanged(
-                            history.getMessagesAdded(),
-                            HistoryMessageAdded::getMessage, changed, deleted);
-                        collectChanged(
-                            history.getLabelsAdded(),
-                            HistoryLabelAdded::getMessage, changed, deleted);
-                        collectChanged(
-                            history.getLabelsRemoved(),
-                            HistoryLabelRemoved::getMessage, changed, deleted);
-                        collectDeleted(
-                            history.getMessagesDeleted(),
-                            HistoryMessageDeleted::getMessage, changed, deleted);
-                        if (history.getId() != null) {
-                            completeRevision = history.getId().toString();
+                Instant observedAt=Instant.now();
+                Set<String> changed=new TreeSet<>(),deleted=new TreeSet<>(),required=new TreeSet<>();
+                var deltas=new java.util.ArrayList<ChangePage.LabelChange>();
+                Set<String> visited=new java.util.HashSet<>();
+                String token=request.pageToken(),completeRevision=null,returnedCursor=request.cursor();
+                if(token!=null)visited.add(token);
+                int pages=0;
+                do {
+                    Gmail.Users.History.List list=gmail.users().history().list(USER_ID_ME)
+                        .setStartHistoryId(startRevision).setMaxResults((long)request.maxResults());
+                    if(token!=null)list.setPageToken(token);
+                    ListHistoryResponse response=readWithRetry(account.getId(),2,false,list::execute);
+                    pages++;
+                    if(response.getHistory()!=null)for(History history:response.getHistory()) {
+                        if(history.getId()!=null && completeRevision!=null
+                                && history.getId().compareTo(new BigInteger(completeRevision))<0)
+                            throw new IllegalStateException("GMAIL_HISTORY_REVISION_REGRESSED");
+                        collectChanged(history.getMessagesAdded(),HistoryMessageAdded::getMessage,changed,deleted);
+                        if(history.getMessagesAdded()!=null)for(var event:history.getMessagesAdded())
+                            if(event.getMessage()!=null)required.add(event.getMessage().getId());
+                        var added=new java.util.HashMap<String,Set<String>>();
+                        var removed=new java.util.HashMap<String,Set<String>>();
+                        if(history.getLabelsAdded()!=null)for(var event:history.getLabelsAdded())
+                            collectLabels(event.getMessage(),event.getLabelIds(),added,changed,deleted,required);
+                        if(history.getLabelsRemoved()!=null)for(var event:history.getLabelsRemoved())
+                            collectLabels(event.getMessage(),event.getLabelIds(),removed,changed,deleted,required);
+                        var labelIds=new java.util.HashSet<>(added.keySet());labelIds.addAll(removed.keySet());
+                        for(String id:labelIds) {
+                            var add=added.getOrDefault(id,Set.of());var remove=removed.getOrDefault(id,Set.of());
+                            if(history.getId()==null || !java.util.Collections.disjoint(add,remove))required.add(id);
+                            else deltas.add(new ChangePage.LabelChange(id,history.getId(),add,remove));
                         }
+                        collectDeleted(history.getMessagesDeleted(),HistoryMessageDeleted::getMessage,changed,deleted);
+                        if(history.getId()!=null)completeRevision=history.getId().toString();
                     }
-                }
-                String returnedCursor = response.getHistoryId() == null
-                    ? request.cursor() : response.getHistoryId().toString();
-                String nextPageToken = response.getNextPageToken();
-                if(nextPageToken!=null&&nextPageToken.equals(request.pageToken()))throw new IllegalStateException("GMAIL_HISTORY_PAGE_DID_NOT_ADVANCE");
-                return new ChangePage(
-                    changed, deleted, completeRevision, returnedCursor,
-                    nextPageToken, nextPageToken != null);
+                    if(response.getHistoryId()!=null)returnedCursor=response.getHistoryId().toString();
+                    token=response.getNextPageToken();
+                    if(token!=null&&!visited.add(token))throw new IllegalStateException("GMAIL_HISTORY_PAGE_DID_NOT_ADVANCE");
+                } while(token!=null && pages<syncConfig.getHistoryWindowPages() && changed.size()+deleted.size()<200000);
+                // Only a complete window includes all acknowledged cleanup changes predating observedAt.
+                // Truncated windows use the existing metadata path and checkpoint the last complete record.
+                return new ChangePage(changed,deleted,completeRevision,returnedCursor,token,token!=null,
+                    token==null?deltas:List.of(),required,observedAt);
             } catch (GoogleJsonResponseException ex) {
                 if (ex.getStatusCode() == 404) {
                     throw syncFailure("HISTORY_EXPIRED", ex);
@@ -842,6 +849,16 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
             throw new GmailClientInitException(code);
         }
         return revision.toString();
+    }
+
+    private static void collectLabels(Message message,List<String> labels,java.util.Map<String,Set<String>> output,
+            Set<String> changed,Set<String> deleted,Set<String> required) {
+        if(message==null || message.getId()==null || message.getId().isBlank())return;
+        String id=message.getId();
+        if(deleted.contains(id))return;
+        changed.add(id);
+        if(labels==null || labels.isEmpty() || labels.stream().anyMatch(v->v==null || v.isBlank()))required.add(id);
+        else output.computeIfAbsent(id,key->new java.util.HashSet<>()).addAll(labels);
     }
 
     private static <T> void collectChanged(

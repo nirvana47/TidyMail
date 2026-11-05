@@ -36,8 +36,8 @@ public class ProviderCapabilities {
      */
     public static ProviderCapabilities unknown() {
         return new ProviderCapabilities(
-            DenominatorReliability.UNAVAILABLE,
-            DenominatorReliability.UNAVAILABLE);
+                DenominatorReliability.UNAVAILABLE,
+                DenominatorReliability.UNAVAILABLE);
     }
 
     /**
@@ -57,17 +57,20 @@ public class ProviderCapabilities {
             LoadedMessageScope scope, long loadedCount, Long providerTotal) {
         boolean reliable = loadedDenominator(scope) == DenominatorReliability.RELIABLE;
         Long denominator = reliable && providerTotal != null && providerTotal >= loadedCount
-            ? providerTotal : null;
+                ? providerTotal
+                : null;
         return new LoadedMessageProgress(loadedCount, denominator);
     }
 
     @Override
     public boolean equals(Object other) {
-        if (this == other) return true;
-        if (other == null || getClass() != other.getClass()) return false;
+        if (this == other)
+            return true;
+        if (other == null || getClass() != other.getClass())
+            return false;
         ProviderCapabilities that = (ProviderCapabilities) other;
         return mailboxTotal == that.mailboxTotal
-            && arbitraryFilteredTotal == that.arbitraryFilteredTotal;
+                && arbitraryFilteredTotal == that.arbitraryFilteredTotal;
     }
 
     @Override
@@ -78,7 +81,7 @@ public class ProviderCapabilities {
     @Override
     public String toString() {
         return "ProviderCapabilities[mailboxTotal=" + mailboxTotal
-            + ", arbitraryFilteredTotal=" + arbitraryFilteredTotal + "]";
+                + ", arbitraryFilteredTotal=" + arbitraryFilteredTotal + "]";
     }
 
     public enum DenominatorReliability {

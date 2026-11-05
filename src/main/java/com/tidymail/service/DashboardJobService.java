@@ -79,6 +79,15 @@ public class DashboardJobService {
             if(((Number)row.get("grouping_revision")).longValue()!=repository.revision(account))throw conflict("Grouping changed. Create a new preview.");
             if(((Number)row.get("effective_count")).intValue()==0)throw conflict("No eligible changes. Create a new selection.");
             var targets=jdbc.queryForList("SELECT * FROM dashboard_preview_targets WHERE preview_id=:preview AND account_id=:account ORDER BY ordinal",p);
+            DashboardFilter filter;
+            try { filter=json.treeToValue(json.readTree(row.get("filter_snapshot").toString()).get("filter"),DashboardFilter.class); }
+            catch(Exception invalid) { throw conflict("Preview filters are unavailable. Create a new preview."); }
+            if(!filter.category().isEmpty() || !filter.recommendation().isEmpty() || !filter.importance().isEmpty() || !filter.label().isEmpty()) {
+                var eligibleIds=targets.stream().filter(t->Boolean.TRUE.equals(t.get("effective"))).map(t->(UUID)t.get("message_id")).toList();
+                var current=repository.parameters(account,filter).addValue("ids",eligibleIds);
+                long matching=jdbc.queryForObject(repository.filtered(filter)+" SELECT count(*) FROM filtered WHERE dashboard_message_id IN (:ids)",current,Long.class);
+                if(matching!=eligibleIds.size()) throw conflict("Recommendations or labels changed. Create a new preview.");
+            }
             var scope=scopes.requireScope(account,((Number)row.get("scope_id")).longValue());
             var ids=targets.stream().map(t->(String)t.get("provider_message_id")).toList();
             if(ids.contains(null)||targets.size()!=((Number)row.get("selected_count")).intValue()
@@ -185,8 +194,8 @@ public class DashboardJobService {
             var row=lock(claim.account(),claim.job());if(!owns(row,claim))return null;
             if(row.get("cancel_requested_at")!=null){release(claim);settle(claim.account(),claim.job());return null;}
             lockMetadata(claim.account(),claim.targets());
-            var p=repository.parameters(claim.account(),claim.filter()).addValue("ids",claim.targets().stream().map(Target::messageId).toList()).addValue("action",claim.action());
-            Set<UUID> eligible=new HashSet<>(jdbc.queryForList(DashboardRepository.FILTERED+"""
+            var p=repository.parameters(claim.account(),claim.filter().cleanupScope()).addValue("ids",claim.targets().stream().map(Target::messageId).toList()).addValue("action",claim.action());
+            Set<UUID> eligible=new HashSet<>(jdbc.queryForList(repository.filtered(claim.filter().cleanupScope())+"""
                 SELECT dashboard_message_id FROM filtered f WHERE dashboard_message_id IN (:ids)
                 AND (:action<>'MARK_READ' OR unread) AND (:action<>'ARCHIVE' OR 'INBOX'=ANY(labels))
                 AND NOT EXISTS(SELECT 1 FROM protected_senders s WHERE s.account_id=f.account_id AND s.sender_address=lower(f.address))
@@ -217,7 +226,7 @@ public class DashboardJobService {
             .flatMap(header->header.getValue().stream()).filter(Objects::nonNull)
             .anyMatch(value->recipients.contains(value.replaceAll("^[<> ]+|[<> ]+$", "").toLowerCase(Locale.ROOT)));
         var labels=message.labelIds();return labels!=null&&Collections.disjoint(labels,Set.of("SPAM","TRASH","DRAFT"))
-            &&(!filter.scope().equals("inbox")||labels.contains("INBOX"))&&(!labels.contains("SENT")||labels.contains("INBOX")||delivered);
+            &&(!filter.scope().equals("inbox")||labels.contains("INBOX"))&&(!labels.contains("SENT")||labels.contains("INBOX")||delivered||filter.suggestion().equals("large"));
     }
 
     /** Normal success follows Gmail's acknowledgement; uncertain dispatches retain read-only recovery. */

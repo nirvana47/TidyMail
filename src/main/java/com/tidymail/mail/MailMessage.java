@@ -15,31 +15,36 @@ import java.util.Set;
  * acquired through a separate, bounded read path.
  */
 public record MailMessage(
-    String id,
-    String threadId,
-    String provider,
-    Instant receivedAt,
-    Map<String, List<String>> headers,
-    Set<String> labelIds,
-    Long sizeEstimate,
-    BigInteger providerRevision,
-    AttachmentState attachmentState,
-    Instant observationStartedAt,
-    EmailSnippet snippet
-) {
-    public MailMessage(String id,String threadId,String provider,Instant receivedAt,
-            Map<String,List<String>> headers,Set<String> labelIds,Long sizeEstimate,
-            BigInteger providerRevision,AttachmentState attachmentState,Instant observationStartedAt) {
-        this(id,threadId,provider,receivedAt,headers,labelIds,sizeEstimate,providerRevision,attachmentState,observationStartedAt,EmailSnippet.unknown());
+        String id,
+        String threadId,
+        String provider,
+        Instant receivedAt,
+        Map<String, List<String>> headers,
+        Set<String> labelIds,
+        Long sizeEstimate,
+        BigInteger providerRevision,
+        AttachmentState attachmentState,
+        Instant observationStartedAt,
+        EmailSnippet snippet) {
+    public MailMessage(String id, String threadId, String provider, Instant receivedAt,
+            Map<String, List<String>> headers, Set<String> labelIds, Long sizeEstimate,
+            BigInteger providerRevision, AttachmentState attachmentState, Instant observationStartedAt) {
+        this(id, threadId, provider, receivedAt, headers, labelIds, sizeEstimate, providerRevision, attachmentState,
+                observationStartedAt, EmailSnippet.unknown());
     }
-    public MailMessage(String id,String threadId,String provider,Instant receivedAt,
-            Map<String,List<String>> headers,Set<String> labelIds,Long sizeEstimate,
-            BigInteger providerRevision,AttachmentState attachmentState) {
-        this(id,threadId,provider,receivedAt,headers,labelIds,sizeEstimate,providerRevision,attachmentState,null);
+
+    public MailMessage(String id, String threadId, String provider, Instant receivedAt,
+            Map<String, List<String>> headers, Set<String> labelIds, Long sizeEstimate,
+            BigInteger providerRevision, AttachmentState attachmentState) {
+        this(id, threadId, provider, receivedAt, headers, labelIds, sizeEstimate, providerRevision, attachmentState,
+                null);
     }
+
     public MailMessage observedSince(Instant startedAt) {
-        return new MailMessage(id,threadId,provider,receivedAt,headers,labelIds,sizeEstimate,providerRevision,attachmentState,startedAt,snippet);
+        return new MailMessage(id, threadId, provider, receivedAt, headers, labelIds, sizeEstimate, providerRevision,
+                attachmentState, startedAt, snippet);
     }
+
     public MailMessage(
             String id,
             String threadId,
@@ -48,11 +53,12 @@ public record MailMessage(
             Map<String, List<String>> headers,
             Set<String> labelIds) {
         this(id, threadId, provider, receivedAt, headers, labelIds,
-            null, null, AttachmentState.UNKNOWN);
+                null, null, AttachmentState.UNKNOWN);
     }
 
     public MailMessage {
-        if (snippet == null) snippet = EmailSnippet.unknown();
+        if (snippet == null)
+            snippet = EmailSnippet.unknown();
         if (sizeEstimate != null && sizeEstimate < 0) {
             throw new IllegalArgumentException("sizeEstimate is the non-negative full message size");
         }
@@ -69,7 +75,8 @@ public record MailMessage(
     }
 
     public String body() {
-        throw new UnsupportedOperationException("METADATA-only privacy contract — body not available on this MailMessage projection.");
+        throw new UnsupportedOperationException(
+                "METADATA-only privacy contract — body not available on this MailMessage projection.");
     }
 
     public boolean isUnread() {

@@ -9,8 +9,9 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  *
  * <p>Product functionality supported: scheduled background jobs — activates the
  * scheduling machinery that drives the incremental mailbox sync, sender-stats
- * vacuum, and user-action cleanup jobs, and can be switched off via the
- * {@code spring.task.scheduling.enabled} property.
+ * vacuum, and other scheduled jobs, and can be switched off via the
+ * {@code spring.task.scheduling.enabled} property. Cleanup owns its poller and
+ * can be enabled separately with {@code app.cleanup.worker.enabled=true}.
  */
 @Configuration
 @EnableScheduling

@@ -29,12 +29,18 @@
             </div>
         </header>
         <nav class="row" aria-label="Mailbox views"><button id="sendersView" aria-pressed="true">Senders</button><button id="suggestionsView" aria-pressed="false">Suggestions</button></nav>
-        <section id="suggestionsPanel" class="surface evidence" hidden><h2>Suggestions</h2><button id="largeEmails">Large emails (&gt;5 MB)</button><button id="patternsOpen">Review Amazon / Quora patterns</button><p>Find large messages, including archived mail. Review and select emails before taking action.</p></section>
+        <section id="suggestionsPanel" class="surface evidence" hidden><h2>Suggestions</h2><button id="largeEmails">Large emails (&gt;1 MB)</button><button id="patternsOpen">Review Amazon / Quora patterns</button><p>Find large messages, including archived and Sent mail. Review and select emails before taking action.</p></section>
+        <section class="surface evidence" aria-label="Email recommendations">
+            <div class="row"><strong>Labels</strong><span id="labelingCoverage" role="status">Checking label coverage…</span><button id="labelingOpen" type="button">Label / reclassify emails</button></div>
+            <div class="row"><strong>Recommendations</strong><span id="recommendationStatus" role="status">Checking…</span>
+                <button id="recommendationProcessing" type="button">Build recommendations</button></div>
+            <p class="muted">Labels and suggestions use information already saved locally. Review and select emails before taking any cleanup action.</p>
+        </section>
         <section class="surface filters" aria-label="Mailbox filters">
             <div class="row">
                 <div class="scope" role="group" aria-label="Mail scope"><button class="active" data-scope="inbox"
                         aria-pressed="true">Inbox</button><button data-scope="all" aria-pressed="false">All received
-                        mail</button></div>
+                        mail</button><button data-scope="indexed" aria-pressed="false">All indexed mail</button></div>
                 <label class="search"><input id="search" type="search" aria-label="Search senders or messages"
                         placeholder="Search senders or messages…" maxlength="200"></label>
                 <label class="date"><select id="date" aria-label="Date range">
@@ -57,7 +63,7 @@
                         <option value="PERSONAL">Personal</option>
                         <option value="MARKETING">Marketing</option>
                         <option value="NEWSLETTER">Newsletters</option>
-                    <option value="SOCIAL">Social / community</option>
+                    <option value="SOCIAL">Social</option>
                         <option value="RECEIPT">Receipts</option>
                         <option value="SECURITY">Security</option>
                         <option value="NOTIFICATION">Notifications</option>
@@ -68,8 +74,31 @@
                         <option value="messages">Message count</option>
                         <option value="unread">Unread count</option>
                     </select></label>
-                <button id="classificationOpen">Classify mail</button><span id="classificationSummary" class="muted"
+                <button id="classificationOpen">Legacy categories</button><span id="classificationSummary" class="muted"
                     role="status"></span>
+            </div>
+            <div class="row">
+                <label>Recommendation <select id="recommendation" aria-label="Filter by recommendation">
+                    <option value="">All (including unassessed)</option><option value="KEEP_IN_INBOX">Keep in inbox</option>
+                    <option value="KEEP_STORED">Keep stored</option><option value="ARCHIVE">Archive</option>
+                    <option value="SUGGEST_TRASH">Consider Trash</option><option value="REVIEW">Review</option>
+                    <option value="PENDING">No recommendation yet</option><option value="STALE">Updating</option>
+                </select></label>
+                <label>Importance <select id="importance" aria-label="Filter by importance">
+                    <option value="">Any importance</option><option value="IMPORTANT">Important</option>
+                    <option value="ROUTINE">Routine</option><option value="UNKNOWN">Unknown</option>
+                </select></label>
+                <label>Label <select id="recommendationLabel" aria-label="Filter by label">
+                    <option value="">Any label</option><option value="CONTACT">Contact</option>
+                    <option value="CALENDAR_INVITE">Calendar invite</option><option value="LARGE_MESSAGE">Large email</option>
+                    <option value="HAS_ATTACHMENTS">Has attachments</option><option value="HUMAN_CORRESPONDENCE">Personal</option>
+                    <option value="HEALTHCARE">Healthcare</option><option value="SCHOOL">School</option>
+                    <option value="MARKETING">Marketing</option><option value="SOCIAL">Social</option>
+                    <option value="RECEIPT">Receipt</option><option value="NEWSLETTER">Newsletter</option><option value="NOTIFICATION">Notification</option>
+                    <option value="ORDER">Order</option><option value="SHIPPING">Shipping</option>
+                    <option value="SECURITY">Security</option><option value="BILL">Bill</option><option value="STATEMENT">Statement</option>
+                    <option value="SENT" hidden disabled>Sent</option>
+                </select></label>
             </div>
             <div class="metrics">
                 <div class="metric"><b id="matching">—</b><span class="muted">Matching messages</span></div>
@@ -78,7 +107,7 @@
             </div>
             <p class="coverage" id="coverage">Coverage is unavailable until indexed metadata arrives.</p>
         </section>
-        <p id="activeSuggestion" class="evidence" hidden>Large emails (&gt;5 MB) · Whole-message size, including inline images. <button id="clearSuggestion">Show all sizes</button></p>
+        <p id="activeSuggestion" class="evidence" hidden>Large emails (&gt;1 MB) · Whole-message size, including inline images. <button id="clearSuggestion">Show all sizes</button></p>
         <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
         <section class="workspace">
             <div class="list">
@@ -135,11 +164,42 @@
         </section>
         <noscript>Enable JavaScript to browse indexed messages and inspect selections.</noscript>
     </main>
+    <dialog id="labeling" aria-labelledby="labelingTitle">
+        <div class="row spread"><h2 id="labelingTitle">Label / reclassify emails</h2><button data-close="labeling" aria-label="Close labeling">×</button></div>
+        <p id="labelingDialogCoverage"></p>
+        <p>Labels describe emails independently of Keep, Review or cleanup suggestions. Processing a batch never moves mail.</p>
+        <div class="row">
+            <label>Which emails <select id="labelingMode"><option value="MISSING">Missing or changed labels</option><option value="OTHER">Other / Unknown</option><option value="SELECTED">Selected emails</option></select></label>
+            <label>Work <select id="labelingKind"><option value="JEV">Assign descriptive labels with Jev</option><option value="MIME">Inspect calendar / attachment presence</option></select></label>
+            <label>Batch size <select id="labelingLimit"><option value="20">Up to 20</option><option value="100">Up to 100</option><option value="1000" selected>Up to 1,000</option></select></label>
+        </div>
+        <p>These scopes cover indexed received mail, including archived mail. Sent-only, Drafts, Spam and Trash are excluded. Saved results and manual corrections are reused. Uncertainty alone does not cause another paid request.</p>
+        <p id="labelingCandidates" role="status"></p>
+        <p id="labelingAllowance"></p>
+        <label id="labelingSpendLabel">Maximum spend for a new batch (USD) <input id="labelingSpend" type="number" min="0.14" max="100" step="0.01" value="0.20"></label>
+        <button id="labelingPrepare" type="button">Prepare exact batch for review</button>
+        <section id="labelingReview" hidden>
+            <h3>Review this exact batch</h3><p id="labelingDisclosure"></p>
+            <details><summary>Emails and exact submitted fields</summary><div id="labelingTargets"></div></details>
+            <details><summary>Exact saved request manifest</summary><pre id="labelingManifest" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto"></pre></details>
+            <p id="labelingRunStatus" role="status" aria-live="polite"></p><progress id="labelingProgress" aria-label="Labeling batch progress" hidden></progress>
+            <p id="labelingFunding" role="status"></p>
+            <details id="labelingIncrease" hidden><summary>Increase allowance for this batch</summary>
+                <p>Review a new total limit for this same batch. Completed emails will not be sent again. Increasing the allowance does not start or resume work.</p>
+                <label>New total limit (USD) <input id="labelingNewLimit" type="number" min="0.14" max="100" step="0.01" value="1.00"></label>
+                <button id="labelingIncreaseReview" type="button">Review new limit</button>
+                <p id="labelingIncreaseSummary" role="status"></p><button id="labelingIncreaseConfirm" type="button" hidden>Confirm new limit</button>
+            </details>
+            <div class="row"><button id="labelingStart" type="button" class="primary">Approve and start this batch</button><button id="labelingPause" type="button" hidden>Pause batch</button><button id="labelingRetry" type="button" hidden>Retry failed MIME checks within original limits</button></div>
+        </section>
+        <h3>Saved batches</h3><div id="labelingRecent"></div>
+    </dialog>
     <dialog id="classification" aria-labelledby="classificationTitle">
         <div class="row spread">
-            <h2 id="classificationTitle">Classify indexed mail</h2><button data-close="classification"
+            <h2 id="classificationTitle">Legacy categories and corrections</h2><button data-close="classification"
                 aria-label="Close classification">×</button>
         </div>
+        <p>For School, Healthcare, Shipping, Order, Bill and Statement, use Label / reclassify emails. This older classifier only supplies legacy categories and sender grouping.</p>
         <p>Jev suggests a category for each message and improves automatic sender grouping. Personal addresses stay
             separate. Saved grouping and category corrections take priority.</p>
         <p>Sender addresses, names, subjects, and category/list/reply hints are sent to Jev through OpenRouter. Bodies,
@@ -166,7 +226,7 @@
                     <option value="PERSONAL">Personal</option>
                     <option value="MARKETING">Marketing</option>
                     <option value="NEWSLETTER">Newsletters</option>
-                    <option value="SOCIAL">Social / community</option>
+                    <option value="SOCIAL">Social</option>
                     <option value="RECEIPT">Receipts</option>
                     <option value="SECURITY">Security</option>
                     <option value="NOTIFICATION">Notifications</option>

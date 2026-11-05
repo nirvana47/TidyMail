@@ -84,4 +84,17 @@ class JevClassifierTest {
         }).andRespond(withSuccess(root.toString(),MediaType.APPLICATION_JSON));
         assertThat(classifier.classify(java.util.Collections.nCopies(10,evidence())).decisions()).hasSize(10);server.verify();
     }
+    @Test void labelingPricingUsesPinnedPublicMetadataAndRejectsPriceOrOutputChanges() {
+        for(String pricing:List.of("{\"prompt\":\"0.000000042\",\"completion\":\"0\"}",
+                "{\"prompt\":\"0.000000043\",\"completion\":\"0\"}","{\"prompt\":\"0.00000001\",\"completion\":\"1\"}")) {
+            var builder=RestClient.builder();var server=MockRestServiceServer.bindTo(builder).build();var classifier=new JevClassifier("secret",json,builder);
+            server.expect(requestTo("https://openrouter.ai/api/v1/models/typesafe/jev-1.14/endpoints"))
+                .andExpect(headerDoesNotExist("Authorization"))
+                .andRespond(withSuccess("{\"data\":{\"endpoints\":[{\"provider_name\":\"TypeSafe\",\"pricing\":"+pricing+"}]}}",MediaType.APPLICATION_JSON));
+            if(pricing.contains("0.000000042"))assertThat(classifier.recommendationPricing()).isNotNull();
+            else assertThatThrownBy(classifier::recommendationPricing).isInstanceOf(JevClassifier.Unavailable.class);
+            server.verify();
+        }
+    }
+
 }

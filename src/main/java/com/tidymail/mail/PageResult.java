@@ -8,11 +8,10 @@ import java.util.List;
  * Product functionality supported: paged metadata-only mailbox sync.
  */
 public record PageResult<T>(
-    List<T> items,
-    String nextPageToken,
-    int requestedMax,
-    boolean hasMore
-) {
+        List<T> items,
+        String nextPageToken,
+        int requestedMax,
+        boolean hasMore) {
     /**
      * Builds a page result, flagging {@code hasMore} when a token is present.
      */

@@ -52,6 +52,7 @@ public class ClassificationBudget {
             var jobs=jdbc.queryForList("UPDATE classification_attempts SET state='REPORTED',cost=?,settled_at=now() WHERE id=? AND cost IS NULL AND state IN ('DISPATCHED','UNKNOWN','ACKNOWLEDGED') RETURNING job_id",UUID.class,cost,attempt);
             if(jobs.isEmpty())return;
             jdbc.update("UPDATE classification_budget SET reported=reported+? WHERE id=1",cost);
+            jdbc.update("UPDATE classification_budget SET labeling_reported=labeling_reported+? WHERE id=1 AND EXISTS(SELECT 1 FROM labeling_exposures WHERE attempt_id=?)",cost,attempt);
             jdbc.update("UPDATE dashboard_classification_jobs SET cost_usd=cost_usd+? WHERE public_id=?",cost,jobs.getFirst());
         });
     }

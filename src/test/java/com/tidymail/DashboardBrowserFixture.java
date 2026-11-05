@@ -26,6 +26,11 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
     @org.springframework.beans.factory.annotation.Autowired
     com.tidymail.service.DashboardClassificationService classification;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    com.tidymail.service.RecommendationProcessingService recommendationProcessing;
+    @org.springframework.beans.factory.annotation.Autowired
+    com.tidymail.service.CorrespondentHistory correspondence;
+
     private static java.util.Set<String> withUnread(java.util.Set<String> labels, boolean unread) {
         var result = new java.util.HashSet<>(labels);
         if (unread)
@@ -36,6 +41,7 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
     @Test
     void serveSyntheticDashboardForBrowserAcceptance() throws Exception {
         long account = userAccounts.createAccount("browser-fixture@example.test");
+        jdbc.update("UPDATE classification_budget SET owner_account=? WHERE id=1",account);
         classification.automatic(account,false);
         jdbc.update(
                 """
@@ -121,6 +127,16 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
                 java.util.List.of(new com.tidymail.mail.gmail.GmailEvidenceReader.Part("1","text/calendar","invite.ics",450L,false,true)),
                 java.util.List.of(facts),2,1000);
         });
+        jdbc.update("""
+            INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,dashboard_from_address,
+              from_display_name,subject_header,labels,label_evidence_known,to_values,dashboard_unit_kind,dashboard_unit_key,size_estimate,received_at)
+            VALUES(?,'google','sent-storage','browser-fixture@example.test','browser-fixture@example.test','Me',
+              'Synthetic Sent attachment for storage review',ARRAY['SENT'],true,ARRAY['spouse@gmail.com'],
+              'ADDRESS','browser-fixture@example.test',3000000,now())
+            """,account);
+        correspondence.processBatch(200);correspondence.processBatch(200);
+        var recommendationExecutor=java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
+        recommendationExecutor.scheduleWithFixedDelay(recommendationProcessing::runOnce,1,1,java.util.concurrent.TimeUnit.SECONDS);
         var classificationExecutor = java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
         classificationExecutor.scheduleWithFixedDelay(classification::runOnce, 1, 1,
                 java.util.concurrent.TimeUnit.SECONDS);
@@ -219,6 +235,7 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
                 Thread.sleep(500);
         } finally {
             classificationExecutor.shutdownNow();
+            recommendationExecutor.shutdownNow();
             cleanup.shutdownNow();
             server.stop(0);
             ((java.util.concurrent.ExecutorService) server.getExecutor()).shutdownNow();

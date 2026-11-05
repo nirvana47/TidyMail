@@ -28,7 +28,7 @@ public class UserDataDeletionService {
         jobs.cancelOwner(ownerKey);
         if(accounts.pendingCleanupForDeletion(ownerKey)>0)
             throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.CONFLICT,
-                "Remaining cleanup was cancelled. Wait for active requests and verification leases to settle before deleting local data.");
+                "Remaining cleanup was cancelled. Wait for active requests, unresolved labeling charges and verification leases to settle before deleting local data.");
         long deleted = accounts.deleteByOwnerKey(ownerKey);
         accounts.flush();
         if (deleted == 0 || !accounts.findAllByOwnerKeyOrderByIdAsc(ownerKey).isEmpty()) {

@@ -10,7 +10,10 @@ public final class HeaderSemanticAdmission {
     public record Decision(boolean eligible, String reason) {}
 
     public static Decision inspect(SemanticQualificationContract.Evidence evidence) {
-        if (evidence.reply() || CONVERSATION_PREFIX.matcher(Objects.toString(evidence.subject(), "")).find())
+        return inspect(evidence.subject(), evidence.reply());
+    }
+    public static Decision inspect(String subject, boolean reply) {
+        if (reply || CONVERSATION_PREFIX.matcher(Objects.toString(subject, "")).find())
             return new Decision(false, "Reply or forwarded content needs correspondence context or review; headers alone cannot resolve the wrapper's purpose or access relevance.");
         return new Decision(true, "Eligible for bounded header-only semantic evaluation; confidence and reference qualification remain separate.");
     }

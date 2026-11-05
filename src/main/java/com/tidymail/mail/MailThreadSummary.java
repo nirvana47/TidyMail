@@ -11,12 +11,11 @@ import java.util.Set;
  * reporting participants, senders, message counts, and date ranges.
  */
 public record MailThreadSummary(
-    String threadId,
-    List<String> participantEmails,
-    Set<String> uniqueSenderDomains,
-    int messageCount,
-    Instant oldestMessageAt,
-    Instant newestMessageAt,
-    List<String> messageIdsOrderedChronological
-) {
+        String threadId,
+        List<String> participantEmails,
+        Set<String> uniqueSenderDomains,
+        int messageCount,
+        Instant oldestMessageAt,
+        Instant newestMessageAt,
+        List<String> messageIdsOrderedChronological) {
 }
