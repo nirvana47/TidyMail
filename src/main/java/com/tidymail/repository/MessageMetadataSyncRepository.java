@@ -143,6 +143,48 @@ public class MessageMetadataSyncRepository {
             """, parameters(row).addValue("observation_started_at",Timestamp.from(observationStartedAt==null?Instant.EPOCH:observationStartedAt)));
     }
 
+    /** A label delta needs a revisioned cache and no cleanup newer than the history snapshot. */
+    public java.util.Set<String> labelCacheEligible(long accountId,java.util.Collection<String> ids,Instant observedAt) {
+        if(ids.isEmpty() || observedAt==null)return java.util.Set.of();
+        return new java.util.HashSet<>(jdbc.queryForList("""
+            SELECT provider_message_id FROM message_metadata WHERE account_id=:account AND provider_message_id IN (:ids)
+              AND label_evidence_known AND provider_revision IS NOT NULL
+              AND (cleanup_updated_at IS NULL OR cleanup_updated_at<=:observed)
+            """,new MapSqlParameterSource("account",accountId).addValue("ids",ids).addValue("observed",Timestamp.from(observedAt)),String.class));
+    }
+
+    /** Called under the same row locks as metadata upserts, inside the cursor commit. */
+    public int applyLabelChanges(long accountId,String id,
+            java.util.List<com.tidymail.mail.sync.ChangePage.LabelChange> changes,Instant observedAt,Instant completedAt) {
+        var p=new MapSqlParameterSource("account",accountId).addValue("id",id);
+        var rows=jdbc.queryForList("""
+            SELECT labels,provider_revision,label_evidence_known,cleanup_updated_at FROM message_metadata
+            WHERE account_id=:account AND provider_message_id=:id
+            """,p);
+        if(rows.size()!=1)throw new IllegalStateException("LABEL_BASE_CHANGED");
+        var row=rows.getFirst();
+        if(!Boolean.TRUE.equals(row.get("label_evidence_known")) || row.get("provider_revision")==null
+                || row.get("cleanup_updated_at") instanceof Timestamp cleanup && cleanup.toInstant().isAfter(observedAt))
+            throw new IllegalStateException("LABEL_BASE_CHANGED");
+        java.math.BigInteger baseline=((java.math.BigDecimal)row.get("provider_revision")).toBigIntegerExact();
+        java.math.BigInteger newest=baseline;
+        java.util.Set<String> labels;
+        try { labels=new java.util.HashSet<>(java.util.Arrays.asList((String[])((java.sql.Array)row.get("labels")).getArray())); }
+        catch(java.sql.SQLException error){throw new IllegalStateException(error);}
+        for(var change:changes)if(change.revision().compareTo(baseline)>0) {
+            labels.addAll(change.added());labels.removeAll(change.removed());
+            newest=newest.max(change.revision());
+        }
+        if(newest.equals(baseline))return 0;
+        p.addValue("labels",new SqlArrayValue("text",labels.stream().sorted().toArray(String[]::new)))
+            .addValue("unread",labels.contains("UNREAD")).addValue("revision",new java.math.BigDecimal(newest))
+            .addValue("synced",Timestamp.from(completedAt));
+        return jdbc.update("""
+            UPDATE message_metadata SET labels=:labels,unread=:unread,provider_revision=:revision,last_synced_at=:synced
+            WHERE account_id=:account AND provider_message_id=:id
+            """,p);
+    }
+
     public int deleteByProviderMessageId(long accountId, String providerMessageId) {
         requireIdentity(accountId, providerMessageId);
         return jdbc.update("""

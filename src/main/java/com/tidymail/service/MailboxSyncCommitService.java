@@ -142,15 +142,20 @@ public class MailboxSyncCommitService {
         }
         Set<String> uniqueDeletes = new LinkedHashSet<>(unit.deletedProviderMessageIds());
         uniqueDeletes.removeAll(uniqueMessages.keySet());
+        uniqueDeletes.removeAll(unit.labelChanges().keySet());
 
         Set<String> touched = new LinkedHashSet<>(uniqueMessages.keySet());
         touched.addAll(uniqueDeletes);
+        touched.addAll(unit.labelChanges().keySet());
         if (lane == Lane.RESCAN && unit.sweepCompletedGeneration()) metadata.lockAccountRows(unit.accountId());
         metadata.lockMessages(unit.accountId(), touched);
 
         int upserted = upsertMessages(
             unit.accountId(), uniqueMessages.values().stream().toList(),
             unit.fullScanGeneration(), unit.completedAt());
+        int labelUpdates=0;
+        for(var entry:unit.labelChanges().entrySet())labelUpdates+=metadata.applyLabelChanges(
+            unit.accountId(),entry.getKey(),entry.getValue(),unit.historyObservedAt(),unit.completedAt());
         int deleted = 0;
         for (String providerMessageId : uniqueDeletes) {
             deleted += metadata.deleteByProviderMessageId(
@@ -162,8 +167,8 @@ public class MailboxSyncCommitService {
         }
 
         states.recordActivity(
-            unit.accountId(), lane, unit.messagesFetched(), uniqueMessages.size(),
-            deleted, upserted, unit.providerTotalSnapshot(), unit.completedAt());
+            unit.accountId(), lane, unit.messagesFetched(), uniqueMessages.size()+labelUpdates,
+            deleted, upserted+labelUpdates, unit.providerTotalSnapshot(), unit.completedAt());
         boolean stateUpdated = switch (lane) {
             case FRESHNESS -> states.updateIncrementalCursor(
                 unit.accountId(), unit.leaseOwner(), unit.expectedVersion(),
@@ -216,12 +221,18 @@ public class MailboxSyncCommitService {
         if (unit.accountId() <= 0 || unit.expectedVersion() < 0
                 || unit.completedAt() == null
                 || unit.messages() == null || unit.deletedProviderMessageIds() == null
-                || unit.messages().size() + unit.deletedProviderMessageIds().size()
+                || unit.messages().size() + unit.deletedProviderMessageIds().size()+unit.labelChanges().size()
                     > MAX_UNIT_MESSAGES
                 || unit.messagesFetched() < 0
                 || unit.providerTotalSnapshot() != null
                     && unit.providerTotalSnapshot() < 0) {
             throw new IllegalArgumentException("A bounded owned sync unit is required");
+        }
+        if(!unit.labelChanges().isEmpty() && (lane!=Lane.FRESHNESS || unit.historyObservedAt()==null))
+            throw new IllegalArgumentException("Label updates require an observed freshness window");
+        for(var entry:unit.labelChanges().entrySet()) {
+            if(entry.getValue().isEmpty() || entry.getValue().stream().anyMatch(change->!entry.getKey().equals(change.messageId())))
+                throw new IllegalArgumentException("Label change ownership mismatch");
         }
         if (lane == Lane.FRESHNESS) {
             requireCursor(unit.cursorKind(), unit.cursorValue());
@@ -282,9 +293,20 @@ public class MailboxSyncCommitService {
         Long providerTotalSnapshot,
         UUID fullScanGeneration,
         Instant rescanStartedAt,
-        boolean sweepCompletedGeneration
+        boolean sweepCompletedGeneration,
+        Map<String,List<com.tidymail.mail.sync.ChangePage.LabelChange>> labelChanges,
+        Instant historyObservedAt
     ) {
+        public SyncUnit(long accountId,String leaseOwner,long expectedVersion,List<MailMessage> messages,
+                List<String> deletes,String kind,String cursor,Instant completedAt,long fetched,Long total,
+                UUID generation,Instant rescanStartedAt,boolean sweep) {
+            this(accountId,leaseOwner,expectedVersion,messages,deletes,kind,cursor,completedAt,fetched,total,
+                generation,rescanStartedAt,sweep,Map.of(),null);
+        }
         public SyncUnit {
+            var copy=new LinkedHashMap<String,List<com.tidymail.mail.sync.ChangePage.LabelChange>>();
+            if(labelChanges!=null)labelChanges.forEach((id,changes)->copy.put(id,List.copyOf(changes)));
+            labelChanges=Map.copyOf(copy);
             messages = messages == null ? null : List.copyOf(messages);
             deletedProviderMessageIds = deletedProviderMessageIds == null
                 ? null : List.copyOf(deletedProviderMessageIds);

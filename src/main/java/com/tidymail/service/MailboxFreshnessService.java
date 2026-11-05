@@ -33,12 +33,13 @@ public class MailboxFreshnessService {
 
     private final MailboxSyncStateRepository states;
     private final MailboxSyncCommitService commits;
+    private final com.tidymail.repository.MessageMetadataSyncRepository metadata;
 
     public MailboxFreshnessService(
             MailboxSyncStateRepository states,
-            MailboxSyncCommitService commits) {
+            MailboxSyncCommitService commits,com.tidymail.repository.MessageMetadataSyncRepository metadata) {
         this.states = states;
-        this.commits = commits;
+        this.commits = commits;this.metadata=metadata;
     }
 
     /** Synchronizes one freshness pass, returning the sync outcome. */
@@ -71,18 +72,29 @@ public class MailboxFreshnessService {
                     ?page.lastCompletelyAppliedRevision()==null?durableCursor:page.lastCompletelyAppliedRevision()
                     :page.returnedCursor();
                 if(ids.isEmpty())commitChanges(account,leaseOwner,List.of(),Set.of(),finishedCursor,0);
+                var labelChains=page.labelChanges().stream().collect(java.util.stream.Collectors.groupingBy(
+                    ChangePage.LabelChange::messageId,java.util.LinkedHashMap::new,java.util.stream.Collectors.toList()));
                 for(int start=0;start<ids.size();start+=MAX_CHANGE_IDS_PER_UNIT) {
                     List<String> chunk=ids.subList(start,Math.min(start+MAX_CHANGE_IDS_PER_UNIT,ids.size()));
                     List<String> changed=chunk.stream().filter(page.changedIds()::contains).toList();
-                    List<MailMessage> current=changed.isEmpty()?List.of():provider.getCurrentMetadata(account,changed);
+                    var candidates=changed.stream().filter(id->labelChains.containsKey(id) && !page.metadataRequiredIds().contains(id)).toList();
+                    var eligible=metadata.labelCacheEligible(account.getId(),candidates,page.observedAt());
+                    var labelUpdates=new java.util.LinkedHashMap<String,List<ChangePage.LabelChange>>();
+                    for(String id:eligible)labelUpdates.put(id,labelChains.get(id));
+                    var hydrate=changed.stream().filter(id->!eligible.contains(id)).toList();
+                    List<MailMessage> current=hydrate.isEmpty()?List.of():provider.getCurrentMetadata(account,hydrate);
                     Set<String> returned=new java.util.HashSet<>();current.forEach(message->returned.add(message.id()));
                     Set<String> deleted=new LinkedHashSet<>();
-                    for(String id:chunk)if(page.deletedIds().contains(id)||!returned.contains(id))deleted.add(id);
+                    for(String id:chunk)if(page.deletedIds().contains(id)||!returned.contains(id)&&!eligible.contains(id))deleted.add(id);
                     deleted.removeAll(returned);
                     // Keep the previous cursor until every target in the history page is committed.
                     // A crash may re-read committed chunks but cannot skip the uncommitted suffix.
                     boolean last=start+MAX_CHANGE_IDS_PER_UNIT>=ids.size();
-                    commitChanges(account,leaseOwner,current,deleted,last?finishedCursor:durableCursor,chunk.size());
+                    Instant completedAt=Instant.now();
+                    StateSnapshot commitState=states.findByAccountId(account.getId()).orElseThrow();
+                    commits.commitFreshnessUnit(new SyncUnit(account.getId(),leaseOwner,commitState.version(),
+                        current,new ArrayList<>(deleted),state.incrementalCursorKind(),last?finishedCursor:durableCursor,
+                        completedAt,hydrate.size(),commitState.providerTotal(),null,null,false,labelUpdates,page.observedAt()));
                 }
                 durableCursor=finishedCursor;
                 if(page.hasMore()&&page.lastCompletelyAppliedRevision()!=null
