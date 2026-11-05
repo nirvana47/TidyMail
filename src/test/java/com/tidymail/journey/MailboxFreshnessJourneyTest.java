@@ -4,6 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -55,6 +58,92 @@ class MailboxFreshnessJourneyTest extends PostgresJourneyTest {
     @Autowired MailboxRescanService rescan;
     @Autowired MailboxSyncCommitService commits;
     @Autowired GmailSyncConfigProperties config;
+
+    @Test void bulkLabelHistoryNeedsReadsOnlyForNewOrInsufficientlyCachedMessages() {
+        long accountId=userAccounts.createAccount("fast-history@example.test");readyForFreshness(accountId,"10");
+        acquire(accountId,Lane.FRESHNESS,"fast-worker");
+        jdbc.update("""
+            INSERT INTO message_metadata(account_id,provider,provider_message_id,labels,unread,label_evidence_known,
+              provider_revision,subject_header,classification_override)
+            SELECT ?,'google','cached-'||i,ARRAY['INBOX','UNREAD'],true,true,10,'Saved header','PERSONAL'
+            FROM generate_series(1,1201) i
+            """,accountId);
+        insertStoredMessage(accountId,"gone",Instant.now());insertStoredMessage(accountId,"uncached",Instant.now());
+        var changed=new java.util.HashSet<String>();var deltas=new ArrayList<ChangePage.LabelChange>();
+        for(int i=1;i<=1201;i++) {String id="cached-"+i;changed.add(id);
+            deltas.add(new ChangePage.LabelChange(id,new BigInteger("11"),Set.of("TRASH"),Set.of("INBOX","UNREAD")));}
+        changed.addAll(Set.of("new","uncached"));
+        deltas.add(new ChangePage.LabelChange("uncached",new BigInteger("11"),Set.of("TRASH"),Set.of("INBOX")));
+        var page=new ChangePage(changed,Set.of("gone"),"11","12",null,false,deltas,Set.of("new"),Instant.now());
+        when(gmailProvider.capabilities()).thenReturn(GMAIL_CAPABILITIES);when(gmailProvider.listChanges(any(),any())).thenReturn(page);
+        var reads=new ArrayList<String>();
+        when(gmailProvider.getCurrentMetadata(any(),any())).thenAnswer(call->{
+            List<String> ids=call.getArgument(1);reads.addAll(ids);return ids.stream().map(id->message(id,"New sender")).toList();});
+        freshness.synchronizeFreshness(accounts.findById(accountId).orElseThrow(),gmailProvider,"fast-worker");
+        assertThat(reads).containsExactlyInAnyOrder("new","uncached");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM message_metadata WHERE account_id=? AND provider_message_id LIKE 'cached-%' AND labels=ARRAY['TRASH'] AND NOT unread AND provider_revision=11 AND subject_header='Saved header' AND classification_override='PERSONAL'",Long.class,accountId)).isEqualTo(1201);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM message_metadata WHERE account_id=? AND provider_message_id='gone'",Long.class,accountId)).isZero();
+        assertThat(states.findByAccountId(accountId).orElseThrow().incrementalCursorValue()).isEqualTo("12");
+    }
+
+    @Test void completeLabelWindowPreservesAcknowledgedCleanupAndSkipsNewerCachedRevisions() {
+        long accountId=userAccounts.createAccount("ordered-history@example.test");readyForFreshness(accountId,"10");
+        acquire(accountId,Lane.FRESHNESS,"ordered-worker");
+        jdbc.update("""
+            INSERT INTO message_metadata(account_id,provider,provider_message_id,labels,label_evidence_known,provider_revision,cleanup_updated_at)
+            VALUES(?,'google','optimistic',ARRAY['TRASH'],true,10,now()-interval '1 minute'),
+                  (?,'google','newer',ARRAY['INBOX'],true,30,NULL)
+            """,accountId,accountId);
+        var changes=List.of(new ChangePage.LabelChange("optimistic",new BigInteger("11"),Set.of("INBOX"),Set.of()),
+            new ChangePage.LabelChange("optimistic",new BigInteger("12"),Set.of("TRASH"),Set.of("INBOX")),
+            new ChangePage.LabelChange("newer",new BigInteger("11"),Set.of("TRASH"),Set.of("INBOX")));
+        when(gmailProvider.capabilities()).thenReturn(GMAIL_CAPABILITIES);
+        when(gmailProvider.listChanges(any(),any())).thenReturn(new ChangePage(Set.of("optimistic","newer"),Set.of(),"12","31",null,false,changes,Set.of(),Instant.now()));
+        freshness.synchronizeFreshness(accounts.findById(accountId).orElseThrow(),gmailProvider,"ordered-worker");
+        assertThat(jdbc.queryForObject("SELECT labels=ARRAY['TRASH'] AND provider_revision=12 FROM message_metadata WHERE account_id=? AND provider_message_id='optimistic'",Boolean.class,accountId)).isTrue();
+        assertThat(jdbc.queryForObject("SELECT labels=ARRAY['INBOX'] AND provider_revision=30 FROM message_metadata WHERE account_id=? AND provider_message_id='newer'",Boolean.class,accountId)).isTrue();
+        verify(gmailProvider,never()).getCurrentMetadata(any(),any());
+    }
+
+    @Test void cleanupAfterHistoryObservationRejectsAndRollsBackTheLabelCommitWithoutAdvancingCursor() {
+        long accountId=userAccounts.createAccount("raced-history@example.test");readyForFreshness(accountId,"10");
+        acquire(accountId,Lane.FRESHNESS,"race-worker");
+        jdbc.update("""
+            INSERT INTO message_metadata(account_id,provider,provider_message_id,labels,label_evidence_known,provider_revision,cleanup_updated_at)
+            VALUES(?,'google','race',ARRAY['TRASH'],true,10,now())
+            """,accountId);
+        var state=states.findByAccountId(accountId).orElseThrow();
+        var changes=Map.of("race",List.of(new ChangePage.LabelChange("race",new BigInteger("11"),Set.of("INBOX"),Set.of("TRASH"))));
+        var unit=new MailboxSyncCommitService.SyncUnit(accountId,"race-worker",state.version(),List.of(),List.of(),
+            "GMAIL_HISTORY_ID","12",Instant.now(),0,null,null,null,false,changes,Instant.now().minusSeconds(30));
+        assertThatThrownBy(()->commits.commitFreshnessUnit(unit)).hasMessageContaining("LABEL_BASE_CHANGED");
+        assertThat(states.findByAccountId(accountId).orElseThrow().incrementalCursorValue()).isEqualTo("10");
+        assertThat(jdbc.queryForObject("SELECT labels=ARRAY['TRASH'] FROM message_metadata WHERE account_id=?",Boolean.class,accountId)).isTrue();
+    }
+
+    @Test void interruptedLabelWindowReplaysCommittedChunksWithoutSkippingTheSuffixOrReadingMetadata() {
+        long accountId=userAccounts.createAccount("replay-labels@example.test");readyForFreshness(accountId,"10");
+        acquire(accountId,Lane.FRESHNESS,"replay-worker");
+        jdbc.update("""
+            INSERT INTO message_metadata(account_id,provider,provider_message_id,labels,label_evidence_known,provider_revision)
+            SELECT ?,'google','replay-'||i,ARRAY['INBOX'],true,10 FROM generate_series(1,600) i
+            """,accountId);
+        var changed=new java.util.HashSet<String>();var deltas=new ArrayList<ChangePage.LabelChange>();
+        for(int i=1;i<=600;i++){String id="replay-"+i;changed.add(id);deltas.add(new ChangePage.LabelChange(id,new BigInteger("11"),Set.of("TRASH"),Set.of("INBOX")));}
+        var page=new ChangePage(changed,Set.of(),"11","12",null,false,deltas,Set.of(),Instant.now());
+        when(gmailProvider.capabilities()).thenReturn(GMAIL_CAPABILITIES);when(gmailProvider.listChanges(any(),any())).thenReturn(page);
+        jdbc.execute("CREATE FUNCTION reject_label_cursor() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.incremental_cursor_value='12' THEN RAISE EXCEPTION 'FIXTURE_CURSOR_REJECT'; END IF; RETURN NEW; END $$");
+        jdbc.execute("CREATE TRIGGER reject_label_cursor BEFORE UPDATE ON mailbox_sync_state FOR EACH ROW EXECUTE FUNCTION reject_label_cursor()");
+        try {
+            assertThatThrownBy(()->freshness.synchronizeFreshness(accounts.findById(accountId).orElseThrow(),gmailProvider,"replay-worker")).hasMessageContaining("FIXTURE_CURSOR_REJECT");
+            assertThat(states.findByAccountId(accountId).orElseThrow().incrementalCursorValue()).isEqualTo("10");
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM message_metadata WHERE account_id=? AND provider_revision=11",Long.class,accountId)).isEqualTo(500);
+        } finally {jdbc.execute("DROP TRIGGER reject_label_cursor ON mailbox_sync_state");jdbc.execute("DROP FUNCTION reject_label_cursor()");}
+        freshness.synchronizeFreshness(accounts.findById(accountId).orElseThrow(),gmailProvider,"replay-worker");
+        assertThat(states.findByAccountId(accountId).orElseThrow().incrementalCursorValue()).isEqualTo("12");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM message_metadata WHERE account_id=? AND labels=ARRAY['TRASH'] AND provider_revision=11",Long.class,accountId)).isEqualTo(600);
+        verify(gmailProvider,never()).getCurrentMetadata(any(),any());
+    }
 
     @Test
     void newGmailMessageAppearsWhileHistoricalBackfillIsStillRunning() {

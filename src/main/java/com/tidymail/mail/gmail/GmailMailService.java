@@ -72,6 +72,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class GmailMailService implements MailProvider, MailboxSyncProvider {
+    private static final org.slf4j.Logger logger=org.slf4j.LoggerFactory.getLogger(GmailMailService.class);
+
 
     /**
      * The ONLY headers TidyMail ever downloads from Gmail.  Hard-coded to a
@@ -292,7 +294,7 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
                             throw new IllegalStateException("GMAIL_HISTORY_REVISION_REGRESSED");
                         collectChanged(history.getMessagesAdded(),HistoryMessageAdded::getMessage,changed,deleted);
                         if(history.getMessagesAdded()!=null)for(var event:history.getMessagesAdded())
-                            if(event.getMessage()!=null)required.add(event.getMessage().getId());
+                            if(event.getMessage()!=null && event.getMessage().getId()!=null && !event.getMessage().getId().isBlank())required.add(event.getMessage().getId());
                         var added=new java.util.HashMap<String,Set<String>>();
                         var removed=new java.util.HashMap<String,Set<String>>();
                         if(history.getLabelsAdded()!=null)for(var event:history.getLabelsAdded())
@@ -314,6 +316,7 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
                 } while(token!=null && pages<syncConfig.getHistoryWindowPages() && changed.size()+deleted.size()<200000);
                 // Only a complete window includes all acknowledged cleanup changes predating observedAt.
                 // Truncated windows use the existing metadata path and checkpoint the last complete record.
+                logger.info("Gmail history window pages={} changed={} deleted={} complete={}",pages,changed.size(),deleted.size(),token==null);
                 return new ChangePage(changed,deleted,completeRevision,returnedCursor,token,token!=null,
                     token==null?deltas:List.of(),required,observedAt);
             } catch (GoogleJsonResponseException ex) {

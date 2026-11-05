@@ -30,6 +30,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 @Service
 public class MailboxFreshnessService {
     private static final int MAX_CHANGE_IDS_PER_UNIT = 500;
+    private static final org.slf4j.Logger log=org.slf4j.LoggerFactory.getLogger(MailboxFreshnessService.class);
 
     private final MailboxSyncStateRepository states;
     private final MailboxSyncCommitService commits;
@@ -74,6 +75,7 @@ public class MailboxFreshnessService {
                 if(ids.isEmpty())commitChanges(account,leaseOwner,List.of(),Set.of(),finishedCursor,0);
                 var labelChains=page.labelChanges().stream().collect(java.util.stream.Collectors.groupingBy(
                     ChangePage.LabelChange::messageId,java.util.LinkedHashMap::new,java.util.stream.Collectors.toList()));
+                long hydratedCount=0,cachedCount=0;
                 for(int start=0;start<ids.size();start+=MAX_CHANGE_IDS_PER_UNIT) {
                     List<String> chunk=ids.subList(start,Math.min(start+MAX_CHANGE_IDS_PER_UNIT,ids.size()));
                     List<String> changed=chunk.stream().filter(page.changedIds()::contains).toList();
@@ -82,6 +84,7 @@ public class MailboxFreshnessService {
                     var labelUpdates=new java.util.LinkedHashMap<String,List<ChangePage.LabelChange>>();
                     for(String id:eligible)labelUpdates.put(id,labelChains.get(id));
                     var hydrate=changed.stream().filter(id->!eligible.contains(id)).toList();
+                    hydratedCount+=hydrate.size();cachedCount+=eligible.size();
                     List<MailMessage> current=hydrate.isEmpty()?List.of():provider.getCurrentMetadata(account,hydrate);
                     Set<String> returned=new java.util.HashSet<>();current.forEach(message->returned.add(message.id()));
                     Set<String> deleted=new LinkedHashSet<>();
@@ -96,6 +99,8 @@ public class MailboxFreshnessService {
                         current,new ArrayList<>(deleted),state.incrementalCursorKind(),last?finishedCursor:durableCursor,
                         completedAt,hydrate.size(),commitState.providerTotal(),null,null,false,labelUpdates,page.observedAt()));
                 }
+                log.info("Gmail freshness window changed={} deleted={} cachedLabelMessages={} metadataReads={}",
+                    page.changedIds().size(),page.deletedIds().size(),cachedCount,hydratedCount);
                 durableCursor=finishedCursor;
                 if(page.hasMore()&&page.lastCompletelyAppliedRevision()!=null
                         &&!durableCursor.equals(state.incrementalCursorValue()))return SyncOutcome.requeue();

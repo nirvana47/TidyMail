@@ -148,6 +148,37 @@ class GmailSynchronizationContractTest {
         verify(fixture.historyRequest).setPageToken("history-page");
     }
 
+    @Test void completeHistoryWindowKeepsOrderedLabelDeltasAndCoalescesDeletions() throws Exception {
+        Fixture f=fixture();f.config.setHistoryWindowPages(4);
+        when(f.historyRequest.execute()).thenReturn(
+            new ListHistoryResponse().setHistoryId(new BigInteger("110")).setNextPageToken("next")
+                .setHistory(List.of(new History().setId(new BigInteger("101"))
+                    .setLabelsAdded(List.of(new HistoryLabelAdded().setMessage(new Message().setId("cached")).setLabelIds(List.of("TRASH"))))
+                    .setMessagesAdded(List.of(new HistoryMessageAdded().setMessage(new Message().setId("gone")))))),
+            new ListHistoryResponse().setHistoryId(new BigInteger("110"))
+                .setHistory(List.of(new History().setId(new BigInteger("102"))
+                    .setLabelsRemoved(List.of(new HistoryLabelRemoved().setMessage(new Message().setId("cached")).setLabelIds(List.of("INBOX"))))
+                    .setMessagesDeleted(List.of(new HistoryMessageDeleted().setMessage(new Message().setId("gone")))))));
+        var page=f.service.listChanges(f.account,new ChangeRequest("100",SyncCapabilities.ChangeFeedKind.HISTORY,null,500));
+        assertThat(page.changedIds()).containsExactly("cached");assertThat(page.deletedIds()).containsExactly("gone");
+        assertThat(page.labelChanges()).extracting(ChangePage.LabelChange::revision).containsExactly(new BigInteger("101"),new BigInteger("102"));
+        assertThat(page.labelChanges().getFirst().added()).containsExactly("TRASH");
+        assertThat(page.labelChanges().getLast().removed()).containsExactly("INBOX");
+        assertThat(page.observedAt()).isNotNull();assertThat(page.hasMore()).isFalse();
+        assertThat(page.returnedCursor()).isEqualTo("110");verify(f.historyRequest,times(2)).execute();
+        verify(f.gmail.users().messages(),never()).get(anyString(),anyString());
+    }
+
+    @Test void boundedHistoryWindowFallsBackInsteadOfApplyingAnIncompleteLabelHistory() throws Exception {
+        Fixture f=fixture();
+        when(f.historyRequest.execute()).thenReturn(new ListHistoryResponse().setHistoryId(new BigInteger("110"))
+            .setNextPageToken("next").setHistory(List.of(new History().setId(new BigInteger("101"))
+                .setLabelsAdded(List.of(new HistoryLabelAdded().setMessage(new Message().setId("cached")).setLabelIds(List.of("INBOX")))))));
+        var page=f.service.listChanges(f.account,new ChangeRequest("100",SyncCapabilities.ChangeFeedKind.HISTORY,null,500));
+        assertThat(page.labelChanges()).isEmpty();assertThat(page.hasMore()).isTrue();
+        assertThat(page.lastCompletelyAppliedRevision()).isEqualTo("101");
+    }
+
     @Test
     @DisplayName("providerClassifiesMetadataDeletionAndExpiredHistoryWithoutReplacingCursor")
     void providerClassifiesMetadataDeletionAndExpiredHistoryWithoutReplacingCursor()
@@ -389,7 +420,7 @@ class GmailSynchronizationContractTest {
         });
 
         fixture.service = new GmailMailService(
-            clientFactory, rateLimiter, configuredProperties());
+            clientFactory, rateLimiter, fixture.config);
         return fixture;
     }
 
@@ -407,6 +438,7 @@ class GmailSynchronizationContractTest {
 
     private static final class Fixture {
         GmailMailService service;
+        GmailSyncConfigProperties config=configuredProperties();
         UserAccount account;
         Gmail.Users.GetProfile profileRequest;
         Gmail.Users.Messages.List listRequest;

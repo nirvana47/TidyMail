@@ -233,6 +233,11 @@ public class MailboxSyncCommitService {
         for(var entry:unit.labelChanges().entrySet()) {
             if(entry.getValue().isEmpty() || entry.getValue().stream().anyMatch(change->!entry.getKey().equals(change.messageId())))
                 throw new IllegalArgumentException("Label change ownership mismatch");
+            java.math.BigInteger previous=null;
+            for(var change:entry.getValue()) {
+                if(previous!=null && change.revision().compareTo(previous)<0)throw new IllegalArgumentException("Label revisions regressed");
+                previous=change.revision();
+            }
         }
         if (lane == Lane.FRESHNESS) {
             requireCursor(unit.cursorKind(), unit.cursorValue());
