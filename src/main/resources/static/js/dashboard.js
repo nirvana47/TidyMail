@@ -208,6 +208,8 @@
       $('accountEmail').textContent = data.sync.email;
       $('matching').textContent = fmt(data.summary.messages); $('unreadCount').textContent = fmt(data.summary.unread); $('groupCount').textContent = fmt(data.summary.groups);
       const c = data.coverage;
+      $('sizeCoverage').textContent = outlook && c.outlook_unknown_sizes
+        ? `Size unavailable for ${fmt(c.outlook_unknown_sizes)} received messages.` : '';
       $('coverage').textContent = Number(c.indexed) ? `${fmt(c.indexed)} indexed emails · Indexed dates: ${dateText(c.oldest)}–${dateText(c.newest)} · Results include indexed messages only · As of ${dateText(c.as_of)} · ${filter().zone}` : 'Coverage unavailable — no messages indexed yet.';
       const gaps = []; if (c.unknown_labels) gaps.push(`${fmt(c.unknown_labels)} messages have unknown labels${state.scope === 'indexed' ? '' : ' and are excluded from received mail'}`); if (!outlook && c.ambiguous_sent) gaps.push(`${fmt(c.ambiguous_sent)} Sent messages lack independent delivery evidence`); if (c.unknown_identity) gaps.push(`${fmt(c.unknown_identity)} identities are kept separate pending fresh metadata`); if (data.summary.undated) gaps.push(`${fmt(data.summary.undated)} matching messages are undated`);
       $('coverage').textContent += ` · ${bytesText(data.summary.known_bytes)} estimated${Number(data.summary.unknown_sizes) ? ' · '+fmt(data.summary.unknown_sizes)+' sizes unknown' : ''}`;
@@ -380,7 +382,7 @@
       for (const m of detail.messages) {
         const row = node('div', undefined, 'message-row'), text = node('div', undefined, 'message-text');
         const recommendation = (detail.recommendations || []).find(r => r.message === m.id);
-        const senderName = m.displayName || recommendation?.shoppingBrand;
+        const senderName = m.displayName?.trim();
         text.append(node('span', m.subject || '(No subject)', 'message-subject'),
           node('small', senderName ? `${senderName} · ${m.address}` : m.address, 'muted'),
           node('small', `${dateText(m.receivedAt)} · ${m.unread ? 'Unread' : 'Read'}`, 'muted'));
@@ -420,7 +422,7 @@
       $('actionAvailability').textContent = 'Work is saved before processing. Closing this page does not cancel it.';
       const action = preview.action === 'MARK_READ' ? `Mark ${fmt(preview.effective)} as read` : preview.action === 'ARCHIVE' ? `Archive ${fmt(preview.effective)} messages` : preview.action === 'MARK_READ_ARCHIVE' ? `Mark as Read + Archive ${fmt(preview.effective)} messages` : `Move ${fmt(preview.effective)} to Trash`;
       $('confirmTitle').textContent = action + '?'; $('confirmAction').textContent = action;
-      $('confirmScope').textContent = `${preview.filter.scope === 'inbox' ? 'Inbox' : preview.filter.scope === 'indexed' ? 'All indexed mail' : preview.filter.suggestion === 'large' ? 'Received and Sent mail' : 'All Mailbox'} · ${preview.filter.start || 'All indexed dates'}${preview.filter.end ? ' through ' + preview.filter.end : ''} · ${preview.filter.zone}${preview.filter.q ? ' · Search: ' + preview.filter.q : ''}`;
+      $('confirmScope').textContent = `${preview.filter.scope === 'inbox' ? 'Inbox' : preview.filter.scope === 'indexed' ? 'All indexed mail' : preview.filter.suggestion === 'large' && !outlook ? 'Received and Sent mail' : 'All Mailbox'} · ${preview.filter.start || 'All indexed dates'}${preview.filter.end ? ' through ' + preview.filter.end : ''} · ${preview.filter.zone}${preview.filter.q ? ' · Search: ' + preview.filter.q : ''}`;
       $('confirmCounts').textContent = `${fmt(preview.selected)} fixed targets · ${fmt(preview.effective)} eligible changes · ${fmt(preview.skipped)} will be skipped (${fmt(preview.protectedCount)} protected) · ${bytesText(preview.knownBytes)} selected${preview.unknownSizes ? ' · '+fmt(preview.unknownSizes)+' sizes unknown' : ''}`;
       $('confirmCoverage').textContent = `Indexed messages only · ${dateText(preview.coverage.oldest)}–${dateText(preview.coverage.newest)} · As of ${dateText(preview.coverage.as_of)}`;
       $('actionExplanation').textContent = preview.action === 'ARCHIVE' ? (outlook ? 'Move selected emails to Archive.' : 'Archive removes mail from Inbox but does not free storage.') : preview.action === 'TRASH' ? outlook ? 'Move selected emails to Deleted Items.' : `Move to Trash may reclaim approximately ${bytesText(preview.effectiveBytes)} after Gmail permanently deletes the emails, normally after 30 days.` : preview.action === 'MARK_READ_ARCHIVE' ? (outlook ? 'Mark selected emails as read, then move them to Archive.' : 'Gmail removes the Unread and Inbox labels in one request. Messages already read and outside Inbox are skipped.') : 'Already-read messages will be skipped.';
@@ -706,10 +708,10 @@
     details.append(summary,node('p','Checks this email’s preview, attachment names and calendar information. Only calendar files are read; other attachments stay unopened. Nothing is sent to a model.','muted'),check,output);text.append(details);
   }
   function setSuggestion(value) {
-    document.querySelector('[data-scope="all"]').textContent=value === 'large' ? 'Received and Sent mail' : 'All Mailbox';
+    document.querySelector('[data-scope="all"]').textContent=value === 'large' && !outlook ? 'Received and Sent mail' : 'All Mailbox';
     const sent = labelChoices.find(input => input.value === 'SENT');
-    sent.parentElement.hidden = value !== 'large';
-    if (value !== 'large') sent.checked = false;
+    sent.parentElement.hidden = outlook || value !== 'large';
+    if (sent.parentElement.hidden) sent.checked = false;
     updateLabelSummary();
     state.suggestion=value; $('activeSuggestion').hidden=!value; filtersChanged();
   }

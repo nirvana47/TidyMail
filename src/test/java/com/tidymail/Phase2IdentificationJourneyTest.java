@@ -86,7 +86,7 @@ class Phase2IdentificationJourneyTest extends PostgresJourneyTest {
         long other=userAccounts.createAccount("other@example.test");
         assertThatThrownBy(()->patterns.apply(other,preview.id(),List.of(match))).hasMessageContaining("expired");
         assertThat(patterns.apply(account,preview.id(),List.of(match))).isEqualTo(1);
-        var group=dashboard.page(account,filter("","")).groups().stream().filter(g->g.label().equals("amazon.com")).findFirst().orElseThrow();
+        var group=dashboard.page(account,filter("orders@amazon.com","")).groups().getFirst();
         assertThat(dashboard.details(account,filter("",""),group.id(),0).messages().stream().filter(m->m.id().equals(match)).findFirst().orElseThrow().reviewedPattern()).isEqualTo("RECEIPT");
         assertThat(jdbc.queryForObject("SELECT classification_override FROM message_metadata WHERE dashboard_message_id=?",String.class,match)).isNull();
         var beforeCalendar=patterns.preview(account,24);

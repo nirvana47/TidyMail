@@ -93,7 +93,9 @@ public class MessageMetadataSyncRepository {
                    unread = CASE WHEN message_metadata.cleanup_updated_at>:observation_started_at
                        AND COALESCE(EXCLUDED.provider_revision,-1)<=COALESCE(message_metadata.provider_revision,-1)
                        THEN message_metadata.unread ELSE EXCLUDED.unread END,
-                   size_estimate = EXCLUDED.size_estimate,
+                   size_estimate = CASE WHEN EXCLUDED.provider='microsoft'
+                       THEN COALESCE(EXCLUDED.size_estimate,message_metadata.size_estimate)
+                       ELSE EXCLUDED.size_estimate END,
                    snippet_text = CASE WHEN EXCLUDED.snippet_state='UNKNOWN' THEN message_metadata.snippet_text ELSE EXCLUDED.snippet_text END,
                    snippet_state = CASE WHEN EXCLUDED.snippet_state='UNKNOWN' THEN message_metadata.snippet_state ELSE EXCLUDED.snippet_state END,
                    has_attachments = CASE

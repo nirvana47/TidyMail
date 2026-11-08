@@ -15,6 +15,8 @@ import java.time.Instant;
 import java.util.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 
@@ -34,9 +36,11 @@ class DashboardJourneyTest extends PostgresJourneyTest {
     @Autowired
     ObjectMapper json;
     long account;
+    String provider;
 
     @BeforeEach
     void account() {
+        provider = "google";
         account = userAccounts.createAccount(OWNER);
         jdbc.update("DELETE FROM dashboard_domain_registry WHERE kind='DEDICATED'");
     }
@@ -70,15 +74,25 @@ class DashboardJourneyTest extends PostgresJourneyTest {
         verifyNoInteractions(gmailProvider, outlookProvider);
     }
 
-    @Test
-    void mailingListUsesConsistentStoredNameWithoutChangingItsIdentityOrSelection() {
-        String list = "spc.142003.1.sparkpostmail.com";
+    @ParameterizedTest
+    @ValueSource(strings = {"google", "microsoft"})
+    void dashboardNamesUseSavedFromWithoutChangingGroupingOrSelection(String provider) {
+        this.provider = provider;
+        if (provider.equals("microsoft")) account = userAccounts.createAccount("outlook@example.test", provider);
+        String list = "6261227.xt.local";
         listMessage("lending-a", "offers@lender.example", "Offers <" + list + ">");
         listMessage("lending-b", "news@lender.example", "Offers <" + list + ">");
-        jdbc.update("UPDATE message_metadata SET from_display_name=' LendingTree ' WHERE account_id=?", account);
+        jdbc.update("INSERT INTO dashboard_domain_registry(domain,kind) VALUES('host.example','DEDICATED')");
+        message("billing", "billing@host.example", List.of("INBOX"), true, List.of(), false, NOW);
+        jdbc.update("""
+            UPDATE message_metadata SET from_display_name=CASE WHEN provider_message_id='billing'
+                THEN 'Hosting Billing' ELSE ' LendingTree ' END WHERE account_id=?
+            """, account);
         long revision = repository.revision(account);
         UUID id = jdbc.queryForObject("SELECT public_id FROM sender_groups WHERE account_id=? AND group_key=?",
                 UUID.class, account, "list:" + list);
+        UUID domain = jdbc.queryForObject("SELECT public_id FROM sender_groups WHERE account_id=? AND group_key=?",
+                UUID.class, account, "domain:host.example");
         var group = dashboard.page(account, filter("all", "")).groups().getFirst();
         assertThat(group.id()).isEqualTo(id);
         assertThat(group.label()).isEqualTo("LendingTree");
@@ -87,16 +101,62 @@ class DashboardJourneyTest extends PostgresJourneyTest {
         assertThat(dashboard.selection(account, filter("all", ""), List.of(id), null, revision)).hasSize(2);
         assertThat(dashboard.page(account, filter("all", "LendingTree")).groups().getFirst().label()).isEqualTo("LendingTree");
         assertThat(dashboard.page(account, filter("all", list)).groups().getFirst().label()).isEqualTo("LendingTree");
-        assertThat(repository.revision(account)).isEqualTo(revision);
-        // Friendly presentation must not overwrite persisted/manual labels or list keys.
-        assertThat(jdbc.queryForObject("SELECT group_key FROM sender_groups WHERE public_id=?", String.class, id)).isEqualTo("list:" + list);
-        jdbc.update("UPDATE sender_groups SET label='My lender' WHERE public_id=?", id);
-        assertThat(dashboard.page(account, filter("all", "")).groups().getFirst().label()).isEqualTo("My lender");
+        assertThat(dashboard.page(account, filter("all", "Hosting Billing")).groups()).singleElement()
+            .satisfies(g -> assertThat(g.label()).isEqualTo("Hosting Billing"));
+        var drilldown = DashboardFilter.from(Map.of("composition","domain:host.example"));
+        assertThat(dashboard.page(account, drilldown).groups()).extracting(DashboardRepository.Group::id)
+            .containsExactly(domain);
+        assertThat(dashboard.details(account, filter("all", ""), domain, 0).messages())
+            .extracting(DashboardRepository.Message::displayName, DashboardRepository.Message::address)
+            .containsExactly(tuple("Hosting Billing", "billing@host.example"));
+        assertThat(jdbc.queryForObject("SELECT label FROM sender_groups WHERE public_id=?", String.class, id)).isEqualTo(list);
+        var units = List.of(dashboard.grouping(account,id).units().getFirst().id(),
+            dashboard.grouping(account,domain).units().getFirst().id());
+        grouping.correct(account, new DashboardGroupingService.Correction("MERGE",units,"My accounts",null,revision),true);
+        assertThat(dashboard.page(account, filter("all", "")).groups()).extracting(DashboardRepository.Group::label)
+            .containsExactly("My accounts");
         verifyNoInteractions(gmailProvider, outlookProvider);
     }
 
-    @Test
-    void splitsTwoAddressesSharingOneListAndLeavesNewAddressesAutomatic() {
+    @ParameterizedTest
+    @ValueSource(strings = {"google", "microsoft"})
+    void domainEvidenceIdentifiesTheBrandAmongDifferentSavedNames(String provider) {
+        this.provider = provider;
+        if (provider.equals("microsoft")) account = userAccounts.createAccount("outlook@example.test", provider);
+        message("linkedin", "updates@linkedin.com", List.of("INBOX"), true, List.of(), false, NOW);
+        message("linkedin-jobs", "jobs@linkedin.com", List.of("INBOX"), true, List.of(), false, NOW);
+        message("linkedin-person", "member@linkedin.com", List.of("INBOX"), true, List.of(), false, NOW);
+        message("skechers", "offers@skechers.com", List.of("INBOX"), true, List.of(), false, NOW);
+        message("skechers-stores", "stores@skechers.com", List.of("INBOX"), true, List.of(), false, NOW);
+        listMessage("target", "orders@oe.target.com", "<7282972.xt.local>");
+        listMessage("target-circle", "offers@oe.target.com", "<7282972.xt.local>");
+        jdbc.update("""
+            UPDATE message_metadata SET from_display_name=CASE provider_message_id
+                WHEN 'linkedin' THEN 'LinkedIn'
+                WHEN 'linkedin-jobs' THEN 'LinkedIn Job Alerts'
+                WHEN 'linkedin-person' THEN 'A Member'
+                WHEN 'skechers' THEN 'SKECHERS'
+                WHEN 'skechers-stores' THEN 'Skechers Stores'
+                WHEN 'target' THEN 'Target'
+                WHEN 'target-circle' THEN 'Target Circle'
+            END WHERE account_id=?
+            """, account);
+        assertThat(dashboard.page(account, filter("inbox", "")).groups())
+            .extracting(DashboardRepository.Group::label, DashboardRepository.Group::messages)
+            .containsExactlyInAnyOrder(tuple("LinkedIn",3L),tuple("Skechers",2L),tuple("Target",2L));
+        assertThat(dashboard.page(account, filter("inbox", "Target Circle")).groups()).singleElement()
+            .satisfies(group -> {
+                assertThat(group.label()).isEqualTo("Target");
+                assertThat(dashboard.details(account,filter("inbox","Target Circle"),group.id(),0).messages())
+                    .extracting(DashboardRepository.Message::displayName).containsExactly("Target Circle");
+            });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"google", "microsoft"})
+    void splitsTwoAddressesSharingOneListAndLeavesNewAddressesAutomatic(String provider) {
+        this.provider = provider;
+        if (provider.equals("microsoft")) account = userAccounts.createAccount("outlook@example.test", provider);
         String list = "shared-list.example";
         String header = "News <" + list + ">";
         listMessage("list-a", "a@first.example", header);
@@ -132,26 +192,32 @@ class DashboardJourneyTest extends PostgresJourneyTest {
         var correction = jdbc.queryForObject("SELECT public_id FROM sender_group_corrections WHERE kind='SPLIT'",UUID.class);
         grouping.correct(account,new DashboardGroupingService.Correction("RESET",List.of(),null,correction,2),true);
         assertThat(dashboard.inboxComposition(account,filter)).singleElement().satisfies(bar -> {
-            assertThat(bar.label()).isEqualTo(list);
+            assertThat(bar.label()).isEqualTo("Multiple senders");
             assertThat(bar.messages()).isEqualTo(4L);
         });
         verifyNoInteractions(gmailProvider,outlookProvider);
     }
 
-    @Test
-    void mailingListNeverPicksOneBrandWhenFiltersHideConflictingNames() {
-        String list = "shared.sparkpostmail.com";
+    @ParameterizedTest
+    @ValueSource(strings = {"google", "microsoft"})
+    void mailingListNeverPicksOneBrandWhenFiltersHideConflictingNames(String provider) {
+        this.provider = provider;
+        if (provider.equals("microsoft")) account = userAccounts.createAccount("outlook@example.test", provider);
+        String list = "1050979.xt.local";
         listMessage("shared-a", "a@first.example", "News <" + list + ">");
-        listMessage("shared-b", "b@second.example", "News <" + list + ">");
+        listMessage("shared-b", "a@first.example", "News <" + list + ">");
         jdbc.update("UPDATE message_metadata SET from_display_name='First Brand' WHERE provider_message_id='shared-a'");
         jdbc.update("UPDATE message_metadata SET from_display_name='Second Brand',labels=ARRAY[]::text[] WHERE provider_message_id='shared-b'");
-        assertThat(dashboard.page(account, filter("all", "")).groups().getFirst().label()).isEqualTo(list);
-        assertThat(dashboard.page(account, filter("inbox", "First Brand")).groups().getFirst().label()).isEqualTo(list);
+        assertThat(dashboard.page(account, filter("all", "")).groups().getFirst().label()).isEqualTo("a@first.example");
+        var filteredGroup = dashboard.page(account, filter("inbox", "First Brand")).groups().getFirst();
+        assertThat(filteredGroup.label()).isEqualTo("a@first.example");
+        assertThat(dashboard.details(account, filter("all", ""), filteredGroup.id(), 0).messages())
+            .extracting(DashboardRepository.Message::displayName).containsExactly("First Brand", "Second Brand");
         jdbc.update("UPDATE message_metadata SET classification_override=CASE WHEN provider_message_id='shared-a' THEN 'MARKETING' ELSE 'NEWSLETTER' END");
         var category = new DashboardFilter("all", "", "", "", "UTC", 0, "MARKETING");
-        assertThat(dashboard.page(account, category).groups().getFirst().label()).isEqualTo(list);
+        assertThat(dashboard.page(account, category).groups().getFirst().label()).isEqualTo("a@first.example");
         jdbc.update("UPDATE message_metadata SET from_display_name='  ' WHERE account_id=?", account);
-        assertThat(dashboard.page(account, filter("all", "")).groups().getFirst().label()).isEqualTo(list);
+        assertThat(dashboard.page(account, filter("all", "")).groups().getFirst().label()).isEqualTo("a@first.example");
         verifyNoInteractions(gmailProvider, outlookProvider);
     }
 
@@ -173,7 +239,7 @@ class DashboardJourneyTest extends PostgresJourneyTest {
         assertThat(page.summary().get("groups")).isEqualTo(9L);
         assertThat(page.groups()).filteredOn(g -> g.label().equals("shop.example")).singleElement()
                 .satisfies(g -> assertThat(g.messages()).isEqualTo(3));
-        assertThat(page.groups()).filteredOn(g -> g.label().equals("list.shop.example")).singleElement()
+        assertThat(page.groups()).filteredOn(g -> g.label().equals("Multiple senders")).singleElement()
                 .satisfies(g -> {
                     assertThat(g.messages()).isEqualTo(2);
                     assertThat(g.addresses()).isEqualTo(2);
@@ -571,10 +637,11 @@ class DashboardJourneyTest extends PostgresJourneyTest {
                             INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,from_display_name,subject_header,
                               received_at,unread,labels,label_evidence_known,delivered_to_values,raw_from_values,
                               dashboard_from_address,dashboard_unit_kind,dashboard_unit_key,dashboard_identity_reason)
-                            VALUES(?,'google',?,?,?, ?,?,?,?,?,?,?,?,?,?,?) RETURNING dashboard_message_id
+                            VALUES(?,?,?,?,?, ?,?,?,?,?,?,?,?,?,?,?) RETURNING dashboard_message_id
                             """);
             int i = 1;
             ps.setLong(i++, account);
+            ps.setString(i++, provider);
             ps.setString(i++, id);
             ps.setString(i++, from.toLowerCase(Locale.ROOT));
             ps.setString(i++, "Display " + from);

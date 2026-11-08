@@ -37,11 +37,11 @@ class DashboardMigrationTest {
             INSERT INTO message_evidence(account_id,provider_message_id,evidence_version,evidence_hash,observed_at,facts)
             VALUES(?,'preserved','fixture','hash',now(),'{"parts":[]}')
             """,account);
-        var messages=jdbc.queryForObject("SELECT jsonb_agg((to_jsonb(m)-'outlook_folder_id'-'outlook_categories'-'outlook_web_link') ORDER BY id)::text FROM message_metadata m",String.class);
+        var messages=jdbc.queryForObject("SELECT jsonb_agg((to_jsonb(m)-'outlook_folder_id'-'outlook_categories'-'outlook_web_link'-'outlook_size_checked') ORDER BY id)::text FROM message_metadata m",String.class);
         var evidence=jdbc.queryForList("SELECT * FROM message_evidence ORDER BY account_id");
         var incoming=jdbc.queryForList("SELECT * FROM classification_incoming ORDER BY account_id,message_id");
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(10);
-        assertThat(jdbc.queryForObject("SELECT jsonb_agg((to_jsonb(m)-'outlook_folder_id'-'outlook_categories'-'outlook_web_link') ORDER BY id)::text FROM message_metadata m",String.class)).isEqualTo(messages);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(11);
+        assertThat(jdbc.queryForObject("SELECT jsonb_agg((to_jsonb(m)-'outlook_folder_id'-'outlook_categories'-'outlook_web_link'-'outlook_size_checked') ORDER BY id)::text FROM message_metadata m",String.class)).isEqualTo(messages);
         assertThat(jdbc.queryForList("SELECT * FROM message_evidence ORDER BY account_id")).isEqualTo(evidence);
         assertThat(jdbc.queryForList("SELECT * FROM classification_incoming ORDER BY account_id,message_id")).isEqualTo(incoming);
         for(String table:java.util.List.of("recommendation_policies","recommendation_corrections","message_recommendations",
@@ -91,7 +91,7 @@ class DashboardMigrationTest {
             WHERE unit_id=(SELECT id FROM sender_units WHERE account_id=? AND canonical_key='alias-b@marketplace.amazon.com')
             """,account,account);
         var before=jdbc.queryForList("SELECT dashboard_message_id,classification_override FROM message_metadata ORDER BY id");
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(13);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(14);
         assertThat(jdbc.queryForList("SELECT dashboard_message_id,classification_override FROM message_metadata ORDER BY id")).isEqualTo(before);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM sender_units WHERE automatic_group_key LIKE 'address:%'",Long.class)).isEqualTo(2);
         assertThat(jdbc.queryForObject("SELECT count(DISTINCT group_id) FROM sender_group_members",Long.class)).isEqualTo(3);
@@ -119,7 +119,7 @@ class DashboardMigrationTest {
             UPDATE sender_group_members SET group_id=(SELECT id FROM sender_groups WHERE account_id=? AND group_key='separate:fixture')
             WHERE unit_id=(SELECT id FROM sender_units WHERE account_id=? AND canonical_key='personal@quora.com')
             """,account,account);
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(18);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(19);
         assertThat(jdbc.queryForObject("""
             SELECT count(DISTINCT g.group_key) FROM sender_group_members member JOIN sender_groups g ON g.id=member.group_id
             WHERE member.account_id=?
@@ -185,7 +185,7 @@ class DashboardMigrationTest {
         jdbc.update(
                 "INSERT INTO dashboard_preview_targets(preview_id,account_id,ordinal,message_id,effective,reason) VALUES(?,?,0,?,true,'Eligible')",
                 missingPreview, account, java.util.UUID.randomUUID());
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(26);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(27);
         assertThat(jdbc.queryForObject("SELECT provider_message_id FROM dashboard_preview_targets WHERE preview_id=?",
                 String.class, retainedPreview)).isEqualTo("retained-1");
         assertThat(jdbc.queryForObject("SELECT invalidated_at IS NOT NULL FROM dashboard_previews WHERE public_id=?",
@@ -218,7 +218,7 @@ class DashboardMigrationTest {
                 account + 1)).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
         // A fresh installation also reaches the latest version with all tables and constraints.
         flyway(null).clean();
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(42);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(43);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM user_accounts", Long.class)).isZero();
         assertThat(
                 jdbc.queryForObject("SELECT count(*) FROM dashboard_domain_registry WHERE kind='SHARED'", Long.class))
@@ -253,7 +253,7 @@ class DashboardMigrationTest {
                 account, "separate:" + correction, unit);
         var messageIds = jdbc.queryForList("SELECT dashboard_message_id FROM message_metadata ORDER BY id");
         var unitIds = jdbc.queryForList("SELECT id,public_id FROM sender_units ORDER BY id");
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(23);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(24);
         assertThat(jdbc.queryForObject("SELECT count(DISTINCT group_id) FROM sender_group_members", Long.class))
                 .isEqualTo(2);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM sender_units WHERE automatic_group_key='domain:chase.com'",
@@ -302,7 +302,7 @@ class DashboardMigrationTest {
         jdbc.update(
                 "INSERT INTO cleanup_active_targets(account_id,target_fingerprint,job_id) VALUES(?,repeat('c',64),?)",
                 account, job);
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(25);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(26);
         assertThat(jdbc.queryForObject("SELECT pre_change_observed FROM cleanup_job_targets WHERE job_id=?",
                 Boolean.class, job)).isTrue();
         assertThat(jdbc.queryForObject("SELECT state FROM cleanup_job_targets WHERE job_id=?", String.class, job))
@@ -324,7 +324,7 @@ class DashboardMigrationTest {
         var job=java.util.UUID.randomUUID();
         jdbc.update("INSERT INTO dashboard_classification_jobs(public_id,account_id,status,total,done,cost_usd) VALUES(?,?,'COMPLETE',1,1,2)",job,account);
         var before=jdbc.queryForMap("SELECT classification_category,classification_override,classification_hash,classification_evidence_hash,classification_version,classified_at FROM message_metadata");
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(21);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(22);
         assertThat(jdbc.queryForMap("SELECT classification_category,classification_override,classification_hash,classification_evidence_hash,classification_version,classified_at FROM message_metadata")).isEqualTo(before);
         assertThat(jdbc.queryForObject("SELECT cost_usd FROM dashboard_classification_jobs",java.math.BigDecimal.class)).isEqualByComparingTo("2");
         assertThat(jdbc.queryForObject("SELECT reported FROM classification_budget",java.math.BigDecimal.class)).isEqualByComparingTo("0");
@@ -370,7 +370,7 @@ class DashboardMigrationTest {
         var holds = jdbc.queryForList("SELECT * FROM cleanup_active_targets WHERE job_id=? ORDER BY target_fingerprint",job);
         assertThat(holds).hasSize(50);
 
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(4);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(5);
         assertThat(jdbc.queryForMap("SELECT * FROM cleanup_jobs WHERE public_id=?",job)).isEqualTo(savedJob);
         assertThat(jdbc.queryForList(originalTargets,String.class,job)).isEqualTo(targets);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM cleanup_job_targets WHERE outlook_read_required OR outlook_read_completed", Long.class)).isZero();

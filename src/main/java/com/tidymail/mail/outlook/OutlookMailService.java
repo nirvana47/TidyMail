@@ -20,6 +20,8 @@ public class OutlookMailService {
     private static final String ME = "/v1.0/me/";
     private static final String MESSAGE_FIELDS = "id,conversationId,parentFolderId,receivedDateTime,lastModifiedDateTime,"
         + "internetMessageId,internetMessageHeaders,from,toRecipients,subject,isRead,isDraft,hasAttachments,categories,webLink";
+    private static final String SIZE_PROJECTION =
+        "$select=id&$expand=singleValueExtendedProperties($filter=id%20eq%20%27Integer%200x0E08%27)";
     private static final String FOLDER_FIELDS = "?$select=id,displayName,childFolderCount";
     private static final Map<String,String> SYSTEM_FOLDERS = Map.of(
         "inbox","INBOX", "archive","OUTLOOK_ARCHIVE", "sentitems","SENT",
@@ -111,6 +113,43 @@ public class OutlookMailService {
             }
         }
         return List.copyOf(messages.values());
+    }
+
+    record SizePage(Map<String,Long> sizes, String next) {}
+
+    SizePage listSizes(UserAccount account, String cursor) {
+        var page = get(account, cursor == null
+            ? ME + "messages?$top=100&$orderby=receivedDateTime%20desc&" + SIZE_PROJECTION : cursor);
+        var sizes = new LinkedHashMap<String,Long>();
+        for (var row : values(page)) {
+            Long size = messageSize(row);
+            if (size != null) sizes.put(required(row, "id"), size);
+        }
+        String next = text(page, "@odata.nextLink");
+        if (next != null && next.equals(cursor)) throw new IllegalStateException("OUTLOOK_SIZE_PAGE_LOOP");
+        return new SizePage(sizes, next);
+    }
+
+    Long currentSize(UserAccount account, String id) {
+        try {
+            var row = get(account, messagePath(id) + "?" + SIZE_PROJECTION);
+            if (!id.equals(required(row, "id"))) throw new IllegalStateException("OUTLOOK_MESSAGE_ID_CHANGED");
+            return messageSize(row);
+        } catch (CleanupProviderException error) {
+            if (error.status() == 404) return null;
+            throw error;
+        }
+    }
+
+    private static Long messageSize(JsonNode row) {
+        for (var property : row.path("singleValueExtendedProperties")) {
+            if (!property.path("id").asText().matches("(?i)Integer 0x0*e08")) continue;
+            String value = property.path("value").asText();
+            if (!value.matches("[0-9]{1,10}")) return null;
+            long bytes = Long.parseLong(value);
+            return bytes <= Integer.MAX_VALUE ? bytes : null;
+        }
+        return null;
     }
 
     public record Delta(List<MailMessage> messages, Set<String> reconcile, String cursor, boolean finished) {}

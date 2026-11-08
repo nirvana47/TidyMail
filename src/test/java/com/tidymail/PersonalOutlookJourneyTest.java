@@ -155,6 +155,36 @@ class PersonalOutlookJourneyTest extends PostgresJourneyTest {
         assertThat(detail(move).outlookFolder()).isEqualTo("Archive");
     }
 
+    @Test void sizesResumeSeparatelyAndDriveTheExactLargeMailPreview() throws Exception {
+        fixture.failSizePage = true;
+        drain();
+        assertThat(states.findByAccountId(accountId).orElseThrow().incrementalLastSuccessAt()).isNotNull();
+        assertThat(detail(id("move")).sizeEstimate()).isEqualTo(2_000_000);
+        assertThat(detail(id("comment")).sizeEstimate()).isNull();
+        assertThat(jdbc.queryForObject("SELECT next_link FROM outlook_size_scan WHERE account_id=?", String.class, accountId))
+            .isEqualTo(ROOT+"messages?$skiptoken=sizes2");
+        fixture.round = 4;
+        drain();
+        assertThat(detail(id("move")).sizeEstimate()).isEqualTo(2_000_000);
+        assertThat(detail(id("comment")).sizeEstimate()).isEqualTo(3_000_000);
+        var filter = DashboardFilter.from(Map.of("scope","all","suggestion","large","sort","size"));
+        assertThat(count(filter)).isEqualTo(2);
+        assertThat(dashboard.page(accountId, filter).groups().getFirst().knownBytes()).isEqualTo(3_000_000);
+        var preview = previews.create(accountId, new DashboardPreviewService.Request(filter,
+            List.of(id("move"),id("gone"),id("sent-item")), "TRASH", dashboard.revision(accountId)));
+        assertThat(preview.effective()).isEqualTo(1);
+        assertThat(preview.effectiveBytes()).isEqualTo(2_000_000);
+        assertThat(fixture.writes).isEmpty();
+        fixture.put("new","in","new@example.test","New message");
+        fixture.sizes.put("new", 1_500_000L);
+        drain();
+        assertThat(detail(id("new")).sizeEstimate()).isEqualTo(1_500_000);
+        assertThat(count(filter)).isEqualTo(3);
+        mockMvc.perform(get("/dashboard").with(authentication(outlookAuth(account))))
+            .andExpect(status().isOk())
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("id=\"suggestionsView\" aria-pressed=\"false\"")));
+    }
+
     @Test void localLabelsUseOnlySavedOutlookEvidence() {
         importMailbox();
         assertThat(labels.status(accountId).enabled()).isTrue();
@@ -246,12 +276,14 @@ class PersonalOutlookJourneyTest extends PostgresJourneyTest {
     private class GraphFixture {
         final Map<String,com.fasterxml.jackson.databind.node.ObjectNode> messages = new LinkedHashMap<>();
         final List<String> writes = new ArrayList<>();
+        final Map<String,Long> sizes = new HashMap<>(Map.of("move",2_000_000L,"gone",1_000_000L,
+            "comment",3_000_000L,"sent-item",4_000_000L,"draft-item",5_000_000L));
         final Map<String,String> wellKnown = Map.of("inbox","in", "archive","arc", "sentitems","sent",
             "drafts","draft", "deleteditems","del", "junkemail","junk", "outbox","out", "searchfolders","search");
         int round = 1;
         int revision = 1;
         boolean failNextInboxPage, rename, removeNested, failInventory, rejectMove, loseMoveResponse, failMessageReadAfterMove;
-        boolean afterMove;
+        boolean afterMove, failSizePage;
 
         GraphFixture() {
             put("move","in","user@example.test","Project update");
@@ -295,8 +327,15 @@ class PersonalOutlookJourneyTest extends PostgresJourneyTest {
             }
             if (path.equals(ME+"mailFolders/projects/childFolders"))
                 return page(List.of(folder("sub","Nested",0)),null,null);
-            if (path.equals(ME+"messages"))
+            if (path.equals(ME+"messages")) {
+                if (url.contains("singleValueExtendedProperties"))
+                    return page(List.of(size("move")),ROOT+"messages?$skiptoken=sizes2",null);
+                if (url.contains("sizes2")) {
+                    if (failSizePage) { failSizePage=false; throw new CleanupProviderException(503,null); }
+                    return page(messages.keySet().stream().filter(id -> !id.equals("move")).map(this::size).toList(),null,null);
+                }
                 return page(messages.values().stream().map(JsonNode.class::cast).toList(),null,null);
+            }
             if (path.startsWith(ME+"messages/")) {
                 if (afterMove && failMessageReadAfterMove) {
                     failMessageReadAfterMove=false;
@@ -304,7 +343,7 @@ class PersonalOutlookJourneyTest extends PostgresJourneyTest {
                 }
                 var message = messages.get(path.substring((ME+"messages/").length()));
                 if (message == null) throw new CleanupProviderException(404,null);
-                return message.deepCopy();
+                return url.contains("singleValueExtendedProperties") ? size(message.path("id").asText()) : message.deepCopy();
             }
             var parts=path.substring((ME+"mailFolders/").length()).split("/");
             String folder=parts[0];
@@ -320,6 +359,14 @@ class PersonalOutlookJourneyTest extends PostgresJourneyTest {
             if(round==2 && folder.equals("in"))
                 return page(List.of(removed("move"),removed("gone")),null,completed);
             return page(in(folder),null,completed);
+        }
+
+        JsonNode size(String id) {
+            var row = json.createObjectNode().put("id",id);
+            Long bytes = sizes.get(id);
+            if (bytes != null) row.putArray("singleValueExtendedProperties").addObject()
+                .put("id","Integer 0xe08").put("value",bytes.toString());
+            return row;
         }
 
         void move(String id, String folder) { messages.get(id).put("parentFolderId",folder).put("lastModifiedDateTime",modified()); }

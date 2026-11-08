@@ -84,7 +84,7 @@ class LabelingScaleJourneyTest extends PostgresJourneyTest {
         long idleStart=System.nanoTime();dashboard.page(account,filter);double idleMs=(System.nanoTime()-idleStart)/1_000_000.;
         System.out.printf(Locale.ROOT,"LABELING_SCALE_IDLE rows=%d page_ms=%.2f%n",size,idleMs);
         if(Boolean.getBoolean("labeling.scale.diagnostic")) {
-            named.queryForList("EXPLAIN (ANALYZE,BUFFERS,TIMING OFF) "+dashboard.filtered(filter)+" SELECT count(*) FROM filtered",dashboard.parameters(account,filter),String.class).forEach(System.out::println);
+            named.queryForList("EXPLAIN (ANALYZE,BUFFERS,TIMING OFF) "+dashboard.filtered(account, filter)+" SELECT count(*) FROM filtered",dashboard.parameters(account,filter),String.class).forEach(System.out::println);
         }
         if(Boolean.getBoolean("labeling.scale.hold")) {
             System.out.println("LABELING_FIXTURE_READY "+POSTGRES.getJdbcUrl());

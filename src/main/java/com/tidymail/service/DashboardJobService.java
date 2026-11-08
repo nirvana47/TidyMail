@@ -90,7 +90,7 @@ public class DashboardJobService {
             if(!filter.category().isEmpty() || !filter.recommendation().isEmpty() || !filter.importance().isEmpty() || !filter.label().isEmpty() || !filter.labels().isEmpty() || !filter.composition().isEmpty()) {
                 var eligibleIds=targets.stream().filter(t->Boolean.TRUE.equals(t.get("effective"))).map(t->(UUID)t.get("message_id")).toList();
                 var current=repository.parameters(account,filter).addValue("ids",new org.springframework.jdbc.support.SqlArrayValue("uuid",eligibleIds.toArray()));
-                long matching=jdbc.queryForObject(repository.filtered(filter)+" SELECT count(*) FROM filtered WHERE dashboard_message_id=ANY(:ids)",current,Long.class);
+                long matching=jdbc.queryForObject(repository.filtered(account, filter)+" SELECT count(*) FROM filtered WHERE dashboard_message_id=ANY(:ids)",current,Long.class);
                 if(matching!=eligibleIds.size()) throw conflict("Recommendations or labels changed. Create a new preview.");
             }
             var scope=scopes.requireScope(account,((Number)row.get("scope_id")).longValue());
@@ -203,7 +203,7 @@ public class DashboardJobService {
             lockMetadata(claim.account(),claim.targets());
             var dispatchFilter = claim.filter().withoutComposition().cleanupScope();
             var p=repository.parameters(claim.account(),dispatchFilter).addValue("ids",claim.targets().stream().map(Target::messageId).toList()).addValue("action",claim.action());
-            Set<UUID> eligible=new HashSet<>(jdbc.queryForList(repository.filtered(dispatchFilter)+"""
+            Set<UUID> eligible=new HashSet<>(jdbc.queryForList(repository.filtered(claim.account(), dispatchFilter)+"""
                 SELECT dashboard_message_id FROM filtered f WHERE dashboard_message_id IN (:ids)
                 AND (:action<>'MARK_READ' OR unread)
                 AND (:action NOT IN ('ARCHIVE','MARK_READ_ARCHIVE') OR (:action='MARK_READ_ARCHIVE' AND unread)

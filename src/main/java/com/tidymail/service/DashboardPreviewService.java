@@ -37,7 +37,7 @@ public class DashboardPreviewService {
         if((!request.filter().category().isEmpty() || !request.filter().labels().isEmpty()) && request.classificationRevision()!=null && request.classificationRevision()!=repository.classificationRevision(account))throw conflict("Categories changed. Create a new preview.");
         var ids=request.ids().stream().distinct().toList();
         var p=repository.parameters(account,request.filter().cleanupScope()).addValue("ids",new org.springframework.jdbc.support.SqlArrayValue("uuid",ids.toArray()));
-        var targets=jdbc.queryForList(repository.filtered(request.filter().cleanupScope())+"""
+        var targets=jdbc.queryForList(repository.filtered(account, request.filter().cleanupScope())+"""
           SELECT m.provider_message_id,m.dashboard_message_id,m.subject_header,m.size_estimate,
             COALESCE(m.dashboard_from_address,m.from_address,'Unknown sender') address,m.received_at,
             f.id IS NOT NULL AS eligible,m.provider,

@@ -9,14 +9,17 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public class DashboardRepository {
+    private static final Pattern BRAND_SEPARATORS = Pattern.compile("[^a-z0-9]");
     private final NamedParameterJdbcTemplate jdbc;
 
     public DashboardRepository(NamedParameterJdbcTemplate jdbc) {
@@ -166,10 +169,13 @@ public class DashboardRepository {
 
                     """;
 
-    private static final String BASIC_FILTERED = FILTERED
+    private static final String KEYED_BASIC_FILTERED = FILTERED
             .replace(RecommendationSql.ACCOUNT_CONTEXT+", pending", " pending")
             .replace("JOIN account_context a ON a.id=m.account_id", "JOIN user_accounts a ON a.id=m.account_id")
             .replace(RecommendationSql.JOINS, "")
+            .replace(RECOMMENDATION_FILTERS, "")
+            .replace(LABELING_CATEGORY, CATEGORY);
+    private static final String BASIC_FILTERED = KEYED_BASIC_FILTERED
             .replace(GROUPING_LOOKUP,"""
                 JOIN sender_units u ON u.account_id=link.account_id AND u.id="""+EFFECTIVE_UNIT+"""
 
@@ -180,9 +186,7 @@ public class DashboardRepository {
             .replace("identity.group_key","g.group_key").replace("identity.group_label,","g.label AS group_label,")
             .replace("identity.unit_public_id","u.public_id AS unit_public_id").replace("identity.unit_kind","u.kind AS unit_kind")
             .replace("identity.unit_key","u.canonical_key AS unit_key").replace("identity.evidence_reason","u.evidence_reason")
-            .replace("lower(identity.group_label)","lower(g.label)")
-            .replace(RECOMMENDATION_FILTERS, "")
-            .replace(LABELING_CATEGORY, CATEGORY);
+            .replace("lower(identity.group_label)","lower(g.label)");
     private static final String CURRENT_ACTION_FILTERED = FILTERED.replace(RECOMMENDATION_FILTERS,
         "AND saved.result->>'action'=:recommendation AND "+RecommendationSql.CURRENT+"\n"
         +"AND (:importance='' OR saved.result->>'importance'=:importance)\n"
@@ -190,8 +194,15 @@ public class DashboardRepository {
         +"CASE :label WHEN 'HUMAN_CORRESPONDENCE' THEN 'PERSONAL' ELSE :label END)\n")
         .replace(LABELING_CATEGORY,"COALESCE(m.classification_override,NULLIF(saved.result->>'purpose','UNKNOWN'),"+CATEGORY+")");
     /** Avoid enrichment joins entirely on the ordinary browsing path. */
-    public String filtered(DashboardFilter filter) {
-        if(filter.category().isEmpty() && filter.recommendation().isEmpty() && filter.importance().isEmpty() && filter.label().isEmpty() && filter.labels().isEmpty()) return BASIC_FILTERED;
+    public String filtered(long account, DashboardFilter filter) {
+        if (filter.category().isEmpty() && filter.recommendation().isEmpty() && filter.importance().isEmpty()
+                && filter.label().isEmpty() && filter.labels().isEmpty()) {
+            // Outlook's smaller index can make the ordinary join rescan the mailbox for each sender.
+            // The keyed lookup avoids that plan while the ordinary join is faster on Gmail.
+            var provider = jdbc.queryForObject("SELECT provider FROM user_accounts WHERE id=:account",
+                Map.of("account", account), String.class);
+            return "microsoft".equals(provider) ? KEYED_BASIC_FILTERED : BASIC_FILTERED;
+        }
         if(!filter.recommendation().isEmpty() && !java.util.Set.of("PENDING","STALE").contains(filter.recommendation()) && filter.labels().isEmpty()) return CURRENT_ACTION_FILTERED;
         return FILTERED;
     }
@@ -225,7 +236,6 @@ public class DashboardRepository {
     public Page page(long account, DashboardFilter filter) {
         var p = parameters(account, filter);
         var summary = new java.util.LinkedHashMap<String,Object>();
-        var mailingLists = new ArrayList<UUID>();
         var collected = new ArrayList<Group>();
         // Count and page one grouped snapshot instead of scanning the enriched mailbox twice.
         String order = switch (filter.sort()) {
@@ -234,7 +244,7 @@ public class DashboardRepository {
             case "size" -> "known_bytes DESC,";
             default -> "";
         };
-        jdbc.query(filtered(filter)+GROUP_COUNTS+"""
+        jdbc.query(filtered(account, filter)+GROUP_COUNTS+"""
                 , totals AS (
                   SELECT COALESCE(sum(messages),0)::bigint messages,COALESCE(sum(unread),0)::bigint unread,count(*) groups,
                     COALESCE(sum(undated),0)::bigint undated,COALESCE(sum(known_bytes),0) known_bytes,
@@ -249,17 +259,22 @@ public class DashboardRepository {
                 """+order+" messages DESC,group_key",p,(org.springframework.jdbc.core.RowCallbackHandler)r->{
             for(String key:List.of("messages","unread","groups","undated","known_bytes","unknown_sizes"))summary.put(key,r.getObject("total_"+key));
             if (uuid(r,"group_public_id") == null) return;
-            Group group = group(r);
-            if (needsDisplayName(r.getString("group_key"), group.label())) mailingLists.add(group.id());
-            collected.add(group);
+            collected.add(group(r));
         });
-        var groups = labelMailingLists(account,collected,mailingLists);
+        var names = displayNames(account, collected.stream().map(Group::id).toList());
+        var groups = collected.stream().map(g -> names.containsKey(g.id())
+                ? new Group(g.id(), names.get(g.id()), g.messages(), g.unread(), g.latest(), g.addresses(),
+                        g.evidence(), g.pending(), g.address(), g.knownBytes(), g.unknownSizes(), g.inbox())
+                : g).toList();
         var coverage = jdbc.queryForMap(
                 """
                         SELECT count(*) indexed,min(m.received_at) oldest,max(m.received_at) newest,
                           max(m.last_synced_at) as_of,
                           count(*) FILTER(WHERE NOT m.label_evidence_known AND cardinality(m.labels)=0) unknown_labels,
                           count(*) FILTER(WHERE m.dashboard_from_address IS NULL) unknown_identity,
+                          count(*) FILTER(WHERE m.provider='microsoft' AND m.size_estimate IS NULL
+                            AND (""" + RECEIVED + """
+                            )) outlook_unknown_sizes,
                           count(*) FILTER(WHERE 'SENT'=ANY(m.labels) AND NOT('INBOX'=ANY(m.labels)) AND NOT (
                         """ + DELIVERY
                         + """
@@ -279,7 +294,7 @@ public class DashboardRepository {
 
     public List<Composition> inboxComposition(long account, DashboardFilter filter) {
         var inbox = filter.inbox();
-        var bars = jdbc.query(filtered(inbox) + GROUP_COUNTS + """
+        var bars = jdbc.query(filtered(account, inbox) + GROUP_COUNTS + """
                 , buckets AS (
                   SELECT ("""+COMPOSITION_KEY+"""
                   ) AS key, group_label, messages FROM group_counts
@@ -290,7 +305,6 @@ public class DashboardRepository {
                     r.getString("key"),r.getString("label"),r.getLong("messages")));
         var addresses = bars.stream().filter(bar -> bar.key().startsWith("group:"))
             .map(bar -> UUID.fromString(bar.key().substring(6))).toList();
-        if (addresses.isEmpty()) return bars;
         var names = displayNames(account, addresses);
         return bars.stream().map(bar -> bar.key().startsWith("group:")
                 ? new Composition(bar.key(), names.getOrDefault(UUID.fromString(bar.key().substring(6)), bar.label()),
@@ -300,10 +314,6 @@ public class DashboardRepository {
 
     public record Composition(String key, String label, long messages) {}
 
-    private static boolean needsDisplayName(String key, String label) {
-        return key.equals("list:" + label) || key.startsWith("address:");
-    }
-
     private static Group group(ResultSet r) throws SQLException {
         return new Group(uuid(r,"group_public_id"), r.getString("group_label"), r.getLong("messages"),
                 r.getLong("unread"), instant(r,"latest"), r.getLong("addresses"),
@@ -312,39 +322,88 @@ public class DashboardRepository {
     }
 
     /**
-     * Display evidence never changes membership or overrides a saved label.
-     * Read the whole received group so a search/category/page cannot hide
-     * conflicting names.
+     * Read the whole indexed group so filters cannot hide conflicting names.
+     * Combine and Split labels are saved corrections.
      */
-    private List<Group> labelMailingLists(long account, List<Group> groups, List<UUID> mailingLists) {
-        if (mailingLists.isEmpty())
-            return groups;
-        var names = displayNames(account, mailingLists);
-        return groups.stream().map(g -> names.containsKey(g.id())
-                ? new Group(g.id(), names.get(g.id()), g.messages(), g.unread(), g.latest(), g.addresses(),
-                        g.evidence(), g.pending(), g.address(), g.knownBytes(), g.unknownSizes(), g.inbox())
-                : g).toList();
-    }
-
     private Map<UUID, String> displayNames(long account, List<UUID> groups) {
+        if (groups.isEmpty()) return Map.of();
         var names = new HashMap<UUID, String>();
         var p = new MapSqlParameterSource("account", account).addValue("groups", groups);
         jdbc.query("""
-                SELECT g.public_id, count(DISTINCT NULLIF(btrim(m.from_display_name),'')) name_count,
-                  min(NULLIF(btrim(m.from_display_name),'')) display_name
+                WITH evidence AS (
+                SELECT g.public_id, array_agg(DISTINCT sender.name ORDER BY sender.name)
+                    FILTER (WHERE sender.name IS NOT NULL) AS saved_names,
+                  CASE
+                    WHEN split_part(g.group_key,':',1) IN ('domain','organization','classified-domain')
+                      THEN split_part(g.group_key,':',2)
+                    WHEN min(sender.domain)=max(sender.domain) THEN min(sender.domain)
+                  END AS sender_host,
+                  CASE
+                  WHEN split_part(g.group_key,':',1) IN ('domain','organization','classified-domain')
+                    THEN split_part(g.group_key,':',2)
+                  WHEN g.group_key LIKE 'address:%' THEN substring(g.group_key FROM 9)
+                  WHEN min(sender.address)=max(sender.address) THEN min(sender.address)
+                  WHEN min(sender.domain)=max(sender.domain) THEN min(sender.domain)
+                  WHEN min(sender.address) IS NULL THEN 'Unknown sender'
+                  ELSE 'Multiple senders'
+                END AS display_name
                 FROM message_metadata m
                 JOIN message_sender_units link ON link.account_id=m.account_id AND link.metadata_id=m.id
                 """+ADDRESS_MEMBERSHIP+"""
                 JOIN sender_group_members member ON member.account_id=link.account_id AND member.unit_id="""+EFFECTIVE_UNIT+"""
                 JOIN sender_groups g ON g.account_id=member.account_id AND g.id=member.group_id
-                JOIN user_accounts a ON a.id=m.account_id
+                CROSS JOIN LATERAL (
+                  SELECT NULLIF(btrim(m.from_display_name),'') AS name,
+                    COALESCE(NULLIF(m.dashboard_from_address,''),NULLIF(m.from_address,'')) AS address,
+                    NULLIF(lower(split_part(COALESCE(NULLIF(m.dashboard_from_address,''),m.from_address),'@',2)),'') AS domain
+                ) sender
                 WHERE m.account_id=:account AND g.public_id IN (:groups)
-                    AND (g.group_key LIKE 'address:%' OR g.group_key='list:'||g.label) AND
-                """ + RECEIVED + " GROUP BY g.public_id", p, r -> {
-            if (r.getLong("name_count") == 1)
-                names.put(uuid(r, "public_id"), r.getString("display_name"));
-        });
+                  AND g.group_key NOT LIKE 'manual:%'
+                  AND NOT (g.group_key LIKE 'separate:%' AND split_part(g.group_key,':',3) IN ('first','rest'))
+                GROUP BY g.public_id,g.group_key
+                )
+                SELECT public_id,saved_names,display_name,
+                  CASE WHEN cardinality(saved_names)>1
+                    THEN split_part(dashboard_organization_domain(sender_host),'.',1) END AS brand_key
+                FROM evidence
+                """, p, (org.springframework.jdbc.core.RowCallbackHandler) r -> {
+                    var saved = r.getArray("saved_names");
+                    names.put(uuid(r, "public_id"), senderName(saved == null ? new String[0] : (String[]) saved.getArray(),
+                            r.getString("brand_key"), r.getString("display_name")));
+                });
         return names;
+    }
+
+    private static String senderName(String[] savedNames, String brandKey, String fallback) {
+        if (savedNames.length == 1) return savedNames[0];
+        if (brandKey == null) return fallback;
+        String normalizedKey = normalizedBrand(brandKey);
+        String brand = null;
+        for (String name : savedNames) {
+            if (!normalizedKey.equals(normalizedBrand(name))) continue;
+            if (hasMixedCase(name)) return name;
+            if (brand == null) brand = name;
+        }
+        if (brand == null) return fallback;
+
+        // A longer saved name can preserve the brand's spelling when the exact name is all caps.
+        for (String name : savedNames) {
+            int length = brand.length();
+            if (name.length() > length && Character.isWhitespace(name.charAt(length))
+                    && name.regionMatches(true, 0, brand, 0, length)) {
+                String prefix = name.substring(0, length);
+                if (hasMixedCase(prefix)) return prefix;
+            }
+        }
+        return brand;
+    }
+
+    private static String normalizedBrand(String name) {
+        return BRAND_SEPARATORS.matcher(name.toLowerCase(Locale.ROOT)).replaceAll("");
+    }
+
+    private static boolean hasMixedCase(String name) {
+        return name.chars().anyMatch(Character::isUpperCase) && name.chars().anyMatch(Character::isLowerCase);
     }
 
     public long revision(long account) {
@@ -374,9 +433,10 @@ public class DashboardRepository {
         var p = parameters(account, filter).addValue("group", group).addValue("message_offset", messagePage * 10L).addValue("address",address);
         requireGroup(p);
         String inGroup=" FROM filtered WHERE group_public_id=:group"+" AND (CAST(:address AS text) IS NULL OR address=:address)" + (unreadOnly ? " AND unread" : "");
-        long total = jdbc.queryForObject(filtered(filter) + "SELECT count(*)" + inGroup, p, Long.class);
+        String filtered = filtered(account, filter);
+        long total = jdbc.queryForObject(filtered + "SELECT count(*)" + inGroup, p, Long.class);
         List<Message> messages = jdbc.query(
-                filtered(filter) + """
+                filtered + """
                 SELECT filtered.*,
                 (SELECT folder_path FROM outlook_folders o WHERE o.account_id=filtered.account_id
                     AND o.folder_id=filtered.outlook_folder_id) outlook_folder,
@@ -406,7 +466,7 @@ public class DashboardRepository {
         var p = parameters(account, filter).addValue("group", group);
         requireGroup(p);
         var addresses = jdbc.query(
-                filtered(filter) + "SELECT address,max(NULLIF(from_display_name,'')) display_name,count(*) messages,count(*) FILTER(WHERE unread) unread FROM filtered WHERE group_public_id=:group"
+                filtered(account, filter) + "SELECT address,max(NULLIF(from_display_name,'')) display_name,count(*) messages,count(*) FILTER(WHERE unread) unread FROM filtered WHERE group_public_id=:group"
                         + " GROUP BY address ORDER BY address",
                 p, (r, n) -> new Address(r.getString("address"), r.getLong("messages"), r.getLong("unread"),r.getString("display_name")));
         return new Addresses(addresses, revision(account), classificationRevision(account));
@@ -456,7 +516,7 @@ public class DashboardRepository {
                 Long.class) != groups.stream().distinct().count())
             throw new org.springframework.web.server.ResponseStatusException(
                     org.springframework.http.HttpStatus.NOT_FOUND, "Sender group unavailable for this account");
-        return jdbc.query(filtered(filter)
+        return jdbc.query(filtered(account, filter)
                 + "SELECT dashboard_message_id,group_public_id,address FROM filtered WHERE (CAST(:address AS text) IS NULL OR address=:address)"
                 + (allMatching ? "" : " AND group_public_id IN (:groups)")
                 + (unreadOnly ? " AND unread" : "") + " ORDER BY provider_message_id",

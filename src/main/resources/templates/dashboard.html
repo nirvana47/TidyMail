@@ -44,8 +44,8 @@
                         sync…</span><button id="activityOpen">Activity</button></div>
             </div>
         </header>
-        <nav class="row" aria-label="Mailbox views"><button id="sendersView" aria-pressed="true">Senders</button><button id="suggestionsView" th:hidden="${outlook}" aria-pressed="false">Suggestions</button></nav>
-        <section id="suggestionsPanel" class="surface evidence" hidden><h2>Suggestions</h2><button id="largeEmails">Large emails (&gt;1 MB)</button><button id="patternsOpen">Review Amazon / Quora patterns</button><p>Find large messages, including archived and Sent mail. Review and select emails before taking action.</p></section>
+        <nav class="row" aria-label="Mailbox views"><button id="sendersView" aria-pressed="true">Senders</button><button id="suggestionsView" aria-pressed="false">Suggestions</button></nav>
+        <section id="suggestionsPanel" class="surface evidence" hidden><h2>Suggestions</h2><button id="largeEmails">Large emails (&gt;1 MB)</button><button id="patternsOpen" th:hidden="${outlook}">Review Amazon / Quora patterns</button><p th:text="${outlook ? 'Find large received messages, including archived mail. Review and select emails before taking action.' : 'Find large messages, including archived and Sent mail. Review and select emails before taking action.'}">Find large messages.</p></section>
         <details class="surface evidence" aria-label="Email recommendations"><summary>Label and recommendation status</summary>
             <div class="row"><strong>Labels</strong><span id="labelingCoverage" role="status">Checking label coverage…</span><button id="labelingOpen" th:hidden="${outlook}" type="button">Label / reclassify emails</button></div>
             <div class="row"><strong>Recommendations</strong><span id="recommendationStatus" role="status">Checking…</span>
@@ -132,7 +132,7 @@
             </div>
             <details class="coverage"><summary>Index coverage</summary><p id="coverage"></p></details>
         </section>
-        <p id="activeSuggestion" class="evidence" hidden>Large emails (&gt;1 MB) · Whole-message size, including inline images. <button id="clearSuggestion">Show all sizes</button></p>
+        <p id="activeSuggestion" class="evidence" hidden>Large emails (&gt;1 MB) · Whole-message size, including inline images. <span id="sizeCoverage"></span> <button id="clearSuggestion">Show all sizes</button></p>
         <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
         <details id="composition" class="surface composition">
             <summary>Inbox composition</summary>

@@ -27,8 +27,11 @@ public class OutlookSyncService {
         this.states = states;
     }
 
-    private record Round(UUID id, boolean inventory, boolean recent) {}
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(OutlookSyncService.class);
+
+    private record Round(UUID id, boolean inventory, boolean recent, boolean metadataComplete) {}
     private record Cursor(String folder, String link, UUID baseline) {}
+    private record SizeScan(String link, boolean listed) {}
 
     /** One owned unit. Folder inventory, a recent batch, a delta page, or bounded reconciliations. */
     public SyncOutcome synchronize(UserAccount account, String lease) {
@@ -50,8 +53,10 @@ public class OutlookSyncService {
     private boolean unit(UserAccount account, String lease) {
         long id = account.getId();
         Round round = jdbc.query("""
-            SELECT round_id,inventory_complete,recent_complete FROM outlook_sync_round WHERE account_id=?
-            """, rs -> rs.next() ? new Round(rs.getObject(1, UUID.class), rs.getBoolean(2), rs.getBoolean(3)) : null, id);
+            SELECT round_id,inventory_complete,recent_complete,metadata_complete FROM outlook_sync_round WHERE account_id=?
+            """, rs -> rs.next() ? new Round(rs.getObject(1, UUID.class), rs.getBoolean(2), rs.getBoolean(3),
+                rs.getBoolean(4)) : null, id);
+        if (round != null && round.metadataComplete()) return sizeUnit(account, lease);
         if (round == null || !round.inventory()) {
             var inventory = outlook.inventory(account);
             commit(id, lease, () -> publishInventory(id, round, inventory));
@@ -101,12 +106,76 @@ public class OutlookSyncService {
             return true;
         }
         commit(id, lease, () -> {
-            jdbc.update("DELETE FROM outlook_sync_round WHERE account_id=?", id);
+            jdbc.update("UPDATE outlook_sync_round SET metadata_complete=true WHERE account_id=?", id);
             jdbc.update("""
                 UPDATE mailbox_sync_state SET backfill_status='COMPLETE',lifecycle='ACTIVE',
                     backfill_completed_at=COALESCE(backfill_completed_at,now()),incremental_last_success_at=now()
                 WHERE account_id=?
                 """, id);
+        });
+        return true;
+    }
+
+    // Size metadata is optional and has its own cursor. Failure here must not stall mail refresh.
+    private boolean sizeUnit(UserAccount account, String lease) {
+        long id = account.getId();
+        var scan = jdbc.query("SELECT next_link,listed FROM outlook_size_scan WHERE account_id=?",
+            rs -> rs.next() ? new SizeScan(rs.getString(1), rs.getBoolean(2))
+                : new SizeScan(null, false), id);
+        if (!scan.listed()) {
+            OutlookMailService.SizePage page;
+            try {
+                page = outlook.listSizes(account, scan.link());
+            } catch (RuntimeException error) {
+                return deferSizes(id, lease, scan, error);
+            }
+            commit(id, lease, () -> {
+                saveSizes(id, page.sizes());
+                jdbc.update("""
+                    INSERT INTO outlook_size_scan(account_id,next_link,listed) VALUES (?,?,?)
+                    ON CONFLICT(account_id) DO UPDATE SET next_link=EXCLUDED.next_link,listed=EXCLUDED.listed
+                    """, id, page.next(), page.next() == null);
+            });
+            return true;
+        }
+
+        // Catch mail delivered or moved during the listing, and new mail from later delta rounds.
+        var targets = jdbc.queryForList("""
+            SELECT provider_message_id FROM message_metadata
+            WHERE account_id=? AND provider='microsoft' AND size_estimate IS NULL AND NOT outlook_size_checked
+              AND NOT(labels && ARRAY['SENT','TRASH','SPAM','DRAFT','OUTLOOK_EXCLUDED'])
+            ORDER BY id LIMIT 10
+            """, String.class, id);
+        if (targets.isEmpty()) {
+            commit(id, lease, () -> jdbc.update("DELETE FROM outlook_sync_round WHERE account_id=?", id));
+            return false;
+        }
+        var sizes = new LinkedHashMap<String,Long>();
+        try {
+            for (var target : targets) {
+                sizes.put(target, outlook.currentSize(account, target));
+            }
+        } catch (RuntimeException error) {
+            return deferSizes(id, lease, scan, error);
+        }
+        commit(id, lease, () -> saveSizes(id, sizes));
+        return true;
+    }
+
+    private void saveSizes(long account, Map<String,Long> sizes) {
+        jdbc.batchUpdate("""
+            UPDATE message_metadata SET size_estimate=?,outlook_size_checked=true
+            WHERE account_id=? AND provider='microsoft' AND provider_message_id=? AND size_estimate IS NULL
+            """, sizes.entrySet().stream().map(size -> new Object[]{size.getValue(),account,size.getKey()}).toList());
+    }
+
+    private boolean deferSizes(long account, String lease, SizeScan scan, RuntimeException error) {
+        int status = error instanceof CleanupProviderException failure ? failure.status() : 0;
+        log.warn("Outlook size scan deferred for account {} (status {})", account, status);
+        commit(account, lease, () -> {
+            if (scan.link() != null && (status == 400 || status == 410))
+                jdbc.update("UPDATE outlook_size_scan SET next_link=NULL WHERE account_id=?", account);
+            jdbc.update("DELETE FROM outlook_sync_round WHERE account_id=?", account);
         });
         return false;
     }

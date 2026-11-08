@@ -72,7 +72,7 @@ class DashboardClassificationTest extends PostgresJourneyTest {
         mail("shivani.tewari@gene.com","Shivani Tewari","Dinner tonight?");mail("shivani.tewari2016@gmail.com","Shivani Tewari","Our plans");mail("shivani.tewari20166@gmail.com","Shivani Tewari","A different address");
         UUID receipt=mail("orders@amazon.com","Amazon","Your receipt");UUID offer=mail("orders@amazon.com","Amazon","Special offer");finish();
         var page=dashboard.page(account,filter(""));assertThat(page.summary()).containsEntry("groups",4L).containsEntry("messages",5L);
-        assertThat(page.groups()).extracting(DashboardRepository.Group::label).contains("Shivani Tewari","amazon.com");
+        assertThat(page.groups()).extracting(DashboardRepository.Group::label).contains("Shivani Tewari","Amazon");
         assertThat(dashboard.page(account,filter("PERSONAL")).summary().get("messages")).isEqualTo(3L);
         var marketing=dashboard.page(account,filter("MARKETING"));assertThat(marketing.summary().get("messages")).isEqualTo(1L);
         var selected=dashboard.selection(account,filter("MARKETING"),List.of(marketing.groups().getFirst().id()),null);assertThat(selected).extracting(DashboardRepository.Selected::id).containsExactly(offer);
@@ -103,7 +103,13 @@ class DashboardClassificationTest extends PostgresJourneyTest {
         mail("opaque1@txt.voice.google.com","Someone","Hi");mail("opaque2@txt.voice.google.com","Someone else","Hello");
         mail("alerts@chase.com","Chase","Bank notice");mail("alerts@e.chase.com","Chase","Bank notice");finish();
         assertThat(dashboard.page(account,filter("")).summary().get("groups")).isEqualTo(5L);
-        assertThat(dashboard.page(account,filter("")).groups()).extracting(DashboardRepository.Group::label).contains("google.com · ai product","google.com · device support","Someone","Someone else","chase.com");
+        assertThat(dashboard.page(account,filter("")).groups()).extracting(DashboardRepository.Group::label)
+            .containsExactlyInAnyOrder("Google","Google","Someone","Someone else","Chase");
+        assertThat(jdbc.queryForList("""
+            SELECT group_key FROM sender_groups
+            WHERE account_id=? AND group_key LIKE 'classified-domain:google.com:%'
+            """, String.class, account)).containsExactlyInAnyOrder(
+                "classified-domain:google.com:AI_PRODUCT", "classified-domain:google.com:DEVICE_SUPPORT");
     }
     @Test void manualGroupingAndCategoryCorrectionsWinAndStaleInputsAreReclassified() {
         UUID first=mail("a@chase.com","Chase","offer"),second=mail("b@e.chase.com","Chase","offer");
@@ -133,7 +139,7 @@ class DashboardClassificationTest extends PostgresJourneyTest {
         mail("a@gene.com","A","Hello");classification.start(account);
         when(classifier.classify(anyList())).thenThrow(new Unavailable("Required zero-retention route unavailable",true));
         for(int i=0;i<3;i++){jdbc.update("UPDATE dashboard_classification_jobs SET next_attempt_at=now()");classification.runOnce();}
-        assertThat(classification.status(account).state()).isEqualTo("FAILED");assertThat(dashboard.page(account,filter("")).groups().getFirst().label()).isEqualTo("gene.com");
+        assertThat(classification.status(account).state()).isEqualTo("FAILED");assertThat(dashboard.page(account,filter("")).groups().getFirst().label()).isEqualTo("A");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM message_metadata WHERE classified_at IS NOT NULL",Long.class)).isZero();
         classification.runOnce();verify(classifier,times(1)).classify(anyList());
         assertThat(classification.status(account).budget().unknown()).isEqualTo(1);
