@@ -25,3 +25,28 @@ button{min-height: 44px}@media(max-width:375px){.app{padding-left:12px;padding-r
 
 .recommendation-edit { display:flex; flex-wrap:wrap; gap:12px; align-items:end; padding:10px 0; }
 .recommendation-edit small { flex-basis:100%; }
+
+.label-choices {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem 1rem;
+}
+.composition {
+    margin-block: .75rem;
+    padding: .75rem 1rem;
+}
+.composition-row {
+    display: grid;
+    grid-template-columns: minmax(8rem, 1fr) 2fr auto;
+    align-items: center;
+    width: 100%;
+    gap: .75rem;
+    text-align: start;
+}
+.composition-row meter {
+    width: 100%;
+}
+#splitAddresses {
+    max-height: 12rem;
+    overflow: auto;
+}

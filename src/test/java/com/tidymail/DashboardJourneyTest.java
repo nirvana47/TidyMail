@@ -96,6 +96,49 @@ class DashboardJourneyTest extends PostgresJourneyTest {
     }
 
     @Test
+    void splitsTwoAddressesSharingOneListAndLeavesNewAddressesAutomatic() {
+        String list = "shared-list.example";
+        String header = "News <" + list + ">";
+        listMessage("list-a", "a@first.example", header);
+        listMessage("list-b", "b@second.example", header);
+        var filter = filter("inbox", "");
+        var original = dashboard.page(account, filter).groups().getFirst();
+        var originalUnits = jdbc.queryForList("SELECT * FROM message_sender_units ORDER BY metadata_id");
+        assertThat(dashboard.grouping(account,original.id()).units()).singleElement()
+            .satisfies(unit -> assertThat(unit.addresses()).containsExactly("a@first.example","b@second.example"));
+        var request = new DashboardGroupingService.Correction("SPLIT",List.of(),"First",null,0,"Second",
+            original.id(),List.of("a@first.example"));
+        assertThat(grouping.correct(account,request,false).affected()).hasSize(2);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM sender_address_units",Long.class)).isZero();
+        grouping.correct(account,request,true);
+        assertThat(jdbc.queryForList("SELECT * FROM message_sender_units ORDER BY metadata_id")).isEqualTo(originalUnits);
+        assertThat(dashboard.inboxComposition(account,filter)).extracting(DashboardRepository.Composition::label)
+            .containsExactlyInAnyOrder("First","Second");
+        for (var group : dashboard.page(account,filter).groups()) {
+            var address = group.label().equals("First") ? "a@first.example" : "b@second.example";
+            assertThat(dashboard.details(account,filter,group.id(),0).messages())
+                .extracting(DashboardRepository.Message::address).containsExactly(address);
+        }
+
+        listMessage("later-a", "a@first.example", header);
+        listMessage("new-c", "c@third.example", header);
+        grouping.rebuild(account);
+        var refreshed = dashboard.page(account,filter).groups();
+        assertThat(refreshed)
+            .extracting(DashboardRepository.Group::label,DashboardRepository.Group::messages)
+            .containsExactlyInAnyOrder(tuple("First",2L),tuple("Second",1L),tuple("Display c@third.example",1L));
+        assertThat(refreshed).filteredOn(group -> group.id().equals(original.id()))
+            .singleElement().satisfies(group -> assertThat(group.messages()).isOne());
+        var correction = jdbc.queryForObject("SELECT public_id FROM sender_group_corrections WHERE kind='SPLIT'",UUID.class);
+        grouping.correct(account,new DashboardGroupingService.Correction("RESET",List.of(),null,correction,2),true);
+        assertThat(dashboard.inboxComposition(account,filter)).singleElement().satisfies(bar -> {
+            assertThat(bar.label()).isEqualTo(list);
+            assertThat(bar.messages()).isEqualTo(4L);
+        });
+        verifyNoInteractions(gmailProvider,outlookProvider);
+    }
+
+    @Test
     void mailingListNeverPicksOneBrandWhenFiltersHideConflictingNames() {
         String list = "shared.sparkpostmail.com";
         listMessage("shared-a", "a@first.example", "News <" + list + ">");
@@ -147,7 +190,7 @@ class DashboardJourneyTest extends PostgresJourneyTest {
     }
 
     @Test
-    void organizationGroupsCombineChaseSubdomainsAndKeepExactSelectionsAndCorrections() {
+    void organizationGroupsCombineChaseSubdomainsAndKeepExactSelectionsAndCorrections() throws Exception {
         var addresses = List.of("no.reply.alerts@chase.com", "no-reply@alertsp.chase.com",
                 "Chase@e.chase.com", "chase@email.chase.com", "Chase@notify.chase.com");
         int[] counts = { 53, 37, 21, 5, 1 };
@@ -162,7 +205,27 @@ class DashboardJourneyTest extends PostgresJourneyTest {
         var group = result.groups().getFirst();
         assertThat(group.label()).isEqualTo("chase.com");
         assertThat(group.addresses()).isEqualTo(5);
-        assertThat(dashboard.details(account, query, group.id(), 0).addresses()).hasSize(5);
+        assertThat(dashboard.addresses(account, query, group.id()).addresses()).hasSize(5);
+        mockMvc.perform(get("/dashboard/api/groups/{group}/addresses", group.id()).with(authenticatedAs(OWNER))
+                .param("q", addresses.get(2)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.addresses.length()").value(1))
+                .andExpect(jsonPath("$.addresses[0].messages").value(21))
+                .andExpect(jsonPath("$.addresses[0].unread").value(0))
+                .andExpect(jsonPath("$.revision").value(result.revision()))
+                .andExpect(jsonPath("$.messages").doesNotExist()).andExpect(jsonPath("$.units").doesNotExist())
+                .andExpect(jsonPath("$.recommendations").doesNotExist());
+        mockMvc.perform(get("/dashboard/api/groups/{group}/grouping", group.id()).with(authenticatedAs(OWNER))
+                .param("q", addresses.get(2)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.units.length()").value(5))
+                .andExpect(jsonPath("$.units[*].key",org.hamcrest.Matchers.hasItem(addresses.get(2))))
+                .andExpect(jsonPath("$.revision").value(result.revision()))
+                .andExpect(jsonPath("$.messages").doesNotExist()).andExpect(jsonPath("$.addresses").doesNotExist())
+                .andExpect(jsonPath("$.recommendations").doesNotExist());
+        userAccounts.createAccount("group-reader@example.test");
+        for (String suffix : List.of("", "/addresses", "/grouping"))
+            mockMvc.perform(get("/dashboard/api/groups/" + group.id() + suffix)
+                    .with(authenticatedAs("group-reader@example.test"))).andExpect(status().isNotFound());
+        verifyNoInteractions(gmailProvider);
         assertThat(dashboard.selection(account, query, List.of(group.id()), null, 0)).hasSize(117);
         assertThat(dashboard.selection(account, query, List.of(group.id()), addresses.get(2), 0)).hasSize(21);
         var preview = previews.create(account, new DashboardPreviewService.Request(query,
@@ -224,6 +287,57 @@ class DashboardJourneyTest extends PostgresJourneyTest {
         assertThat(dashboard.page(account, filter("all", "")).summary().get("undated")).isEqualTo(1L);
         var dst = new DashboardFilter("all", "", "2026-11-01", "2026-11-01", "America/Los_Angeles", 0);
         assertThat(java.time.Duration.between(dst.startInstant(), dst.endInstant()).toHours()).isEqualTo(25);
+    }
+
+    @Test
+    void labelExpressionsSelectionAndChartUseTheSameFilteredMessagesAndSavedGroups() {
+        for (int i=0;i<12;i++)
+            message("newsletter-"+i,"digest@news.example",List.of("INBOX"),true,List.of(),true,NOW);
+        message("security", "alert@alerts.example", List.of("INBOX"), true, List.of(), false, NOW);
+        message("archive", "digest@news.example", List.of(), true, List.of(), false, NOW);
+        jdbc.update("""
+            UPDATE message_metadata SET classification_override =
+                CASE WHEN provider_message_id='security' THEN 'SECURITY' ELSE 'NEWSLETTER' END
+            """);
+        var any = DashboardFilter.from(Map.of("scope","all","labels","NEWSLETTER,SECURITY","match","any"));
+        var all = DashboardFilter.from(Map.of("scope","all","labels","NEWSLETTER,SECURITY","match","all"));
+        assertThat(dashboard.page(account, all).groups()).isEmpty();
+        assertThat(dashboard.page(account, any).summary()).containsEntry("messages",14L).containsEntry("unread",12L);
+        assertThat(dashboard.inboxComposition(account,any)).extracting(DashboardRepository.Composition::messages)
+            .containsExactly(12L,1L);
+        assertThat(dashboard.selection(account,any,List.of(),null,0,false,true)).hasSize(14);
+        assertThat(dashboard.selection(account,any,List.of(),null,0,false,false)).isEmpty();
+
+        var units = jdbc.queryForList("SELECT public_id FROM sender_units WHERE account_id=? ORDER BY id", UUID.class,account);
+        grouping.correct(account,new DashboardGroupingService.Correction("MERGE",units,"Digest and alerts",null,0),true);
+        assertThat(dashboard.inboxComposition(account,any)).singleElement().satisfies(group -> {
+            assertThat(group.label()).isEqualTo("Digest and alerts");
+            assertThat(group.messages()).isEqualTo(13);
+            var drilldown = DashboardFilter.from(Map.of("labels","NEWSLETTER,SECURITY","match","any","composition",group.key()));
+            assertThat(dashboard.page(account,drilldown).summary()).containsEntry("messages",13L);
+            assertThat(dashboard.selection(account,drilldown,List.of(),null,1,false,true)).hasSize(13);
+        });
+        var split = new DashboardGroupingService.Correction("SPLIT",List.of(),"Digests",null,1,"Alerts",
+            dashboard.page(account,any).groups().getFirst().id(),List.of("digest@news.example"));
+        grouping.correct(account,split,true);
+        jdbc.update("UPDATE message_metadata SET dashboard_unit_key=dashboard_unit_key WHERE account_id=?",account);
+        assertThat(dashboard.page(account,any).groups()).extracting(DashboardRepository.Group::label)
+            .containsExactly("Digests","Alerts");
+        grouping.rebuild(account);
+        assertThat(dashboard.inboxComposition(account,any)).extracting(DashboardRepository.Composition::label)
+            .containsExactly("Digests","Alerts");
+        assertThat(dashboard.page(account,any).groups()).extracting(DashboardRepository.Group::inbox)
+            .containsExactly(12L,1L);
+        // Separate automatic service streams still share the organization's chart bar.
+        jdbc.update("""
+            UPDATE sender_groups SET group_key='classified-domain:example.test:'||id
+            WHERE id IN (SELECT group_id FROM sender_group_members WHERE account_id=?)
+            """, account);
+        assertThat(dashboard.inboxComposition(account,any))
+            .containsExactly(new DashboardRepository.Composition("domain:example.test","example.test",13));
+        var domain = DashboardFilter.from(Map.of("composition","domain:example.test"));
+        assertThat(dashboard.page(account,domain).summary()).containsEntry("messages",13L).containsEntry("groups",2L);
+        verifyNoInteractions(gmailProvider,outlookProvider);
     }
 
     @Test
@@ -314,7 +428,7 @@ class DashboardJourneyTest extends PostgresJourneyTest {
                 "INSERT INTO message_metadata(account_id,provider,provider_message_id,dashboard_message_id,labels) VALUES(?,'google','foreign',?,ARRAY['INBOX'])",
                 other, foreign);
         mockMvc.perform(get("/dashboard").with(authenticatedAs(OWNER))).andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("Select groups on this page")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("Select sender groups for organizing")))
                 .andExpect(header().string("Cache-Control", "no-store"));
         var body = json.writeValueAsString(
                 new DashboardPreviewService.Request(filter("all", ""), List.of(foreign), "ARCHIVE", 0));
@@ -381,6 +495,8 @@ class DashboardJourneyTest extends PostgresJourneyTest {
                 .param("unreadOnly", "true"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(13))
                 .andExpect(jsonPath("$.messages.length()").value(10))
+                .andExpect(jsonPath("$.recommendations.length()").value(10))
+                .andExpect(jsonPath("$.addresses").doesNotExist()).andExpect(jsonPath("$.units").doesNotExist())
                 .andExpect(jsonPath("$.messages[?(@.unread == false)]").isEmpty());
         mockMvc.perform(get("/dashboard/api/groups/" + group).with(authenticatedAs(OWNER))
                 .param("unreadOnly", "true").param("messagePage", "1"))

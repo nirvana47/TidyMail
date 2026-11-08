@@ -19,7 +19,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 import com.tidymail.mail.BulkActionType;
 
 class DashboardGmailDispatchTest {
-    @ParameterizedTest @CsvSource({"200,MARK_READ","401,MARK_READ","503,MARK_READ","200,ARCHIVE","401,ARCHIVE","503,ARCHIVE","200,TRASH","401,TRASH","503,TRASH"})
+    @ParameterizedTest @CsvSource({"200,MARK_READ","401,MARK_READ","503,MARK_READ","200,ARCHIVE","401,ARCHIVE","503,ARCHIVE","200,TRASH","401,TRASH","503,TRASH","200,MARK_READ_ARCHIVE","503,MARK_READ_ARCHIVE"})
     void exactCleanupRequestDisablesAutomaticReplayEvenWhenInitializerAllowsRetries(int status,BulkActionType action) throws Exception {
         var server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
         var calls=new AtomicInteger();var body=new AtomicReference<String>();var path=new AtomicReference<String>();
@@ -43,7 +43,11 @@ class DashboardGmailDispatchTest {
             var request=new com.fasterxml.jackson.databind.ObjectMapper().readTree(body.get());
             assertThat(request.get("ids").toString()).isEqualTo("[\"synthetic-one\",\"synthetic-two\"]");
             if(action==BulkActionType.TRASH){assertThat(request.get("addLabelIds").toString()).isEqualTo("[\"TRASH\"]");assertThat(request.has("removeLabelIds")).isFalse();}
-            else {assertThat(request.get("removeLabelIds").toString()).isEqualTo(action==BulkActionType.ARCHIVE?"[\"INBOX\"]":"[\"UNREAD\"]");assertThat(request.has("addLabelIds")).isFalse();}
+            else {assertThat(request.get("removeLabelIds").toString()).isEqualTo(switch (action) {
+                case ARCHIVE -> "[\"INBOX\"]";
+                case MARK_READ_ARCHIVE -> "[\"UNREAD\",\"INBOX\"]";
+                default -> "[\"UNREAD\"]";
+            });assertThat(request.has("addLabelIds")).isFalse();}
         } finally {server.stop(0);}
     }
     @ParameterizedTest @org.junit.jupiter.params.provider.ValueSource(ints={401,403,429,503})

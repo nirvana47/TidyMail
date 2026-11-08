@@ -5,15 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertTimeout;
 
 import com.tidymail.dto.SenderQuery;
-import com.tidymail.dto.SelectionMode;
-import com.tidymail.dto.SelectionRequest;
-import com.tidymail.dto.SelectionRequest.PreviewAction;
-import com.tidymail.dto.SelectionScopePreview.State;
-import com.tidymail.dto.SelectionSurface;
 import com.tidymail.dto.UnreadQuery;
-import com.tidymail.repository.DecisionSurfaceQueryRepository;
-import com.tidymail.repository.DecisionSurfaceQueryRepository.SelectionLocator;
-import com.tidymail.service.SelectionMaterializationService;
 import com.tidymail.service.SenderDecisionQueryService;
 import com.tidymail.service.UnreadDecisionQueryService;
 import java.sql.Connection;
@@ -75,7 +67,7 @@ class Phase10PostgresMigrationTest {
             .migrate();
 
         long protectedId;
-        long capAccountId;
+
         try (Connection connection = connection()) {
             assertThat(queryLong(connection,
                 "SELECT COUNT(*) FROM message_metadata WHERE id=" + metadataId)).isEqualTo(1);
@@ -114,10 +106,10 @@ class Phase10PostgresMigrationTest {
 
             Instant now = Instant.now();
             insertNullFirstArrayMetadata(connection, accountId, now);
-            capAccountId = insertOwnedAccount(connection, "phase10-cap@example.com");
+
             connection.setAutoCommit(false);
             for (int i = 0; i < 1_000; i++) {
-                insertMetadata(connection, capAccountId, "cap-" + i, 0, true, now);
+
             }
             connection.commit();
             for (int i = 0; i < 10_000; i++) {
@@ -150,17 +142,15 @@ class Phase10PostgresMigrationTest {
                 context.getBean(SenderDecisionQueryService.class);
             UnreadDecisionQueryService unread =
                 context.getBean(UnreadDecisionQueryService.class);
-            DecisionSurfaceQueryRepository decisionRepository =
-                context.getBean(DecisionSurfaceQueryRepository.class);
-            SelectionMaterializationService materialization =
-                context.getBean(SelectionMaterializationService.class);
+
+
             SenderQuery senderQuery = SenderQuery.parse(Map.of(
                 "window", List.of("all"), "queue", List.of("all"),
                 "protected", List.of("include")));
             UnreadQuery unreadQuery = UnreadQuery.parse(Map.of(
                 "provider", List.of("google"), "sort", List.of("newest_first")))
                 .withPage(1_000);
-            UnreadQuery materializationUnreadQuery = unreadQuery.withPage(0);
+
 
             assertThat(senders.query(List.of(accountId), senderQuery).filteredCount())
                 .isEqualTo(501);
@@ -182,74 +172,6 @@ class Phase10PostgresMigrationTest {
             assertTimeout(Duration.ofSeconds(2),
                 () -> unread.query(List.of(accountId), unreadQuery));
 
-            Instant materializedAt = Instant.now();
-            assertThat(decisionRepository.materializeSenders(
-                List.of(accountId), senderQuery, SelectionMode.INDIVIDUAL,
-                List.of(new SelectionLocator(accountId, "sender0@example.com")),
-                false, materializedAt).accounts().getFirst().exactMessageCount())
-                .isEqualTo(21);
-            assertThat(decisionRepository.materializeSenders(
-                List.of(accountId), senderQuery, SelectionMode.VISIBLE_PAGE,
-                List.of(), false, materializedAt).accounts().getFirst().includedTargetCount())
-                .isEqualTo(25);
-            assertThat(decisionRepository.materializeSenders(
-                List.of(accountId), senderQuery, SelectionMode.ALL_MATCHING,
-                List.of(), false, materializedAt).accounts().getFirst().exactMessageCount())
-                .isGreaterThan(1000);
-            assertThat(decisionRepository.materializeUnread(
-                List.of(accountId), materializationUnreadQuery, SelectionMode.INDIVIDUAL,
-                List.of(new SelectionLocator(accountId, Long.toString(metadataId))),
-                false, materializedAt).accounts().getFirst().exactMessageCount())
-                .isEqualTo(1);
-            assertThat(decisionRepository.materializeUnread(
-                List.of(accountId), materializationUnreadQuery, SelectionMode.VISIBLE_PAGE,
-                List.of(), false, materializedAt).accounts().getFirst().exactMessageCount())
-                .isEqualTo(25);
-            assertThat(decisionRepository.materializeUnread(
-                List.of(accountId), materializationUnreadQuery, SelectionMode.ALL_MATCHING,
-                List.of(), false, materializedAt).accounts().getFirst().exactMessageCount())
-                .isGreaterThan(1000);
-
-            SenderQuery capQuery = SenderQuery.parse(Map.of(
-                "account", List.of(Long.toString(capAccountId)),
-                "window", List.of("all"),
-                "queue", List.of("all"),
-                "protected", List.of("include")));
-            SelectionRequest capRequest = new SelectionRequest(
-                SelectionSurface.SENDERS,
-                SelectionMode.ALL_MATCHING,
-                capQuery,
-                null,
-                List.of(),
-                PreviewAction.ARCHIVE,
-                false,
-                null);
-            assertThat(materialization.preview(List.of(capAccountId), capRequest).state())
-                .isEqualTo(State.READY);
-            assertThat(materialization.preview(List.of(capAccountId), capRequest).messageCount())
-                .isEqualTo(1_000);
-            try (Connection connection = connection()) {
-                assertThat(queryLong(connection,
-                    "SELECT COUNT(*) FROM action_scopes WHERE account_id=" + capAccountId))
-                    .isEqualTo(1);
-                assertThat(queryLong(connection,
-                    "SELECT COUNT(*) FROM user_actions WHERE account_id=" + capAccountId))
-                    .isZero();
-                insertMetadata(connection, capAccountId, "cap-1000", 0, true);
-            }
-            assertThat(materialization.preview(List.of(capAccountId), capRequest).state())
-                .isEqualTo(State.CAP_EXCEEDED);
-            try (Connection connection = connection()) {
-                assertThat(queryLong(connection,
-                    "SELECT COUNT(*) FROM action_scopes WHERE account_id=" + capAccountId))
-                    .isEqualTo(1);
-                assertThat(queryLong(connection,
-                    "SELECT COUNT(*) FROM protected_override_audits "
-                        + "WHERE account_id=" + capAccountId)).isZero();
-                assertThat(queryLong(connection,
-                    "SELECT COUNT(*) FROM user_actions WHERE account_id=" + capAccountId))
-                    .isZero();
-            }
         }
 
         try (Connection connection = connection();

@@ -5,19 +5,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.tidymail.entity.SenderStat;
 import com.tidymail.entity.UserAccount;
-import com.tidymail.entity.UserAction;
 import com.tidymail.repository.SenderStatRepository;
 import com.tidymail.repository.UserAccountRepository;
-import com.tidymail.repository.UserActionRepository;
 import com.tidymail.security.crypto.CryptoProperties;
 import com.tidymail.security.crypto.CryptoUtil;
 import com.tidymail.security.oauth2.JpaOAuth2AuthorizedClientService;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HexFormat;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -28,6 +23,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
@@ -69,7 +65,7 @@ class Phase3PersistenceTest {
     private SenderStatRepository senderStats;
 
     @Autowired
-    private UserActionRepository userActions;
+    private JdbcTemplate jdbcTemplate;
 
     // ---- T3 (c): encrypt/decrypt inverse ----
     @Autowired
@@ -86,7 +82,7 @@ class Phase3PersistenceTest {
         // Order matters: child tables first (FK ON DELETE CASCADE not run during
         // deleteAll because JPA issues individual DELETEs; running child-first avoids
         // FK violations). Cascade only runs at DB level for parent-table DELETEs.
-        userActions.deleteAll();
+        jdbcTemplate.update("DELETE FROM user_actions");
         senderStats.deleteAll();
         userAccounts.deleteAll();
     }
@@ -284,28 +280,15 @@ class Phase3PersistenceTest {
         sender.setHasPrecedenceBulk(true);
         senderStats.save(sender);
 
-        UserAction action1 = new UserAction();
-        action1.setAccountId(accountId);
-        action1.setActionType("ARCHIVE");
-        action1.setSenderGroupKey("from:newsletter@acme.example");
-        action1.setMessageIds(Arrays.asList("msg-001", "msg-002", "msg-003"));
-        Map<String, Object> inv1 = new LinkedHashMap<>();
-        inv1.put("labelBefore", "INBOX");
-        inv1.put("messageIds", new ArrayList<>(action1.getMessageIds()));
-        action1.setInverseActionData(inv1);
-        userActions.save(action1);
-
-        UserAction action2 = new UserAction();
-        action2.setAccountId(accountId);
-        action2.setActionType("TRASH");
-        action2.setSenderGroupKey("from:spam@evil.example");
-        action2.setMessageIds(Arrays.asList("msg-111", "msg-222"));
-        action2.setInverseActionData(new LinkedHashMap<>());
-        userActions.save(action2);
+        jdbcTemplate.update("""
+            INSERT INTO user_actions(account_id,action_type,message_ids,status)
+            VALUES (?,'ARCHIVE',ARRAY['msg-001'],'APPLIED'),
+                   (?,'TRASH',ARRAY['msg-111'],'APPLIED')
+            """, accountId, accountId);
 
         // Sanity: children visible via repository count.
         assertThat(senderStats.countByAccountId(accountId)).as("1 sender stat present").isEqualTo(1L);
-        assertThat(userActions.countByAccountId(accountId)).as("2 user actions present").isEqualTo(2L);
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM user_actions WHERE account_id=?", Long.class, accountId)).as("2 user actions present").isEqualTo(2L);
 
         // Act: delete account by email+provider tuple (the method used by logout cascade handler).
         userAccounts.deleteByEmailAndProviderIgnoreCase("cascade.test@example.com", "microsoft");
@@ -315,7 +298,7 @@ class Phase3PersistenceTest {
         // senderStats.countByAccountId would still return 1 and test would fail here.
         assertThat(userAccounts.findById(accountId)).as("Parent user_accounts row deleted").isEmpty();
         assertThat(senderStats.countByAccountId(accountId)).as("sender_stats child rows CASCADE deleted").isEqualTo(0L);
-        assertThat(userActions.countByAccountId(accountId)).as("user_actions child rows CASCADE deleted").isEqualTo(0L);
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM user_actions WHERE account_id=?", Long.class, accountId)).as("user_actions child rows CASCADE deleted").isEqualTo(0L);
     }
 
     private static ClientRegistration googleRegistration() {

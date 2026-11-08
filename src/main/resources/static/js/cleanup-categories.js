@@ -1,16 +1,4 @@
-/**
- * Client-side behavior for the TidyMail Cleanup and Senders/Unread category pages.
- *
- * Product functionality supported: the interstitial "Review" stage of the bulk
- * cleanup workflow. These pages group messages by sender, let the user select
- * senders and stage an exact/counted/previewable/reversible bulk action
- * (archive, trash, mark-read, unsubscribe, or delete), and surface the grouped
- * Senders and Unread categories. This script wires up the sticky selection bar
- * (counts selected senders, enables/disables action buttons), lazy-loads category
- * contents on expand, drives the modal dialogs (bulk action confirmation, delete
- * source confirmation), and reconciles the Review view after an action is staged
- * so already-staged senders can't be double-counted.
- */
+/** Expands sender categories and manages category-edit selection. */
 document.addEventListener("DOMContentLoaded", () => {
     updateSelectionBars();
 
@@ -67,12 +55,6 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
-        const deleteButton = event.target.closest("[data-delete-source]");
-        if (deleteButton instanceof HTMLButtonElement) {
-            prepareDeleteDialog(deleteButton);
-            return;
-        }
-
         const closeButton = event.target.closest("[data-dialog-close]");
         if (closeButton instanceof HTMLButtonElement) {
             const dialog = closeButton.closest("dialog");
@@ -90,34 +72,6 @@ document.addEventListener("DOMContentLoaded", () => {
         if (event.target instanceof HTMLInputElement
                 && event.target.name === "rowKey") {
             updateSelectionBars();
-        }
-    });
-
-    document.body.addEventListener("htmx:afterRequest", (event) => {
-        const requestElement = event.detail.elt;
-        const form = requestElement instanceof HTMLFormElement
-            ? requestElement
-            : requestElement.closest("form");
-        if (!(form instanceof HTMLFormElement)
-                || !form.matches("[data-cleanup-stage]")) {
-            return;
-        }
-        if (!event.detail.successful) {
-            showCleanupError(
-                "Action not staged. Try again or refresh this category.",
-                form);
-            return;
-        }
-        try {
-            reconcileCleanupResult(JSON.parse(event.detail.xhr.responseText), form);
-            const dialog = form.closest("dialog");
-            if (dialog instanceof HTMLDialogElement) dialog.close();
-            refreshRequestToken(form);
-            updateSelectionBars();
-        } catch (invalidResponse) {
-            showCleanupError(
-                "Action not staged. Reload to reconcile the latest Review state.",
-                form);
         }
     });
 
@@ -186,9 +140,7 @@ function openCategory(category) {
  * currently selected senders (or from a single sender when opened from a row).
  *
  * Product functionality: the staging dialogs submit the exact set of senders
- * selected in the Cleanup table, so the backend stages an action only on those
- * senders. Returned to the "unread" category it uses the unread bulk-stage form,
- * otherwise the sender bulk-stage form.
+ * selected in the category table.
  */
 function populateSelectedSenders(dialog, openButton) {
     const target = dialog.querySelector("[data-selected-senders]");
@@ -199,8 +151,8 @@ function populateSelectedSenders(dialog, openButton) {
         return;
     }
     const returnTo = dialog.querySelector("input[name='returnTo']")?.value || "";
-    const formId = returnTo === "unread" ? "unread-bulk-stage" : "sender-bulk-stage";
-    document.querySelectorAll(`input[name='rowKey'][form='${formId}']:checked`).forEach((checkbox) => {
+    const formId = returnTo === "unread" ? "unread-selection" : "sender-selection";
+    document.querySelectorAll(`input[name='rowKey'][data-selection='${formId}']:checked`).forEach((checkbox) => {
         const row = checkbox.closest(".cleanup-row");
         const senderAddress = row?.dataset.senderAddress;
         if (senderAddress) appendSelectedSender(target, senderAddress);
@@ -211,13 +163,11 @@ function populateSelectedSenders(dialog, openButton) {
  * Recomputes every sticky selection bar based on the currently selected
  * checkboxes, showing the select-count summary and enabling/disabling actions.
  *
- * Product functionality: keeps the Review/cleanup UI honest about exactly how
- *   many senders will be affected, letting the user review before staging an
- *   action.
+ * Shows the number of senders selected for categorization.
  */
 function updateSelectionBars() {
     document.querySelectorAll("[data-selection-bar]").forEach((bar) => {
-        if (!(bar instanceof HTMLFormElement)) return;
+        if (!(bar instanceof HTMLElement)) return;
         const selected = selectedCheckboxesFor(bar.id);
         const uniqueCount = new Set(selected.map((checkbox) => checkbox.value)).size;
         const hasSelection = uniqueCount > 0;
@@ -227,7 +177,7 @@ function updateSelectionBars() {
         if (summary instanceof HTMLElement) {
             summary.textContent = hasSelection
                 ? `${uniqueCount} sender${uniqueCount === 1 ? "" : "s"} selected`
-                : "Select senders first, then choose an action.";
+                : "Select senders to change their categorization.";
         }
         bar.querySelectorAll("button").forEach((button) => {
             if (!(button instanceof HTMLButtonElement)) return;
@@ -241,11 +191,11 @@ function updateSelectionBars() {
  * form.
  *
  * Product functionality: the single source of truth for which senders are
- *   selected when counting, staging, or clearing a selection.
+ *   selected when counting or clearing a selection.
  */
 function selectedCheckboxesFor(formId) {
     return Array.from(
-        document.querySelectorAll(`input[name='rowKey'][form='${formId}']:checked`)
+        document.querySelectorAll(`input[name='rowKey'][data-selection='${formId}']:checked`)
     ).filter((checkbox) => checkbox instanceof HTMLInputElement && !checkbox.disabled);
 }
 
@@ -256,7 +206,7 @@ function selectedCheckboxesFor(formId) {
  */
 function clearSelection(button) {
     const form = button.closest("[data-selection-bar]");
-    if (!(form instanceof HTMLFormElement)) return;
+    if (!(form instanceof HTMLElement)) return;
     selectedCheckboxesFor(form.id).forEach((checkbox) => {
         checkbox.checked = false;
     });
@@ -268,7 +218,7 @@ function clearSelection(button) {
  * container.
  *
  * Product functionality: serializes the selected senders into a form so a bulk
- *   action can be staged for exactly those senders.
+ *   category change can apply to exactly those senders.
  */
 function appendSelectedSender(target, senderAddress) {
     const input = document.createElement("input");
@@ -335,172 +285,4 @@ function showCategoryLoadError(target, message) {
     if (target instanceof HTMLElement && !target.hasChildNodes()) {
         target.textContent = message;
     }
-}
-
-/**
- * Prepares the delete-source confirmation dialog by copying the source form's
- * data into a hidden input surface, ensuring at least one sender is selected.
- *
- * Product functionality: the destructive sender-delete flow that requires an
- * exact pre-stage confirmation before any messages are removed.
- */
-function prepareDeleteDialog(button) {
-    const source = button.dataset.deleteSource === "closest"
-        ? button.closest("form")
-        : document.getElementById(button.dataset.deleteSource);
-    const surface = source instanceof HTMLFormElement
-        ? source.querySelector("input[name='surface']")?.value
-        : "";
-    const dialogId = {
-        SENDERS: "sender-delete-dialog",
-        UNREAD: "unread-delete-dialog"
-    }[surface];
-    const dialog = dialogId ? document.getElementById(dialogId) : null;
-    const target = dialog?.querySelector("[data-delete-fields]");
-    if (!(source instanceof HTMLFormElement)
-            || !(dialog instanceof HTMLDialogElement)
-            || !(target instanceof HTMLElement)) {
-        showCleanupError(
-            "Action not staged. Delete confirmation could not open. Refresh this page and try again.",
-            source instanceof HTMLFormElement ? source : button);
-        return;
-    }
-
-    const data = new FormData(source);
-    if (!data.getAll("rowKey").length) {
-        showCleanupError("Action not staged. Select at least one sender before staging.", source);
-        return;
-    }
-    target.replaceChildren();
-    data.forEach((value, name) => {
-        if (name === "deleteAcknowledged" || typeof value !== "string") return;
-        const input = document.createElement("input");
-        input.type = "hidden";
-        input.name = name;
-        input.value = value;
-        target.append(input);
-    });
-    if (!data.has("action")) {
-        const input = document.createElement("input");
-        input.type = "hidden";
-        input.name = "action";
-        input.value = button.dataset.deleteAction || "TRASH";
-        target.append(input);
-    }
-    const acknowledgement = dialog.querySelector("[name='deleteAcknowledged']");
-    if (acknowledgement instanceof HTMLInputElement) acknowledgement.checked = false;
-    dialog.showModal();
-}
-
-/**
- * Applies the server response after an action is staged, marking the affected
- * senders' rows as staged and disabling their controls.
- *
- * Product functionality: keeps the Review stage consistent — sender rows that
- * already had a message staged (reused) or were just staged become immutable,
- * and an accessible summary is announced.
- */
-function reconcileCleanupResult(result, sourceForm) {
-    if (!Array.isArray(result.senders)) {
-        showCleanupError("Action not staged. Reload to reconcile the latest Review state.", sourceForm);
-        return;
-    }
-
-    const senderCount = result.senders.length;
-    const message = `${result.distinctMessageCount} exact message`
-        + `${result.distinctMessageCount === 1 ? "" : "s"} across ${senderCount} sender`
-        + `${senderCount === 1 ? "" : "s"} staged for Review.`;
-
-    result.senders.forEach((staged) => {
-        document.querySelectorAll(".cleanup-row[data-sender-address]").forEach((row) => {
-            if (row.dataset.senderAddress !== staged.senderAddress) return;
-            row.classList.add("is-staged");
-            row.querySelectorAll("button, input[type='checkbox']").forEach((control) => {
-                control.disabled = true;
-            });
-            const action = row.querySelector(".cleanup-action");
-            if (action) action.textContent = staged.reused ? "Already staged" : "Staged";
-            const state = row.querySelector(".cleanup-row-state");
-            if (state instanceof HTMLElement) {
-                state.textContent = staged.reused ? "Already staged" : "Staged";
-            }
-        });
-    });
-
-    announceCleanupFeedback(sourceForm, message, false);
-}
-
-/**
- * Rotates the CSRF/idempotency request token on the form after a successful
- * stage.
- *
- * Product functionality: prevents stale submissions / duplicate staging of the
- *   same sender after a successful action has been accepted.
- */
-function refreshRequestToken(form) {
-    const token = form.querySelector("input[name='requestToken']");
-    if (token instanceof HTMLInputElement && window.crypto?.randomUUID) {
-        token.value = window.crypto.randomUUID();
-    }
-}
-
-/**
- * Displays a non-blocking error message for a failed cleanup action.
- *
- * Product functionality: keeps the user informed when an action could not be
- * staged without discarding the current page state.
- */
-function showCleanupError(message, source) {
-    announceCleanupFeedback(source, message, true);
-}
-
-/**
- * Writes feedback text into the cleanup feedback element and shows or hides it.
- *
- * Product functionality: the status announcements (success counts and errors)
- *   for the staged-action flow.
- */
-function announceCleanupFeedback(source, message, visible) {
-    const feedback = findOrCreateCleanupFeedback(source);
-    if (!(feedback instanceof HTMLElement)) return;
-    feedback.textContent = message;
-    feedback.classList.toggle("visually-hidden", !visible);
-    feedback.dataset.visible = visible ? "true" : "false";
-    if (visible) feedback.focus();
-}
-
-/**
- * Locates the feedback element for a form, creating one if needed, so
- * announcements show up on every cleanup surface.
- *
- * Product functionality: guarantees there is a visible/accessible status region
- *   (aria-live) for the cleanup workflow regardless of which form triggered it.
- */
-function findOrCreateCleanupFeedback(source) {
-    const form = source instanceof HTMLFormElement
-        ? source
-        : source?.closest?.("form");
-    if (!(form instanceof HTMLFormElement)
-            && source instanceof HTMLElement
-            && source.dataset?.deleteSource) {
-        const deleteSource = source.dataset.deleteSource === "closest"
-            ? source.closest("form")
-            : document.getElementById(source.dataset.deleteSource);
-        if (deleteSource instanceof HTMLFormElement) {
-            return findOrCreateCleanupFeedback(deleteSource);
-        }
-    }
-    const existing = form?.querySelector("[data-cleanup-feedback]");
-    if (existing instanceof HTMLElement) return existing;
-    const fallback = document.querySelector("[data-cleanup-feedback]");
-    if (fallback instanceof HTMLElement) return fallback;
-    if (!(form instanceof HTMLFormElement)) return null;
-    const created = document.createElement("p");
-    created.className = "cleanup-stage-feedback visually-hidden";
-    created.setAttribute("role", "status");
-    created.setAttribute("aria-live", "polite");
-    created.setAttribute("tabindex", "-1");
-    created.dataset.cleanupFeedback = "";
-    form.append(created);
-    return created;
 }

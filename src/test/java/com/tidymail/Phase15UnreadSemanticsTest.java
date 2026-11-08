@@ -2,7 +2,6 @@ package com.tidymail;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.tidymail.dto.SelectionMode;
 import com.tidymail.dto.UnreadCategoryGroup;
 import com.tidymail.dto.UnreadQuery;
 import com.tidymail.entity.MessageMetadata;
@@ -10,7 +9,6 @@ import com.tidymail.entity.SenderTypeOverride.SenderType;
 import com.tidymail.entity.UserAccount;
 import com.tidymail.mail.AttachmentState;
 import com.tidymail.repository.DecisionSurfaceQueryRepository;
-import com.tidymail.repository.DecisionSurfaceQueryRepository.SelectionLocator;
 import com.tidymail.repository.MessageMetadataRepository;
 import com.tidymail.repository.SenderTypeOverrideRepository;
 import com.tidymail.repository.UserAccountRepository;
@@ -19,7 +17,6 @@ import com.tidymail.service.SenderTypeOverrideService;
 import com.tidymail.service.UnreadDecisionQueryService;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -115,75 +112,6 @@ class Phase15UnreadSemanticsTest {
                 assertThat(fact.manualType())
                     .isEqualTo(com.tidymail.service.DecisionRuleSet.SenderType.PERSONAL);
             });
-    }
-
-    @Test
-    void overlappingSenderSelectionsDeduplicateExactProviderIds() {
-        UserAccount account = account("materialize@example.com");
-        MessageMetadata first =
-            seed(account, "exact-a", "same@example.com", true, List.of("INBOX"));
-        MessageMetadata second =
-            seed(account, "exact-b", "same@example.com", true, List.of("INBOX"));
-        List<SelectionLocator> overlapping = List.of(
-            locator(account, first),
-            locator(account, second),
-            locator(account, first),
-            locator(account, second));
-
-        var result = decisions.materializeUnread(
-            List.of(account.getId()),
-            query(account),
-            SelectionMode.INDIVIDUAL,
-            overlapping,
-            false,
-            Instant.now());
-
-        assertThat(result.matchedTargetCount()).isEqualTo(2);
-        assertThat(result.accounts()).singleElement().satisfies(materialized -> {
-            assertThat(materialized.exactMessageCount()).isEqualTo(2);
-            assertThat(materialized.messageIds()).containsExactly("exact-a", "exact-b");
-        });
-    }
-
-    @Test
-    void inboxUnreadMaterializationPreservesThe1000And1001Boundary() {
-        UserAccount account = account("cap@example.com");
-        ArrayList<MessageMetadata> rows = new ArrayList<>();
-        for (int index = 0; index < 1_000; index++) {
-            rows.add(message(
-                account, "cap-" + index, "bulk@example.com", true, List.of("INBOX")));
-        }
-        metadata.saveAllAndFlush(rows);
-
-        var accepted = decisions.materializeUnread(
-            List.of(account.getId()),
-            query(account),
-            SelectionMode.ALL_MATCHING,
-            List.of(),
-            false,
-            Instant.now());
-        assertThat(accepted.accounts()).singleElement().satisfies(materialized -> {
-            assertThat(materialized.exactMessageCount()).isEqualTo(1_000);
-            assertThat(materialized.messageIds()).hasSize(1_000);
-        });
-
-        metadata.saveAndFlush(
-            message(account, "cap-1000", "bulk@example.com", true, List.of("INBOX")));
-        var guarded = decisions.materializeUnread(
-            List.of(account.getId()),
-            query(account),
-            SelectionMode.ALL_MATCHING,
-            List.of(),
-            false,
-            Instant.now());
-        assertThat(guarded.accounts()).singleElement().satisfies(materialized -> {
-            assertThat(materialized.exactMessageCount()).isEqualTo(1_001);
-            assertThat(materialized.messageIds()).hasSize(1_001);
-        });
-    }
-
-    private static SelectionLocator locator(UserAccount account, MessageMetadata row) {
-        return new SelectionLocator(account.getId(), Long.toString(row.getId()));
     }
 
     private static UnreadCategoryGroup group(

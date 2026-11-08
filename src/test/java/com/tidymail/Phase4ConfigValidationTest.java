@@ -1,22 +1,16 @@
 package com.tidymail;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.tidymail.entity.UserAccount;
-import com.tidymail.mail.BulkActionRequest;
-import com.tidymail.mail.BulkActionType;
 import com.tidymail.mail.MailFolderOrLabel;
 import com.tidymail.mail.MailProvider;
 import com.tidymail.mail.gmail.GmailSyncConfigProperties;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -45,33 +39,6 @@ class Phase4ConfigValidationTest {
     }
 
     @Test
-    @DisplayName("BulkActionRequest of 1001 IDs throws IllegalArgumentException with Gmail batchModify max 1000 message")
-    void bulkActionRequest1001IdsThrows() {
-        List<String> ids = IntStream.range(0, 1001)
-            .mapToObj(i -> "msg-" + i)
-            .collect(Collectors.toList());
-
-        assertThatThrownBy(() -> new BulkActionRequest(BulkActionType.ARCHIVE, ids, null, null))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("Gmail batchModify JSON API max is 1000 ids per call");
-    }
-
-    @Test
-    @DisplayName("BulkActionRequest of 500 IDs succeeds without throw")
-    void bulkActionRequest500IdsSucceeds() {
-        List<String> ids = IntStream.range(0, 500)
-            .mapToObj(i -> "msg-" + i)
-            .collect(Collectors.toList());
-
-        assertThatCode(() -> BulkActionRequest.of(BulkActionType.ARCHIVE, ids))
-            .doesNotThrowAnyException();
-
-        BulkActionRequest req = BulkActionRequest.of(BulkActionType.ARCHIVE, ids);
-        assertThat(req.messageIds()).hasSize(500);
-        assertThat(req.actionType()).isEqualTo(BulkActionType.ARCHIVE);
-    }
-
-    @Test
     @DisplayName("MailProvider interface includes required methods with stable listMessages signature")
     void mailProviderInterfaceSignatureVerification() throws NoSuchMethodException {
         Method[] methods = MailProvider.class.getDeclaredMethods();
@@ -84,9 +51,7 @@ class Phase4ConfigValidationTest {
             .contains(
                 "listMessages",
                 "listFoldersOrLabels",
-                "batchModify",
-                "applyLabel",
-                "getThreadMetadata"
+                "cleanupOnce"
             );
 
         Method listMessages = MailProvider.class.getMethod(

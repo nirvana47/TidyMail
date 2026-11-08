@@ -90,7 +90,7 @@ class MessageEvidenceJourneyTest extends PostgresJourneyTest {
         var page=dashboard.page(account,filter(""));assertThat(page.groups()).hasSize(1);
         var details=dashboard.details(account,filter(""),page.groups().getFirst().id(),0);
         assertThat(details.messages()).extracting(DashboardRepository.Message::category).containsExactlyInAnyOrder("SECURITY","NEWSLETTER");
-        var unit=details.units().getFirst().id();
+        var unit=dashboard.grouping(account,page.groups().getFirst().id()).units().getFirst().id();
         grouping.correct(account,new DashboardGroupingService.Correction("SEPARATE",List.of(unit),null,null,page.revision()),true);
         mail("another","digest@quora.com","{INBOX}",1L,"LIST","one.quora");
         assertThat(dashboard.page(account,filter("")).groups()).hasSize(2);

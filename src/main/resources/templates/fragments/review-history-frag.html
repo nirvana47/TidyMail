@@ -94,16 +94,6 @@
                 <td data-label="Follow-up">
                     <span class="history-followup-chip"
                           th:text="${row.availabilityLabel}">Details available</span>
-                    <form th:if="${row.undoEligible && history.query.account != 'all'}"
-                          method="post" class="history-inline-action"
-                          th:action="@{|/review/actions/${row.actionPublicId}/undo/confirm|}">
-                        <input type="hidden" name="account"
-                               th:value="${history.query.account}">
-                        <button type="submit"
-                                th:text="|Undo ${row.undoAppliedCount} applied|">
-                            Undo applied
-                        </button>
-                    </form>
                 </td>
                 <td data-label="Details">
                     <details class="history-row-details">
@@ -119,12 +109,6 @@
                                 <div><dt>Status</dt><dd th:text="${row.status}">Status</dd></div>
                                 <div><dt>Scope</dt><dd th:text="${row.countLabel}">Counts</dd></div>
                             </dl>
-                            <p th:if="${row.undoEligible}"
-                               th:text="|Undo will target only the ${row.undoAppliedCount} messages recorded as applied. Failed and verification-pending messages are excluded.|">
-                                Applied-only undo
-                            </p>
-                            <p th:if="${!row.undoEligible && row.undoUnavailableReason != null}"
-                               th:text="${row.undoUnavailableReason}">Undo unavailable</p>
                             <div th:if="${row.legacy}">
                                 <p>Legacy action - per-target outcome detail is unavailable.</p>
                             </div>
@@ -143,19 +127,6 @@
                                     Open provider options
                                     <span class="visually-hidden"> (opens in a new tab)</span>
                                 </a>
-                            </div>
-                            <div th:if="${row.protect}">
-                                <strong>No automatic undo</strong>
-                                <p>Removing protection creates a new reviewed action and does not erase this history.</p>
-                                <form th:if="${history.query.account != 'all'}" method="post"
-                                      th:action="@{|/review/actions/${row.actionPublicId}/remove-protection/confirm|}">
-                                    <input type="hidden" name="account"
-                                           th:value="${history.query.account}">
-                                    <button type="submit">Review removing protection</button>
-                                </form>
-                                <span th:if="${history.query.account == 'all'}">
-                                    Choose one account to review removing protection.
-                                </span>
                             </div>
                             <p th:if="${row.compensatesActionPublicId != null}">
                                 This action compensates an

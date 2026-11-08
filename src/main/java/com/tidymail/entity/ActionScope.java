@@ -63,49 +63,6 @@ public class ActionScope {
     protected ActionScope() {
     }
 
-    /**
-     * Creates a validated scope from the exact message IDs and summary payloads.
-     */
-    public static ActionScope create(
-            Long accountId,
-            String actionType,
-            String targetKind,
-            List<String> messageIds,
-            String scopeHash,
-            ActionScopeTargetSummary targetSummary,
-            ActionScopeRiskSummary riskSummary) {
-        if (accountId == null || accountId <= 0) {
-            throw new IllegalArgumentException("accountId must be positive");
-        }
-        if (actionType == null || !actionType.matches("[A-Z][A-Z0-9_]{0,31}")) {
-            throw new IllegalArgumentException("actionType must be normalized");
-        }
-        if (targetKind == null || !targetKind.matches("[A-Z][A-Z0-9_]{0,31}")) {
-            throw new IllegalArgumentException("targetKind must be normalized");
-        }
-        if (messageIds == null || messageIds.isEmpty()
-                || messageIds.stream().anyMatch(id -> id == null || id.isBlank())) {
-            throw new IllegalArgumentException("Exact message IDs are required");
-        }
-        if (scopeHash == null || !scopeHash.matches("[0-9a-f]{64}")) {
-            throw new IllegalArgumentException("scopeHash must be lowercase SHA-256");
-        }
-        if (targetSummary == null || riskSummary == null) {
-            throw new IllegalArgumentException("Typed summaries are required");
-        }
-        ActionScope scope = new ActionScope();
-        scope.accountId = accountId;
-        scope.actionType = actionType;
-        scope.targetKind = targetKind;
-        scope.messageIds = List.copyOf(messageIds);
-        scope.scopeHash = scopeHash;
-        scope.messageCount = scope.messageIds.size();
-        scope.targetSummary = targetSummary;
-        scope.riskSummary = riskSummary;
-        scope.createdAt = Instant.now();
-        return scope;
-    }
-
     public Long getId() {
         return id;
     }

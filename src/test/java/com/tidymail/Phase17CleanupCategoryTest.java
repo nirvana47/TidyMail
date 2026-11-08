@@ -19,9 +19,10 @@ class Phase17CleanupCategoryTest {
         String unread = Files.readString(TEMPLATES.resolve("unread.html"));
         String css = Files.readString(CSS);
 
-        assertHeaderContract(senders, "Bulk Archive/Delete",
-            "How Bulk Archive/Delete staging works");
-        assertHeaderContract(unread, "Unread Only", "How Unread Only staging works");
+        assertHeaderContract(senders, "Senders");
+        assertHeaderContract(unread, "Unread Only");
+        assertThat(unread).contains("aria-label=\"How Unread Only works\"",
+            "class=\"page-help-icon\"", "role=\"tooltip\"");
         assertThat(senders).doesNotContain("class=\"cleanup-page-actions\"");
         assertThat(unread).doesNotContain("class=\"cleanup-page-actions\"");
         assertThat(css)
@@ -121,15 +122,12 @@ class Phase17CleanupCategoryTest {
     }
 
     private static void assertHeaderContract(
-            String html, String title, String helpLabel) {
+            String html, String title) {
         assertThat(html)
             .contains(
                 "class=\"page-header cleanup-page-header\"",
                 "class=\"cleanup-header-control-row\"",
                 "<h1>" + title + "</h1>",
-                "aria-label=\"" + helpLabel + "\"",
-                 "class=\"page-help-icon\"",
-                 "role=\"tooltip\"",
                 "class=\"cleanup-header-toggle\" data-category-toggle-all",
                 "Expand all");
          assertThat(html)

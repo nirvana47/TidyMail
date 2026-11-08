@@ -26,7 +26,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class MetadataSyncController {
 
     private static final Set<String> WORKSPACE_ROUTES = Set.of(
-            "/senders", "/unread", "/unsubscribe", "/review", "/activity", "/analytics");
+            "/senders", "/unread", "/review", "/activity");
 
     private final OwnedAccountScopeService accountScopeService;
     private final IncrementalSyncJob incrementalSyncJob;

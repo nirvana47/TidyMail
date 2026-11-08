@@ -10,5 +10,5 @@ public enum BulkActionType {
     ARCHIVE,
     TRASH,
     MARK_READ,
-    MARK_UNREAD
+    MARK_READ_ARCHIVE
 }

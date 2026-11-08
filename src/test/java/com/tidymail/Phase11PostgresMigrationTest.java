@@ -2,43 +2,22 @@ package com.tidymail;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.jupiter.api.Assertions.assertTimeout;
 
-import com.tidymail.dto.UnsubscribeCandidateRow;
-import com.tidymail.dto.UnsubscribeQuery;
-import com.tidymail.entity.MessageMetadata;
-import com.tidymail.entity.UnsubscribeIntentNonce;
-import com.tidymail.entity.UserAccount;
-import com.tidymail.repository.MessageMetadataRepository;
-import com.tidymail.repository.UnsubscribeCandidateRepository;
-import com.tidymail.repository.UnsubscribeIntentNonceRepository;
-import com.tidymail.repository.UserAccountRepository;
-import com.tidymail.service.UnsubscribeCandidateService;
-import com.tidymail.unsubscribe.UnsubscribeIntentNonceService;
-import com.tidymail.unsubscribe.UnsubscribeMethod;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.Callable;
-import java.util.concurrent.Executors;
-import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -55,7 +34,7 @@ class Phase11PostgresMigrationTest {
             .withPassword("tidymail");
 
     @Test
-    void productionV1ToV8AndV7ToV8UpgradeValidateSchemaHibernateAndCandidateParity()
+    void productionV1ToV8AndV7ToV8UpgradeValidateSchemaHibernateAndPreserveHeaders()
             throws Exception {
         Flyway full = flyway(null);
         full.clean();
@@ -119,238 +98,7 @@ class Phase11PostgresMigrationTest {
         }
 
         assertThat(flyway(null).migrate().migrationsExecuted).isGreaterThanOrEqualTo(5);
-        try (ConfigurableApplicationContext context = application()) {
-            try (Connection validated = context.getBean(DataSource.class).getConnection()) {
-                assertThat(validated.getMetaData().getURL()).isEqualTo(POSTGRES.getJdbcUrl());
-            }
-            assertConcurrentNonceConsumption(context);
-            assertTenThousandRowCorrectnessPlansAndBudget(context);
-        }
-    }
-
-    private static List<CandidateFact> dialectFacts(
-            ConfigurableApplicationContext context, String email) {
-        UserAccountRepository accounts = context.getBean(UserAccountRepository.class);
-        MessageMetadataRepository metadata = context.getBean(MessageMetadataRepository.class);
-        JdbcTemplate jdbc = context.getBean(JdbcTemplate.class);
-        UnsubscribeCandidateService service =
-            context.getBean(UnsubscribeCandidateService.class);
-
-        UserAccount account = new UserAccount();
-        account.setEmail(email);
-        account.setProvider("google");
-        account.setProviderAccountId("provider-" + email);
-        account.setDisplayName("Parity account");
-        account.setEncryptedAccessToken(new byte[] {1});
-        account.setEncryptedRefreshToken(new byte[] {2});
-        account.setScopes(List.of("openid"));
-        account = accounts.saveAndFlush(account);
-        long accountId = account.getId();
-
-        Instant base = Instant.parse("2026-08-09T12:00:00Z");
-        seedParityMetadata(metadata, account, "rfc@example.com", "rfc.list",
-            "<https://rfc.example/u?token=RAW_URI_CANARY>",
-            List.of("List-Unsubscribe=One-Click"), true, base);
-        seedParityMetadata(metadata, account, "legacy@example.com", "legacy.list",
-            "<https://legacy.example/u>", List.of(), false, base.minusSeconds(60));
-        seedParityMetadata(metadata, account, "mailto@example.com", "mailto.list",
-            "<mailto:leave@example.com?subject=MAILTO_CANARY>", List.of(), false,
-            base.minusSeconds(120));
-        seedParityMetadata(metadata, account, "manual@example.com", "manual.list",
-            "<ftp://manual.example/u>", List.of(), false, base.minusSeconds(180));
-        seedParityMetadata(metadata, account, "protected@example.com", "protected.list",
-            "<https://protected.example/u>", List.of(), false, base.minusSeconds(240));
-        seedParityMetadata(metadata, account, "failed@example.com", "failed.list",
-            "<https://failed.example/u>", List.of(), false, base.minusSeconds(300));
-        seedParityMetadata(metadata, account, "unattempted@example.com", "unattempted.list",
-            "<https://unattempted.example/u>", List.of(), false, base.minusSeconds(360));
-        jdbc.update("""
-            INSERT INTO protected_senders(account_id, sender_address, source)
-            VALUES (?, 'protected@example.com', 'USER')
-            """, accountId);
-
-        Map<String, String> outcomes = new LinkedHashMap<>();
-        outcomes.put("rfc@example.com", "ACCEPTED");
-        outcomes.put("legacy@example.com", "PENDING");
-        outcomes.put("mailto@example.com", "CONFIRMED");
-        outcomes.put("manual@example.com", "MANUAL_REQUIRED");
-        outcomes.put("protected@example.com", "VERIFICATION_PENDING");
-        outcomes.put("failed@example.com", "FAILED");
-        outcomes.forEach((sender, status) -> jdbc.update("""
-            INSERT INTO unsubscribe_attempts(
-                account_id, candidate_fingerprint, sender_key_fingerprint,
-                method, latest_status, created_at, completed_at, confirmation_source
-            ) VALUES (?, ?, ?, 'LEGACY_HTTPS_GET', ?, ?, ?,
-                CASE WHEN ? = 'CONFIRMED' THEN 'USER_CONFIRMED' ELSE NULL END)
-            """,
-            accountId,
-            UnsubscribeCandidateService.candidateFingerprint(
-                accountId, sender, sender.substring(0, sender.indexOf('@')) + ".list"),
-            "a".repeat(64),
-            status,
-            java.sql.Timestamp.from(base.minusSeconds(600)),
-            java.sql.Timestamp.from(base.minusSeconds(590)),
-            status));
-
-        UnsubscribeQuery includeProtected = UnsubscribeQuery.parse(Map.of(
-            "protected", List.of("include"),
-            "sort", List.of("sender")));
-        return service.query(List.of(accountId), includeProtected).rows().stream()
-            .map(CandidateFact::from)
-            .sorted(Comparator.comparing(CandidateFact::sender))
-            .toList();
-    }
-
-    private static void seedParityMetadata(
-            MessageMetadataRepository repository,
-            UserAccount account,
-            String sender,
-            String listIdentity,
-            String destination,
-            List<String> post,
-            boolean trusted,
-            Instant receivedAt) {
-        MessageMetadata row = new MessageMetadata();
-        row.setAccountId(account.getId());
-        row.setProvider("google");
-        row.setProviderMessageId("parity-" + sender);
-        row.setProviderThreadId("thread-" + sender);
-        row.setFromAddress(sender);
-        row.setFromDisplayName(sender);
-        row.setFromDomain("example.com");
-        row.setReceivedAt(receivedAt);
-        row.setListIdValues(List.of(listIdentity));
-        row.setListUnsubscribeValues(List.of(destination));
-        row.setListUnsubscribePostValues(post);
-        row.setUnsubscribeDkimPass(trusted);
-        row.setUnsubscribeDkimCoversListUnsubscribe(trusted);
-        row.setUnsubscribeDkimCoversListUnsubscribePost(trusted);
-        row.setUnsubscribeAuthReason(trusted ? "TRUSTED_PASS" : "NO_TRUSTED_RESULT");
-        repository.save(row);
-    }
-
-    private static void assertConcurrentNonceConsumption(
-            ConfigurableApplicationContext context) throws Exception {
-        UserAccount account = context.getBean(UserAccountRepository.class)
-            .findByEmailAndProvider("phase11-upgrade@example.com", "google")
-            .orElseThrow();
-        Instant issuedAt = Instant.parse("2026-08-09T12:30:00Z");
-        Instant expiresAt = issuedAt.plusSeconds(300);
-        String nonceFingerprint = "b".repeat(64);
-        String candidateFingerprint = "c".repeat(64);
-        String destinationFingerprint = "d".repeat(64);
-        context.getBean(UnsubscribeIntentNonceRepository.class).saveAndFlush(
-            UnsubscribeIntentNonce.issue(
-                account.getId(), nonceFingerprint, candidateFingerprint,
-                destinationFingerprint, UnsubscribeMethod.RFC8058_POST,
-                issuedAt, expiresAt));
-        UnsubscribeIntentNonceService service =
-            context.getBean(UnsubscribeIntentNonceService.class);
-        Callable<UnsubscribeIntentNonceService.ConsumeResult> consume = () -> service.consume(
-            account.getId(), nonceFingerprint, candidateFingerprint,
-            destinationFingerprint, UnsubscribeMethod.RFC8058_POST,
-            issuedAt, expiresAt, issuedAt.plusSeconds(1));
-        List<UnsubscribeIntentNonceService.ConsumeResult> results;
-        try (var executor = Executors.newFixedThreadPool(2)) {
-            results = executor.invokeAll(List.of(consume, consume)).stream().map(future -> {
-                try {
-                    return future.get();
-                } catch (Exception failure) {
-                    throw new AssertionError(failure);
-                }
-            }).toList();
-        }
-        assertThat(results).containsExactlyInAnyOrder(
-            UnsubscribeIntentNonceService.ConsumeResult.CONSUMED,
-            UnsubscribeIntentNonceService.ConsumeResult.REPLAYED);
-    }
-
-    private static void assertTenThousandRowCorrectnessPlansAndBudget(
-            ConfigurableApplicationContext context) throws Exception {
-        long accountId;
-        try (Connection connection = connection()) {
-            accountId = insertAccount(connection, "phase11-performance@example.com");
-            insertPerformanceMetadata(connection, accountId);
-            try (Statement statement = connection.createStatement()) {
-                statement.execute("ANALYZE message_metadata");
-                statement.execute("ANALYZE unsubscribe_attempts");
-                statement.execute("ANALYZE unsubscribe_outcome_events");
-                statement.execute("ANALYZE unsubscribe_intent_nonces");
-                statement.execute("SET enable_seqscan=off");
-                assertPlanUses(statement, """
-                    SELECT id FROM message_metadata
-                    WHERE account_id=%d AND from_address='sender000@example.com'
-                    ORDER BY received_at DESC, id DESC LIMIT 25
-                    """.formatted(accountId),
-                    "idx_message_metadata_unsubscribe_candidate");
-                assertPlanUses(statement, """
-                    SELECT id FROM message_metadata
-                    WHERE account_id=%d
-                      AND (cardinality(list_id_values) > 0
-                           OR cardinality(list_unsubscribe_values) > 0)
-                    ORDER BY received_at DESC, id DESC LIMIT 25
-                    """.formatted(accountId),
-                    "idx_message_metadata_unsubscribe_list_source");
-            }
-        }
-
-        UnsubscribeCandidateRepository repository =
-            context.getBean(UnsubscribeCandidateRepository.class);
-        Instant now = Instant.parse("2026-08-09T13:00:00Z");
-        repository.findCandidateBatch(List.of(accountId), now, 200, 0);
-        List<UnsubscribeCandidateRepository.SourceCandidate> repositoryRows =
-            assertTimeout(Duration.ofSeconds(2),
-                () -> repository.findCandidateBatch(List.of(accountId), now, 200, 0));
-        assertThat(repositoryRows).hasSize(100);
-    }
-
-    private static void insertPerformanceMetadata(Connection connection, long accountId)
-            throws SQLException {
-        connection.setAutoCommit(false);
-        try (PreparedStatement statement = connection.prepareStatement("""
-                INSERT INTO message_metadata(
-                    account_id, provider, provider_message_id, provider_thread_id,
-                    from_address, from_display_name, from_domain, received_at,
-                    list_id_values, list_unsubscribe_values,
-                    list_unsubscribe_post_values, unsubscribe_dkim_pass,
-                    unsubscribe_dkim_covers_list_unsubscribe,
-                    unsubscribe_dkim_covers_list_unsubscribe_post,
-                    unsubscribe_auth_reason)
-                VALUES (?,'google',?,?,?,?,?,?,
-                    ARRAY[?],ARRAY[?],ARRAY['List-Unsubscribe=One-Click'],
-                    true,true,true,'TRUSTED_PASS')
-                """)) {
-            Instant base = Instant.parse("2026-08-09T12:00:00Z");
-            for (int index = 0; index < 10_000; index++) {
-                int candidate = index / 100;
-                String sender = "sender%03d@example.com".formatted(candidate);
-                statement.setLong(1, accountId);
-                statement.setString(2, "performance-" + index);
-                statement.setString(3, "performance-thread-" + index);
-                statement.setString(4, sender);
-                statement.setString(5, "Sender " + candidate);
-                statement.setString(6, "example.com");
-                statement.setObject(7, OffsetDateTime.ofInstant(
-                    base.minusSeconds(candidate * 60L + index % 100), ZoneOffset.UTC));
-                statement.setString(8, "list-%03d.example".formatted(candidate));
-                statement.setString(9,
-                    "<https://unsubscribe.example/u/%03d?token=PERF_CANARY>".formatted(candidate));
-                statement.addBatch();
-                if ((index + 1) % 500 == 0) statement.executeBatch();
-            }
-            statement.executeBatch();
-        }
-        connection.commit();
-        connection.setAutoCommit(true);
-    }
-
-    private static void assertPlanUses(
-            Statement statement, String query, String index) throws SQLException {
-        StringBuilder plan = new StringBuilder();
-        try (ResultSet result = statement.executeQuery("EXPLAIN " + query)) {
-            while (result.next()) plan.append(result.getString(1)).append('\n');
-        }
-        assertThat(plan).as(query).contains(index);
+        assertHibernateValidation();
     }
 
     private static void assertCompleteV8(Connection connection) throws SQLException {
@@ -384,26 +132,6 @@ class Phase11PostgresMigrationTest {
             "idx_unsubscribe_outcome_events_account_time");
         assertThat(indexes(connection, "unsubscribe_intent_nonces")).contains(
             "idx_unsubscribe_intent_nonces_account_expiry");
-    }
-
-    private record CandidateFact(
-            String sender,
-            long volume,
-            String method,
-            String confidence,
-            boolean needsReview,
-            boolean protectedSender,
-            String latestOutcome) {
-        static CandidateFact from(UnsubscribeCandidateRow row) {
-            return new CandidateFact(
-                row.senderAddress(),
-                row.estimatedThirtyDayMessages(),
-                row.recommendedMethod(),
-                row.confidence(),
-                row.needsReview(),
-                row.protectedSender(),
-                row.latestOutcome());
-        }
     }
 
     private static void assertConstraints(Connection connection, long accountId)

@@ -55,8 +55,8 @@ public class MailboxBackfillService {
             return SyncOutcome.complete();
         }
 
-        long indexed = metadata.countByAccountIdIn(List.of(account.getId()));
         long ceiling = config.getMaxMessagesPerAccount();
+        long indexed = ceiling > 0 ? metadata.countByAccountIdIn(List.of(account.getId())) : 0;
         if (ceiling > 0 && indexed >= ceiling) {
             commitPage(account, leaseOwner, state, List.of(), null, 0);
             return SyncOutcome.complete();
@@ -102,12 +102,15 @@ public class MailboxBackfillService {
             long accountId, List<MailMessage> page, long ceiling, long indexed) {
         Map<String, MailMessage> unique = new LinkedHashMap<>();
         page.forEach(message -> unique.putIfAbsent(message.id(), message));
+        if (ceiling <= 0) {
+            return new PageSelection(List.copyOf(unique.values()), 0);
+        }
         Set<String> existing = metadata.findByAccountIdAndProviderMessageIdIn(
                 accountId, unique.keySet())
             .stream()
             .map(row -> row.getProviderMessageId())
             .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
-        long remaining = ceiling > 0 ? ceiling - indexed : Long.MAX_VALUE;
+        long remaining = ceiling - indexed;
         long newMessages = 0;
         List<MailMessage> selected = new ArrayList<>(unique.size());
         for (MailMessage message : unique.values()) {
@@ -121,7 +124,7 @@ public class MailboxBackfillService {
         return new PageSelection(List.copyOf(selected), newMessages);
     }
 
-    /** The selected messages and count of new ones. */
+    /** The selected messages and new-message count used to enforce the ceiling. */
     private record PageSelection(List<MailMessage> messages, long newMessages) {
     }
 }

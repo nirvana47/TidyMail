@@ -10,7 +10,7 @@ import java.util.List;
  * into types, risks, categories, and recommendations with human-readable reasons.
  *
  * <p>Product functionality supported: the <em>Senders</em> and <em>Unread</em>
- * flows' recommendations and the Reply Zero queue's reply-required detection.
+ * flows' recommendations.
  */
 public final class DecisionRuleSet {
     public static final DecisionRuleSet V1 = new DecisionRuleSet();

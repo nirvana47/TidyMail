@@ -69,6 +69,8 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
         for (var sample : java.util.List.of(
                 new String[] { "shivani.tewari@gene.com", "Shivani Tewari", "Dinner tonight?" },
                 new String[] { "shivani.tewari2016@gmail.com", "Shivani Tewari", "Family plans" },
+                new String[] { "no.reply.alerts@chase.com", "Chase", "Synthetic account alert" },
+                new String[] { "no-reply@alertsp.chase.com", "Chase", "Synthetic account update" },
                 new String[] { "orders@amazon.com", "Amazon", "Your receipt" },
                 new String[] { "orders@amazon.com", "Amazon", "Special offer" })) {
             String id = "classification-" + java.util.UUID.randomUUID();
@@ -102,6 +104,11 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
             labels,label_evidence_known,dashboard_from_address,dashboard_unit_kind,dashboard_unit_key,received_at,classification_override)
             VALUES(?,'google','personal-work','spouse@gene.com','Spouse','Synthetic work-address invitation',ARRAY['INBOX'],true,
             'spouse@gene.com','ADDRESS','spouse@gene.com',now(),'PERSONAL')
+            """,account);
+        jdbc.update("""
+            UPDATE message_metadata SET classification_override =
+              CASE WHEN provider_message_id LIKE 'browser-%' THEN 'NEWSLETTER' ELSE 'SECURITY' END
+            WHERE account_id=? AND (provider_message_id LIKE 'browser-%' OR provider_message_id LIKE 'classification-%')
             """,account);
         jdbc.update("UPDATE message_metadata SET size_estimate=2000+(id%50)*400 WHERE account_id=?",account);
         jdbc.update("UPDATE message_metadata SET attachment_state='ABSENT',attachment_source='SYNTHETIC_FIXTURE',attachment_observed_at=now(),has_attachments=false WHERE account_id=? AND provider_message_id LIKE 'pattern-%'",account);
@@ -180,12 +187,15 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
             for (String id : ids)
                 providerLabels.compute(id, (key, old) -> {
                     var next = new java.util.HashSet<>(old);
-                    if (action == com.tidymail.mail.BulkActionType.ARCHIVE)
+                    if (action == com.tidymail.mail.BulkActionType.ARCHIVE
+                            || action == com.tidymail.mail.BulkActionType.MARK_READ_ARCHIVE)
                         next.remove("INBOX");
                     else
                         next.add("TRASH");
                     return next;
                 });
+            if (action == com.tidymail.mail.BulkActionType.MARK_READ_ARCHIVE)
+                providerUnread.removeAll(ids);
             return null;
         }).when(gmailProvider).cleanupOnce(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyList(),
                 org.mockito.ArgumentMatchers.any());

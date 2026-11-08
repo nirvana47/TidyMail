@@ -26,7 +26,7 @@
                 <p class="rail-label">Cleanup</p>
                 <a th:href="@{/senders}"
                      th:attr="aria-current=${workspace.route.value == 'senders' ? 'page' : null}">
-                      <span>Bulk Archive/Delete</span>
+                      <span>Senders</span>
                   </a>
                 <a th:href="@{/unread}"
                      th:attr="aria-current=${workspace.route.value == 'unread' ? 'page' : null},
@@ -35,26 +35,17 @@
                                   : 'Unread Only'}">
                       <span>Unread Only</span>
                   </a>
-                <a th:href="@{/unsubscribe}"
-                     th:attr="aria-current=${workspace.route.value == 'unsubscribe' ? 'page' : null}">
-                      <span>Bulk Unsubscribe</span>
-                  </a>
+
                 <p class="rail-label">Manage</p>
-                <a th:href="@{/review}"
-                     th:attr="aria-current=${workspace.route.value == 'review' ? 'page' : null},
-                              aria-label=${workspace.queueCountAvailable()
-                                  ? 'Review, ' + workspace.queuedActionCount + ' queued actions'
-                                  : 'Review'}">
-                      <span>Review</span>
+                <a th:href="@{/review(view='history',account=${workspace.selectedAccountQuery})}"
+                     th:attr="aria-current=${workspace.route.value == 'review' ? 'page' : null}">
+                      <span>Action history</span>
                   </a>
                 <a th:href="@{/activity}"
                      th:attr="aria-current=${workspace.route.value == 'activity' ? 'page' : null}">
                       <span>Sync / Activity</span>
                   </a>
-                <a th:href="@{/analytics}"
-                     th:attr="aria-current=${workspace.route.value == 'analytics' ? 'page' : null}">
-                      <span>Analytics</span>
-                  </a>
+
             </nav>
 
             <div class="rail-footer">

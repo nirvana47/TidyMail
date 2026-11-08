@@ -10,7 +10,6 @@ import com.tidymail.entity.UserAccount;
 import com.tidymail.repository.DecisionSurfaceQueryRepository;
 import com.tidymail.repository.SyncProgressRepository;
 import com.tidymail.repository.UserAccountRepository;
-import com.tidymail.repository.UserActionRepository;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -29,10 +28,10 @@ import org.springframework.util.StringUtils;
 /**
  * Builds the shared workspace page model rendered across all pages: resolves the
  * selected account scope, aggregates per-account sync progress into an overall
- * state, and supplies account options, queued counts, and unread counts.
+ * state, and supplies account options and unread counts.
  *
  * <p>Product functionality supported: the workspace shell shared across the
- * Senders, Unread, Unsubscribe, Review, Activity, and Analytics pages.
+ * Senders, Unread, Review, and Activity pages.
  */
 @Service
 @Transactional(readOnly = true)
@@ -70,7 +69,6 @@ public class WorkspaceModelService {
 
     private final OwnedAccountScopeService accountScopeService;
     private final UserAccountRepository accountRepository;
-    private final UserActionRepository actionRepository;
     private final SyncProgressRepository progressRepository;
     private final MessageMetadataQueryService metadataQueryService;
     private final DecisionSurfaceQueryRepository decisionQueryRepository;
@@ -80,25 +78,22 @@ public class WorkspaceModelService {
     public WorkspaceModelService(
             OwnedAccountScopeService accountScopeService,
             UserAccountRepository accountRepository,
-            UserActionRepository actionRepository,
             SyncProgressRepository progressRepository,
             MessageMetadataQueryService metadataQueryService,
             DecisionSurfaceQueryRepository decisionQueryRepository) {
-        this(accountScopeService, accountRepository, actionRepository, progressRepository,
+        this(accountScopeService, accountRepository, progressRepository,
             metadataQueryService, decisionQueryRepository, Clock.systemUTC());
     }
 
     WorkspaceModelService(
             OwnedAccountScopeService accountScopeService,
             UserAccountRepository accountRepository,
-            UserActionRepository actionRepository,
             SyncProgressRepository progressRepository,
             MessageMetadataQueryService metadataQueryService,
             DecisionSurfaceQueryRepository decisionQueryRepository,
             Clock clock) {
         this.accountScopeService = accountScopeService;
         this.accountRepository = accountRepository;
-        this.actionRepository = actionRepository;
         this.progressRepository = progressRepository;
         this.metadataQueryService = metadataQueryService;
         this.decisionQueryRepository = decisionQueryRepository;
@@ -147,18 +142,6 @@ public class WorkspaceModelService {
             .toList();
         Aggregate aggregate = aggregate(summaries, clock.instant());
 
-        Long queuedCount;
-        try {
-            queuedCount = actionRepository.countByAccountIdInAndStatus(selectedIds, "QUEUED");
-        } catch (RuntimeException unavailable) {
-            queuedCount = null;
-            aggregate = new Aggregate(
-                aggregate.indexedCount() > 0 ? WorkspaceState.PARTIAL : WorkspaceState.ERROR,
-                aggregate.indexedCount(), aggregate.scannedCount(), aggregate.pagesCompleted(),
-                aggregate.lastSuccessfulAt(), "Queued action status is temporarily unavailable.",
-                aggregate.syncActive(), aggregate.neverStarted(), aggregate.completedEmpty());
-        }
-
         UnreadScopeCounts unreadScopeCounts = unreadScopeCounts(selectedIds);
 
         String displayName = authentication.getPrincipal().getAttribute("name");
@@ -174,7 +157,6 @@ public class WorkspaceModelService {
             selectedIds,
             selectedQuery,
             selectedLabel,
-            queuedCount,
             unreadScopeCounts,
             aggregate.indexedCount(),
             aggregate.scannedCount(),

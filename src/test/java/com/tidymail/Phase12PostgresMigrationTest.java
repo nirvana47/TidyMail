@@ -3,33 +3,15 @@ package com.tidymail;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.tidymail.action.ExecutionStatus;
-import com.tidymail.action.ExecutionTargetStatus;
-import com.tidymail.action.OperationKind;
 import com.tidymail.dto.ActionHistoryModel;
-import com.tidymail.dto.ActionScopeRiskSummary;
-import com.tidymail.dto.ActionScopeTargetSummary;
 import com.tidymail.dto.HistoryQuery;
-import com.tidymail.dto.ReviewQuery;
 import com.tidymail.dto.WorkspacePageModel;
 import com.tidymail.dto.WorkspaceRoute;
 import com.tidymail.dto.WorkspaceState;
 import com.tidymail.dto.UnreadScopeCounts;
-import com.tidymail.entity.ActionExecution;
-import com.tidymail.entity.ActionExecutionTarget;
-import com.tidymail.entity.ActionIntent;
-import com.tidymail.entity.ActionScope;
 import com.tidymail.entity.UserAccount;
-import com.tidymail.entity.UserAction;
-import com.tidymail.repository.ActionExecutionRepository;
-import com.tidymail.repository.ActionExecutionTargetRepository;
-import com.tidymail.repository.ActionIntentRepository;
-import com.tidymail.repository.ActionScopeTargetRepository;
 import com.tidymail.repository.UserAccountRepository;
-import com.tidymail.repository.UserActionRepository;
 import com.tidymail.service.ActionHistoryService;
-import com.tidymail.service.ActionScopeService;
-import com.tidymail.service.ReviewActionService;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -40,9 +22,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
@@ -269,17 +248,11 @@ class Phase12PostgresMigrationTest {
         assertThat(full.migrate().migrationsExecuted).isGreaterThanOrEqualTo(13);
         try (ConfigurableApplicationContext context = application()) {
             DialectFacts facts = dialectFacts(context, "postgres-ledger@example.com");
-            assertThat(facts.queueRows()).isEqualTo(1);
-            assertThat(facts.queuedActions()).isEqualTo(1);
-            assertThat(facts.exactTargets()).isEqualTo(1);
-            assertThat(facts.eligibleActions()).isEqualTo(1);
             assertThat(facts.historyRows()).isEqualTo(1);
             assertThat(facts.succeededTargets()).isEqualTo(1);
             assertThat(facts.action()).isEqualTo("Archive");
             assertThat(facts.mode()).isEqualTo("Staged");
             assertThat(facts.status()).isEqualTo("Applied");
-            assertThat(facts.appliedCount()).isEqualTo(1);
-            assertThat(facts.undoEligible()).isTrue();
             assertThat(facts.requested()).isEqualTo(1);
             assertThat(facts.succeeded()).isEqualTo(1);
         }
@@ -467,15 +440,7 @@ class Phase12PostgresMigrationTest {
     private static DialectFacts dialectFacts(
             ConfigurableApplicationContext context, String email) {
         UserAccountRepository accounts = context.getBean(UserAccountRepository.class);
-        UserActionRepository actions = context.getBean(UserActionRepository.class);
-        ActionIntentRepository intents = context.getBean(ActionIntentRepository.class);
-        ActionExecutionRepository executions =
-            context.getBean(ActionExecutionRepository.class);
-        ActionExecutionTargetRepository targets =
-            context.getBean(ActionExecutionTargetRepository.class);
-        ActionScopeTargetRepository scopeTargets =
-            context.getBean(ActionScopeTargetRepository.class);
-        ActionScopeService scopeService = context.getBean(ActionScopeService.class);
+        var jdbc = context.getBean(org.springframework.jdbc.core.JdbcTemplate.class);
 
         UserAccount account = new UserAccount();
         account.setEmail(email);
@@ -487,59 +452,17 @@ class Phase12PostgresMigrationTest {
         account.setAesKeyId("hkdf-sha256-v1");
         account = accounts.saveAndFlush(account);
 
-        var preview = scopeService.createOrGet(
-            account.getId(), "ARCHIVE", "UNREAD_SELECTION", List.of("parity-message"),
-            new ActionScopeTargetSummary("Parity target", null, "example.com", 1),
-            new ActionScopeRiskSummary(0, 0, List.of()));
-        ActionScope scope = scopeService.requireScope(account.getId(), preview.scopeId());
-        UserAction action = new UserAction();
-        action.setAccountId(account.getId());
-        action.setActionScopeId(scope.getId());
-        action.setActionType("ARCHIVE");
-        action.setMessageIds(scope.getMessageIds());
-        action.setTargetKind(scope.getTargetKind());
-        action.setAffectedCount(1);
-        action.setStatus("QUEUED");
-        action.setExecutionMode("STAGED");
-        action.setDecisionSource("UNREAD");
-        action = actions.saveAndFlush(action);
-        intents.saveAndFlush(ActionIntent.messages(
-            action.getId(), account.getId(), "Parity target",
-            "parity@example.com", Instant.parse("2026-08-09T12:00:00Z")));
+        var action = com.tidymail.support.LegacyHistoryFixtures.action(jdbc, account.getId(),
+            "ARCHIVE", "Parity target", List.of("parity-message"), "APPLIED");
+        com.tidymail.support.LegacyHistoryFixtures.outcome(jdbc, action, "APPLIED",
+            List.of("SUCCEEDED"), List.of("NONE"), null);
 
         WorkspacePageModel workspace = new WorkspacePageModel(
             WorkspaceRoute.REVIEW, "Parity", email, List.of(),
             List.of(account.getId()), String.valueOf(account.getId()), email,
-            1L, UnreadScopeCounts.available(0, 0),
+            UnreadScopeCounts.available(0, 0),
             1, 1, 1, null, null, WorkspaceState.READY,
             false, false, false);
-        var queue = context.getBean(ReviewActionService.class).queue(
-            "parity-owner", workspace,
-            new ReviewQuery("queued", String.valueOf(account.getId()),
-                "archive", "eligible", "Parity", 0));
-
-        Instant now = Instant.parse("2026-08-09T12:01:00Z");
-        ActionExecution execution = ActionExecution.reserve(
-            account.getId(), action.getId(), OperationKind.FORWARD,
-            "4".repeat(64), "5".repeat(64), 1, now, now.plusSeconds(120));
-        execution.start(now.plusSeconds(1));
-        execution.complete(
-            ExecutionStatus.APPLIED, 0, 1, 0, 0, 0, null, now.plusSeconds(2));
-        execution = executions.saveAndFlush(execution);
-        var scopeTarget = scopeTargets.findByScopeIdAndAccountIdOrderByScopeOrdinal(
-            scope.getId(), account.getId()).getFirst();
-        ActionExecutionTarget target =
-            ActionExecutionTarget.pending(execution.getId(), scopeTarget);
-        target.markDispatched(now.plusSeconds(1));
-        target.complete(
-            ExecutionTargetStatus.SUCCEEDED, false, null, now.plusSeconds(2));
-        targets.saveAndFlush(target);
-        action.setStatus("APPLIED");
-        action.setAppliedAt(now.plusSeconds(2));
-        action.setCompletedAt(now.plusSeconds(2));
-        action.setUndoEligibleUntil(Instant.now().plusSeconds(3_600));
-        actions.saveAndFlush(action);
-
         ActionHistoryModel history = context.getBean(ActionHistoryService.class).history(
             workspace,
             new HistoryQuery(
@@ -547,25 +470,16 @@ class Phase12PostgresMigrationTest {
                 "archive", "applied", "Parity", 0));
         var row = history.rows().getFirst();
         return new DialectFacts(
-            queue.filteredCount(), queue.metrics().queuedActions(),
-            queue.metrics().exactTargets(), queue.metrics().eligibleActions(),
             history.totalRows(), history.metrics().succeededTargets(),
-            row.action(), row.mode(), row.status(), row.undoAppliedCount(),
-            row.undoEligible(), row.outcome().requested(), row.outcome().succeeded());
+            row.action(), row.mode(), row.status(), row.outcome().requested(), row.outcome().succeeded());
     }
 
     private record DialectFacts(
-        long queueRows,
-        long queuedActions,
-        long exactTargets,
-        long eligibleActions,
         long historyRows,
         long succeededTargets,
         String action,
         String mode,
         String status,
-        int appliedCount,
-        boolean undoEligible,
         int requested,
         int succeeded
     ) {

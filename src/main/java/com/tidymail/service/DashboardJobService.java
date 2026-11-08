@@ -19,6 +19,7 @@ import org.springframework.web.server.ResponseStatusException;
 /** Short database transactions only. No provider calls, waits, or mailbox identifiers in responses. */
 @Service
 public class DashboardJobService {
+    static final Set<String> ACTIONS = Set.of("MARK_READ", "ARCHIVE", "TRASH", "MARK_READ_ARCHIVE");
     public static final int BATCH_SIZE=50;
     public static final int MAX_READ_ATTEMPTS=6;
     public static final int RESPONSE_BATCH_SIZE=1000;
@@ -75,28 +76,28 @@ public class DashboardJobService {
                 """,p);
             if(rows.isEmpty())throw new ResponseStatusException(HttpStatus.NOT_FOUND,"Preview expired or unavailable");
             var row=rows.getFirst();
-            if(!Set.of("MARK_READ","ARCHIVE","TRASH").contains(row.get("action_type"))||!row.get("provider").equals("google"))throw conflict("Only supported Gmail cleanup actions are available");
+            if(!ACTIONS.contains(row.get("action_type"))||!row.get("provider").equals("google"))throw conflict("Only supported Gmail cleanup actions are available");
             if(((Number)row.get("grouping_revision")).longValue()!=repository.revision(account))throw conflict("Grouping changed. Create a new preview.");
             if(((Number)row.get("effective_count")).intValue()==0)throw conflict("No eligible changes. Create a new selection.");
             var targets=jdbc.queryForList("SELECT * FROM dashboard_preview_targets WHERE preview_id=:preview AND account_id=:account ORDER BY ordinal",p);
             DashboardFilter filter;
             try { filter=json.treeToValue(json.readTree(row.get("filter_snapshot").toString()).get("filter"),DashboardFilter.class); }
             catch(Exception invalid) { throw conflict("Preview filters are unavailable. Create a new preview."); }
-            if(!filter.category().isEmpty() || !filter.recommendation().isEmpty() || !filter.importance().isEmpty() || !filter.label().isEmpty()) {
+            if(!filter.category().isEmpty() || !filter.recommendation().isEmpty() || !filter.importance().isEmpty() || !filter.label().isEmpty() || !filter.labels().isEmpty() || !filter.composition().isEmpty()) {
                 var eligibleIds=targets.stream().filter(t->Boolean.TRUE.equals(t.get("effective"))).map(t->(UUID)t.get("message_id")).toList();
-                var current=repository.parameters(account,filter).addValue("ids",eligibleIds);
-                long matching=jdbc.queryForObject(repository.filtered(filter)+" SELECT count(*) FROM filtered WHERE dashboard_message_id IN (:ids)",current,Long.class);
+                var current=repository.parameters(account,filter).addValue("ids",new org.springframework.jdbc.support.SqlArrayValue("uuid",eligibleIds.toArray()));
+                long matching=jdbc.queryForObject(repository.filtered(filter)+" SELECT count(*) FROM filtered WHERE dashboard_message_id=ANY(:ids)",current,Long.class);
                 if(matching!=eligibleIds.size()) throw conflict("Recommendations or labels changed. Create a new preview.");
             }
             var scope=scopes.requireScope(account,((Number)row.get("scope_id")).longValue());
             var ids=targets.stream().map(t->(String)t.get("provider_message_id")).toList();
             if(ids.contains(null)||targets.size()!=((Number)row.get("selected_count")).intValue()
                 ||!new HashSet<>(ids).equals(new HashSet<>(scope.getMessageIds()))||ids.size()!=new HashSet<>(ids).size())throw conflict("Preview targets changed. Create a new preview.");
-            p.addValue("ids",ids);
+            p.addValue("ids",new org.springframework.jdbc.support.SqlArrayValue("text",ids.toArray()));
             if(jdbc.queryForObject("""
                 SELECT count(*) FROM cleanup_active_targets c JOIN cleanup_job_targets t
                 ON t.job_id=c.job_id AND t.account_id=c.account_id AND t.target_fingerprint=c.target_fingerprint
-                WHERE c.account_id=:account AND t.provider_message_id IN (:ids)
+                WHERE c.account_id=:account AND t.provider_message_id=ANY(:ids)
                 """,p,Long.class)>0)throw conflict("Selected messages already belong to active or unresolved work");
             UUID job=UUID.randomUUID();p.addValue("job",job).addValue("scope",row.get("scope_id"))
                 .addValue("action",row.get("action_type")).addValue("total",targets.size()).addValue("snapshot",row.get("filter_snapshot").toString());
@@ -194,10 +195,12 @@ public class DashboardJobService {
             var row=lock(claim.account(),claim.job());if(!owns(row,claim))return null;
             if(row.get("cancel_requested_at")!=null){release(claim);settle(claim.account(),claim.job());return null;}
             lockMetadata(claim.account(),claim.targets());
-            var p=repository.parameters(claim.account(),claim.filter().cleanupScope()).addValue("ids",claim.targets().stream().map(Target::messageId).toList()).addValue("action",claim.action());
-            Set<UUID> eligible=new HashSet<>(jdbc.queryForList(repository.filtered(claim.filter().cleanupScope())+"""
+            var dispatchFilter = claim.filter().withoutComposition().cleanupScope();
+            var p=repository.parameters(claim.account(),dispatchFilter).addValue("ids",claim.targets().stream().map(Target::messageId).toList()).addValue("action",claim.action());
+            Set<UUID> eligible=new HashSet<>(jdbc.queryForList(repository.filtered(dispatchFilter)+"""
                 SELECT dashboard_message_id FROM filtered f WHERE dashboard_message_id IN (:ids)
                 AND (:action<>'MARK_READ' OR unread) AND (:action<>'ARCHIVE' OR 'INBOX'=ANY(labels))
+                AND (:action<>'MARK_READ_ARCHIVE' OR unread OR 'INBOX'=ANY(labels))
                 AND NOT EXISTS(SELECT 1 FROM protected_senders s WHERE s.account_id=f.account_id AND s.sender_address=lower(f.address))
                 """,p,UUID.class));
             Set<String> recipients=new HashSet<>(jdbc.queryForList("""
@@ -245,8 +248,9 @@ public class DashboardJobService {
                 jdbc.update("UPDATE cleanup_job_targets SET state='CHANGED',reason='Gmail accepted the requested change',observed_at=now() WHERE job_id=:job AND batch_id=:batch AND state='DISPATCH_INTENT'",p);
                 jdbc.update("""
                     UPDATE message_metadata SET
-                    unread=CASE WHEN :action='MARK_READ' THEN false ELSE unread END,
+                    unread=CASE WHEN :action IN ('MARK_READ','MARK_READ_ARCHIVE') THEN false ELSE unread END,
                     labels=CASE :action WHEN 'MARK_READ' THEN array_remove(labels,'UNREAD')
+                      WHEN 'MARK_READ_ARCHIVE' THEN array_remove(array_remove(labels,'UNREAD'),'INBOX')
                       WHEN 'ARCHIVE' THEN array_remove(labels,'INBOX')
                       WHEN 'TRASH' THEN CASE WHEN 'TRASH'=ANY(labels) THEN labels ELSE array_append(labels,'TRASH') END END,
                     cleanup_updated_at=clock_timestamp()
@@ -337,7 +341,7 @@ public class DashboardJobService {
     }
     private static boolean desired(String action,MailMessage observed) {
         if(observed.labelIds()==null)return false;
-        return switch(action){case "MARK_READ"->!observed.isUnread();case "ARCHIVE"->!observed.labelIds().contains("INBOX");case "TRASH"->observed.labelIds().contains("TRASH");default->false;};
+        return switch(action){case "MARK_READ"->!observed.isUnread();case "ARCHIVE"->!observed.labelIds().contains("INBOX");case "MARK_READ_ARCHIVE"->!observed.isUnread()&&!observed.labelIds().contains("INBOX");case "TRASH"->observed.labelIds().contains("TRASH");default->false;};
     }
     private void outcome(Claim claim,Target target,String state,String reason) {
         var p=params(claim.account(),claim.job()).addValue("ordinal",target.ordinal()).addValue("state",state).addValue("reason",reason);
@@ -353,8 +357,9 @@ public class DashboardJobService {
         var p=new MapSqlParameterSource("account",account).addValue("id",observed.id()).addValue("action",action)
             .addValue("revision",observed.providerRevision()==null?null:new java.math.BigDecimal(observed.providerRevision()));
         jdbc.update("""
-            UPDATE message_metadata SET unread=CASE WHEN :action='MARK_READ' THEN false ELSE unread END,
+            UPDATE message_metadata SET unread=CASE WHEN :action IN ('MARK_READ','MARK_READ_ARCHIVE') THEN false ELSE unread END,
             labels=CASE :action WHEN 'MARK_READ' THEN array_remove(labels,'UNREAD')
+                      WHEN 'MARK_READ_ARCHIVE' THEN array_remove(array_remove(labels,'UNREAD'),'INBOX')
               WHEN 'ARCHIVE' THEN array_remove(labels,'INBOX')
               WHEN 'TRASH' THEN CASE WHEN 'TRASH'=ANY(labels) THEN labels ELSE array_append(labels,'TRASH') END END,
             provider_revision=GREATEST(provider_revision,CAST(:revision AS numeric))

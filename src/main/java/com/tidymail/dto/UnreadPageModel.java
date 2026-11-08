@@ -22,19 +22,16 @@ public record UnreadPageModel(
     String clearUrl,
     String previousUrl,
     String nextUrl,
-    List<SelectionRequest.PreviewAction> previewActions,
-    CleanupAction cleanupAction,
     List<UnreadCategoryGroup> categories,
     Map<String, String> categoryUrls,
     List<SenderCategoryOption> categoryOptions,
     long categoryAccountId
 ) {
     public UnreadPageModel {
-        if (workspace == null || query == null || results == null || cleanupAction == null) {
+        if (workspace == null || query == null || results == null) {
             throw new IllegalArgumentException("Complete unread page state is required");
         }
         canonicalQuery = orderedCopy(canonicalQuery);
-        previewActions = List.copyOf(previewActions);
         categories = List.copyOf(categories);
         categoryUrls = orderedCopy(categoryUrls);
         categoryOptions = List.copyOf(categoryOptions);

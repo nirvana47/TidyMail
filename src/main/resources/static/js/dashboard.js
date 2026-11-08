@@ -2,7 +2,9 @@
 (() => {
   const $ = id => document.getElementById(id);
   const state = { scope: 'inbox', suggestion: '', page: 0, messagePage: 0, address: null, tab: 'messages', data: null, focused: null, details: null, action: 'MARK_READ', preview: null, targetPage: 0, revision: 0 };
-  const selected = new Map(), expanded = new Map();
+  const selected = new Map(), expanded = new Map(), groupingSelection = new Map();
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  let allMatchingSelected = false, composition = null;
   let jobs = [], confirming = false, jobsRequest = 0, historyPage = 0, historyTotal = 0, historyLoading = false;
   const history = new Map();
   const pendingText = state => ({ QUEUED: 'Cleanup queued', DISPATCH_INTENT: 'Cleanup in progress', AWAITING_VERIFICATION: 'Outcome unresolved — checking labels' }[state] || '');
@@ -23,7 +25,7 @@
     try { const page = reset ? 0 : historyPage + 1, result = await api('jobs/history?page=' + page); if (reset) history.clear(); result.rows.forEach(j => history.set(j.id, j)); historyPage = page; historyTotal = result.total; renderActivity(); }
     catch (error) { notice(error.message); } finally { historyLoading = false; $('historyMore').disabled = false; }
   }
-  const actionName = action => ({ MARK_READ: 'Mark as Read', ARCHIVE: 'Archive', TRASH: 'Move to Trash' }[action] || action);
+  const actionName = action => ({ MARK_READ: 'Mark as Read', ARCHIVE: 'Archive', MARK_READ_ARCHIVE: 'Mark as Read + Archive', TRASH: 'Move to Trash' }[action] || action);
   const activeJob = j => j.remaining > 0 || j.verificationPending;
   const jobCounts = j => `${fmt(j.changed)} ${j.executionMode === 'RESPONSE' ? 'accepted by Gmail' : 'changed'} · ${fmt(j.failed)} failed · ${fmt(j.skipped)} skipped · ${fmt(j.unresolved)} unresolved · ${fmt(j.cancelled)} cancelled before dispatch · ${fmt(j.remaining)} remaining of ${fmt(j.total)}`;
   function renderJobs() {
@@ -57,9 +59,9 @@
   async function confirmJob() {
     if (confirming || !state.preview) return;
     confirming = true; $('confirmAction').disabled = true; const preview = state.preview;
-    try { const job = await api('jobs', { preview: preview.id }); state.preview = null; selected.clear(); $('confirm').close(); renderSelectionControls(); notice(actionName(preview.action) + ' saved. You can close this page; work continues.'); await pollJobs(); if (!jobs.some(j => j.id === job.id)) { jobs.unshift(job); renderJobs(); } } catch (error) { notice(error.message); } finally { confirming = false; $('confirmAction').disabled = !state.preview || !state.preview.effective; }
+    try { const job = await api('jobs', { preview: preview.id }); state.preview = null; selected.clear(); allMatchingSelected = false; $('confirm').close(); renderSelectionControls(); notice(actionName(preview.action) + ' saved. You can close this page; work continues.'); await pollJobs(); if (!jobs.some(j => j.id === job.id)) { jobs.unshift(job); renderJobs(); } } catch (error) { notice(error.message); } finally { confirming = false; $('confirmAction').disabled = !state.preview || !state.preview.effective; }
   }
-  let filterEpoch = 0, listRequest = 0, listLoading = false, detailRequest = 0, selectionBusy = 0, mergePage = 0, correctionDraft = null;
+  let filterEpoch = 0, listRequest = 0, listLoading = false, detailRequest = 0, detailLoad = null, detailRefreshPending = false, selectionBusy = 0, correctionDraft = null, correctionGroups = [], correctionRequest = 0;
   const fmt = number => Number(number).toLocaleString();
   function node(tag, text, className) { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (className) e.className = className; return e; }
   function notice(text, activity = false) {
@@ -74,26 +76,23 @@
     const dialog = document.querySelector('dialog[open]');
     if (dialog) { let feedback = dialog.querySelector('.dialog-notice'); if (!feedback) { feedback = node('p', undefined, 'notice dialog-notice'); feedback.setAttribute('role', 'status'); dialog.querySelector('h2').parentElement.after(feedback); } feedback.textContent = text; }
   }
-  async function api(path, body) {
+  async function api(path, body, signal) {
     const headers = { 'Accept': 'application/json' };
     if (body !== undefined) { headers['Content-Type'] = 'application/json'; headers[document.querySelector('meta[name=_csrf_header]').content] = document.querySelector('meta[name=_csrf]').content; }
-    const response = await fetch('/dashboard/api/' + path, { method: body === undefined ? 'GET' : 'POST', headers, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store' });
+    const response = await fetch('/dashboard/api/' + path, { method: body === undefined ? 'GET' : 'POST', headers, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store', signal });
     if (response.redirected || response.status === 401) throw new Error('Your session ended. Sign in again to continue.');
     if (!response.ok) { let error = {}; try { error = await response.json(); } catch (_) { } throw new Error(error.message || 'Could not load this request. Try again.'); }
     const text = await response.text(); return text ? JSON.parse(text) : null;
   }
-  function dateTimeText(raw) { return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short', timeZone: $('zone').value }).format(new Date(raw)); }
-  function dateText(raw) { return raw ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeZone: $('zone').value }).format(new Date(raw)) : 'Undated'; }
+  function dateTimeText(raw) { return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short', timeZone: zone }).format(new Date(raw)); }
+  function dateText(raw) { return raw ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeZone: zone }).format(new Date(raw)) : 'Undated'; }
+  const labelChoices = [...document.querySelectorAll('[name=labelFilter]')];
   function filter() {
-    let start = $('start').value, end = $('end').value;
-    if ($('date').value === 'all') start = end = '';
-    if ($('date').value === '7') {
-      const parts = new Intl.DateTimeFormat('en-CA', { timeZone: $('zone').value, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
-      const v = type => parts.find(p => p.type === type).value;
-      end = `${v('year')}-${v('month')}-${v('day')}`;
-      const first = new Date(end + 'T12:00:00Z'); first.setUTCDate(first.getUTCDate() - 6); start = first.toISOString().slice(0, 10);
-    }
-    return { scope: state.scope, q: $('search').value, start, end, zone: $('zone').value, page: state.page, category: $('category').value, sort: $('sort').value, suggestion: state.suggestion, recommendation: $('recommendation').value, importance: $('importance').value, label: $('recommendationLabel').value };
+    return { scope: state.scope, q: $('search').value, start: $('start').value, end: $('end').value,
+      zone, page: state.page, sort: $('sort').value, suggestion: state.suggestion,
+      recommendation: $('recommendation').value, importance: $('importance').value,
+      labels: labelChoices.filter(input => input.checked).map(input => input.value).join(','), match: $('labelMatch').value,
+      composition: composition?.key || '' };
   }
   const query = (value = filter()) => new URLSearchParams(Object.entries(value)).toString();
   function checkbox(label, count, match, onChange) {
@@ -101,60 +100,81 @@
     e.checked = count > 0 && match >= count; e.indeterminate = match > 0 && match < count; e.disabled = selectionBusy > 0 || $('senderTable').hasAttribute('aria-busy');
     e.addEventListener('change', () => onChange(e.checked)); return e;
   }
-  const selectedCount = (group, address) => [...selected.values()].filter(v => v.groupId === group && (address === undefined || v.address === address)).length;
   function updateSelection() {
-    $('selectionRow').hidden = selected.size === 0; $('dock').hidden = selected.size === 0 && !jobs.some(activeJob); $('selectionCount').textContent = `${fmt(selected.size)} messages selected`;
-    const groupCount = new Set([...selected.values()].map(v => v.groupId)).size;
-    $('selectionDescription').textContent = `${fmt(groupCount)} sender ${groupCount === 1 ? 'group' : 'groups'} · includes other pages`;
-    const groups = state.data?.groups || [], total = groups.reduce((n, g) => n + g.messages, 0), chosen = groups.reduce((n, g) => n + selectedCount(g.id), 0);
-    $('selectPage').checked = total > 0 && chosen >= total; $('selectPage').indeterminate = chosen > 0 && chosen < total; $('selectPage').disabled = !total || selectionBusy > 0 || $('senderTable').hasAttribute('aria-busy');
+    $('selectionRow').hidden = selected.size === 0;
+    $('dock').hidden = selected.size === 0 && !jobs.some(activeJob);
+    $('selectionCount').textContent = `${fmt(selected.size)} messages selected`;
+    $('selectionDescription').textContent = allMatchingSelected ? 'Fixed selection across matching pages' : 'Visible message page';
     $('review').disabled = !selected.size || selectionBusy > 0;
+    $('groupingToolbar').hidden = groupingSelection.size === 0;
+    $('groupingCount').textContent = `${fmt(groupingSelection.size)} sender groups selected`;
+    $('combineGroups').disabled = groupingSelection.size < 2 || listLoading;
+    $('splitGroup').disabled = groupingSelection.size !== 1 || listLoading;
   }
-  async function selectGroups(groups, checked, address, unreadOnly = false) {
-    if (selectionBusy || $('senderTable').hasAttribute('aria-busy')) return; const epoch = filterEpoch; selectionBusy++; renderSelectionControls();
+  async function selectAllMatching() {
+    if (selectionBusy || listLoading || !state.details) return;
+    const epoch = filterEpoch, revision = state.revision, detail = detailRequest;
+    selectionBusy++;
+    renderSelectionControls();
     try {
-      if (checked) {
-        const rows = await api('selection', { filter: filter(), groups, address: address ?? null, revision: state.revision, unreadOnly });
-        if (epoch !== filterEpoch) return;
-        if (unreadOnly) selected.clear();
-        rows.forEach(row => selected.set(row.id, row));
-        if (unreadOnly) notice(`${fmt(rows.length)} unread messages selected. Selection includes all matching pages for this sender.`);
-      } else {
-        [...selected.entries()].forEach(([id, row]) => { if (groups.includes(row.groupId) && (address === undefined || address === row.address)) selected.delete(id); });
-      }
+      const rows = await api('selection', { filter: filter(), revision, allMatching: true,
+        unreadOnly: $('detailUnreadOnly').checked });
+      if (epoch !== filterEpoch || detail !== detailRequest || revision !== state.revision) return;
+      selected.clear();
+      rows.forEach(row => selected.set(row.id, row));
+      allMatchingSelected = rows.length > 0;
       invalidatePreview();
-    } catch (error) { notice(error.message); } finally { selectionBusy--; renderSelectionControls(); }
+    } catch (error) {
+      if (epoch === filterEpoch && detail === detailRequest) notice(error.message);
+    } finally {
+      selectionBusy--;
+      renderSelectionControls();
+    }
   }
   function renderSelectionControls() { renderGroups(); renderDetail(); updateSelection(); }
   function invalidatePreview() {
     if (state.preview) { const old = state.preview.id; state.preview = null; api(`previews/${old}/invalidate`, {}).catch(() => { }); }
     if ($('confirm').open) $('confirm').close();
   }
-  function clearSelection(message) { selected.clear(); invalidatePreview(); renderSelectionControls(); if (message) notice(message); }
+  function clearSelection(message) { selected.clear(); allMatchingSelected = false; invalidatePreview(); renderSelectionControls(); if (message) notice(message); }
   function filtersChanged() {
-    filterEpoch++; detailRequest++; state.page = 0; state.messagePage = 0; expanded.clear(); state.details = null; state.focused = null; $('detail').hidden = true;
+    groupingSelection.clear();
+    $('clearComposition').hidden = !composition;
+    if (composition) $('clearComposition').textContent = `Clear Inbox drilldown: ${composition.label}`;
+    $('compositionRows').replaceChildren();
+    filterEpoch++; detailRequest++; detailLoad?.controller.abort(); state.page = 0; state.messagePage = 0; expanded.clear(); state.details = null; state.focused = null; $('detail').hidden = true;
     if ($('correction').open) $('correction').close();
     clearSelection('Filters changed. Draft selection was cleared.'); loadPage();
   }
-  async function loadPage(pagerFocus, background = false) {
+  async function loadPage(pagerFocus, background = false, forceDetails = false) {
+    // A label update must survive a refresh deferred by a dialog or selection.
+    if (forceDetails) detailRefreshPending = true;
     if (background && (document.hidden || document.querySelector('dialog[open]') || selectionBusy || listLoading)) return;
+    forceDetails ||= detailRefreshPending;
+    if (forceDetails) detailRefreshPending = false;
+    let pageApplied = false;
     const restoreFocus = rememberFocus(document.querySelector('.workspace'));
     const request = ++listRequest, epoch = filterEpoch; listLoading = true;
     if (!background) { $('senderTable').setAttribute('aria-busy', 'true'); renderSelectionControls(); }
     try {
       const data = await api('page?' + query()); if (request !== listRequest || epoch !== filterEpoch) return;
       if (background && (document.querySelector('dialog[open]') || selectionBusy)) return;
-      if (background && JSON.stringify(data) === JSON.stringify(state.data)) return;
-      if (state.data && state.revision !== data.revision) { selected.clear(); expanded.clear(); invalidatePreview(); notice('Grouping changed. Draft selection was cleared.'); }
+      const sync = data.sync;
+      $('syncStatus').textContent = sync.oauth_status === 'REAUTH_REQUIRED' || sync.lifecycle === 'REAUTH_REQUIRED'
+        ? 'Reconnect required' : sync.error_code || sync.lifecycle === 'ERROR' ? 'Sync needs attention'
+        : !sync.initial_batch_completed_at ? 'Importing mail…' : sync.backfill_status === 'RUNNING'
+        ? 'Importing older mail…' : `Last refreshed ${refreshAge(sync.incremental_last_success_at || sync.initial_batch_completed_at)}`;
+      if (background && !forceDetails && JSON.stringify(data) === JSON.stringify(state.data)) return;
+      // Status text is not message evidence. Keep mailbox freshness timestamps and
+      // all existing row/count/revision signals; these are not a complete row version.
+      const visibleFacts = page => page && [page.groups, page.summary, page.coverage, page.filter,
+        page.revision, page.classificationRevision, page.sync.email, page.sync.incremental_last_success_at];
+      const refreshDetails = !background || forceDetails || JSON.stringify(visibleFacts(data)) !== JSON.stringify(visibleFacts(state.data));
+      if (state.data && state.revision !== data.revision) { selected.clear(); allMatchingSelected = false; groupingSelection.clear(); expanded.clear(); invalidatePreview(); notice('Grouping changed. Draft selection was cleared.'); }
       const lastPage = Math.max(0, Math.ceil(Number(data.summary.groups) / 10) - 1);
       if (state.page > lastPage) { state.page = lastPage; return loadPage(pagerFocus); }
-      const updates = await Promise.all(data.groups.filter(g => expanded.has(g.id)).map(async g => {
-        try { return [g.id, (await api(`groups/${g.id}?${query()}`)).addresses]; } catch (_) { return [g.id, null]; }
-      }));
-      if (request !== listRequest || epoch !== filterEpoch || (background && (document.querySelector('dialog[open]') || selectionBusy))) return;
-      for (const [id, addresses] of updates) { if (addresses) expanded.set(id, addresses); else expanded.delete(id); }
-      if (state.data && $('category').value && state.data.classificationRevision !== data.classificationRevision) { selected.clear(); invalidatePreview(); notice('Category results changed. Select matching messages again.'); }
-      state.data = data; state.revision = data.revision;
+      if (state.data && data.filter.labels && state.data.classificationRevision !== data.classificationRevision) { selected.clear(); allMatchingSelected = false; invalidatePreview(); notice('Label results changed. Select matching messages again.'); }
+      state.data = data; state.revision = data.revision; pageApplied = true;
       $('accountEmail').textContent = data.sync.email;
       $('matching').textContent = fmt(data.summary.messages); $('unreadCount').textContent = fmt(data.summary.unread); $('groupCount').textContent = fmt(data.summary.groups);
       const c = data.coverage;
@@ -163,8 +183,7 @@
       $('coverage').textContent += ` · ${bytesText(data.summary.known_bytes)} estimated${Number(data.summary.unknown_sizes) ? ' · '+fmt(data.summary.unknown_sizes)+' sizes unknown' : ''}`;
       if (gaps.length) $('coverage').textContent += ' · ' + gaps.join(' · ');
       if (state.scope === 'indexed') $('coverage').textContent += ' · Includes Sent, Spam, Trash, Drafts and unknown labels. Cleanup still requires received-mail eligibility or a Sent storage suggestion.';
-      const sync = data.sync;
-      $('syncStatus').textContent = sync.oauth_status === 'REAUTH_REQUIRED' || sync.lifecycle === 'REAUTH_REQUIRED' ? 'Reconnect required' : sync.error_code || sync.lifecycle === 'ERROR' ? 'Sync needs attention' : !sync.initial_batch_completed_at ? 'Fetching mail…' : sync.backfill_status === 'RUNNING' ? 'Fetching older mail…' : sync.incremental_last_success_at ? `Synced ${dateText(sync.incremental_last_success_at)}` : 'Waiting for successful sync';
+      if ($('composition').open && (refreshDetails || !$('compositionRows').childElementCount)) loadComposition(request, epoch);
       $('empty').hidden = !!data.groups.length; $('empty').textContent = Number(c.indexed) ? 'No messages match these filters. Clear filters to browse more indexed mail.' : 'No messages indexed yet. Fetching mail…';
       $('pageLabel').textContent = data.groups.length ? `${state.page * 10 + 1}–${state.page * 10 + data.groups.length} of ${fmt(data.summary.groups)}` : `0 of ${fmt(data.summary.groups)}`;
       $('prevPage').disabled = state.page === 0; $('nextPage').disabled = (state.page + 1) * 10 >= data.summary.groups;
@@ -173,84 +192,197 @@
         const preferred = $(pagerFocus), other = $(pagerFocus === 'nextPage' ? 'prevPage' : 'nextPage');
         (preferred.disabled ? (other.disabled ? $('senderTable') : other) : preferred).focus();
       }
-      if (state.focused && !data.groups.some(g => g.id === state.focused.id)) { detailRequest++; state.focused = null; state.details = null; $('detail').hidden = true; }
-      if (!state.focused && data.groups.length) focusGroup(data.groups[0]);
+      if (state.focused && !data.groups.some(g => g.id === state.focused.id)) { detailRequest++; detailLoad?.controller.abort(); state.focused = null; state.details = null; $('detail').hidden = true; }
+      if (refreshDetails) refreshExpanded(data, request, epoch);
+      if (!state.focused && data.groups.length) return focusGroup(data.groups[0]);
       else if (state.focused) {
         const current = data.groups.find(g => g.id === state.focused.id);
         if (current) state.focused = current;
-        if (epoch === filterEpoch) loadDetails();
+        if (epoch === filterEpoch && refreshDetails) return loadDetails(true);
       }
     } catch (error) { if (request === listRequest) { notice(error.message); $('empty').hidden = false; $('empty').textContent = 'Could not load indexed mail. Change filters or reload to try again.'; } }
-    finally { if (request === listRequest) { listLoading = false; if (!background) { $('senderTable').removeAttribute('aria-busy'); renderSelectionControls(); if (document.activeElement === document.body || document.activeElement === $('senderTable')) restoreFocus(); } } }
+    finally {
+      if (forceDetails && !pageApplied) detailRefreshPending = true;
+      if (request === listRequest) {
+        listLoading = false;
+        if ($('senderTable').hasAttribute('aria-busy')) {
+          $('senderTable').removeAttribute('aria-busy'); renderSelectionControls();
+          if (document.activeElement === document.body || document.activeElement === $('senderTable')) restoreFocus();
+        }
+      }
+    }
+  }
+  function refreshAge(raw) {
+    const seconds = Math.max(0, (Date.now() - new Date(raw)) / 1000);
+    if (seconds < 60) return 'less than a min ago';
+    if (seconds > 600) return 'over 10 mins ago';
+    const minutes = Math.floor(seconds / 60);
+    return `${minutes} ${minutes === 1 ? 'min' : 'mins'} ago`;
+  }
+  async function loadComposition(request = listRequest, epoch = filterEpoch) {
+    try {
+      const groups = await api('inbox-composition?' + query());
+      if (request !== listRequest || epoch !== filterEpoch || !$('composition').open) return;
+      const rows = $('compositionRows'), restore = rememberFocus(rows);
+      rows.replaceChildren();
+      for (const group of groups) {
+        const row = node('div'); row.setAttribute('role','listitem');
+        const button = node('button', undefined, 'composition-row'), bar = node('meter');
+        bar.max = groups[0].messages; bar.value = group.messages; bar.setAttribute('aria-hidden', 'true');
+        button.dataset.focusKey = 'composition-' + group.key;
+        button.append(node('span', group.label), bar, node('span', `${fmt(group.messages)} messages`));
+        button.setAttribute('aria-pressed', String(composition?.key === group.key));
+        button.onclick = () => {
+          composition = group;
+          setScope('inbox');
+          $('messagesTab').click();
+          $('detailUnreadOnly').checked = false;
+          filtersChanged();
+          $('clearComposition').focus();
+        };
+        row.append(button); rows.append(row);
+      }
+      if (!groups.length) rows.append(node('p', 'No Inbox messages match these filters.'));
+      restore();
+    } catch (error) {
+      if (request === listRequest && epoch === filterEpoch) $('compositionRows').textContent = error.message;
+    }
+  }
+  $('clearComposition').onclick = () => { composition = null; filtersChanged(); $('composition').querySelector('summary').focus(); };
+  $('composition').addEventListener('toggle', () => { if ($('composition').open) loadComposition(); });
+  function refreshExpanded(data, request, epoch) {
+    for (const g of data.groups.filter(g => expanded.has(g.id))) {
+      const previous = expanded.get(g.id);
+      api(`groups/${g.id}/addresses?${query()}`).then(result => {
+        if (request !== listRequest || epoch !== filterEpoch || result.revision !== state.revision || expanded.get(g.id) !== previous) return;
+        expanded.set(g.id, result.addresses); renderGroups();
+      }).catch(() => {
+        if (request !== listRequest || epoch !== filterEpoch || expanded.get(g.id) !== previous) return;
+        expanded.delete(g.id); renderGroups();
+      });
+    }
   }
   function renderGroups() {
     const restore = rememberFocus($('senders'));
     const body = $('senders'); body.replaceChildren();
     (state.data?.groups || []).forEach(g => {
       const row = node('tr'); if (state.focused?.id === g.id) row.classList.add('focused');
-      const cell = node('td'); cell.append(checkbox(`Select all ${g.messages} matching messages from ${g.label}`, g.messages, selectedCount(g.id), checked => selectGroups([g.id], checked))); row.append(cell);
+      const cell = node('td'); cell.append(checkbox(`Select sender group ${g.label} for organizing`, 1, Number(groupingSelection.has(g.id)), checked => {
+        if (checked) groupingSelection.set(g.id, g); else groupingSelection.delete(g.id);
+        updateSelection();
+      })); row.append(cell);
       const sender = node('td'), focus = node('button', undefined, 'sender-focus'), badge = node('span', g.label.slice(0, 1).toUpperCase(), 'brand'), text = node('span', undefined, 'sender-label');
-      text.append(node('strong', g.label), node('small', `${g.address ? g.address + " · " : ""}${g.addresses} sender ${g.addresses === 1 ? 'address' : 'addresses'}`, 'muted')); text.append(node('small',`${bytesText(g.knownBytes)} estimated${g.unknownSizes ? ' · '+fmt(g.unknownSizes)+' sizes unknown' : ''}`,'muted')); if (g.pending) text.append(node('small', `${fmt(g.pending)} cleanup pending / unresolved`, 'pending')); focus.dataset.focusKey = 'sender-' + g.id; focus.append(badge, text); focus.onclick = () => focusGroup(g); sender.append(focus); row.append(sender, node('td', fmt(g.messages)), node('td', fmt(g.unread)), node('td', dateText(g.latest)));
+      text.append(node('strong', g.label), node('small', `${g.address ? g.address + " · " : ""}${g.addresses} sender ${g.addresses === 1 ? 'address' : 'addresses'}`, 'muted')); text.append(node('small',`${bytesText(g.knownBytes)} estimated${g.unknownSizes ? ' · '+fmt(g.unknownSizes)+' sizes unknown' : ''}`,'muted')); if (g.pending) text.append(node('small', `${fmt(g.pending)} cleanup pending / unresolved`, 'pending')); focus.dataset.focusKey = 'sender-' + g.id; focus.append(badge, text); focus.onclick = () => focusGroup(g); sender.append(focus); row.append(sender, node('td', fmt(g.messages)), node('td', fmt(g.unread)), node('td', fmt(g.inbox)), node('td', dateText(g.latest)));
       const expandCell = node('td'); if (g.addresses > 1) { const expand = node('button', expanded.has(g.id) ? '⌃' : '⌄'); expand.setAttribute('aria-label', `Show sender addresses for ${g.label}`); expand.setAttribute('aria-expanded', String(expanded.has(g.id))); expand.onclick = () => expandGroup(g); expandCell.append(expand); } row.append(expandCell); body.append(row);
       if (expanded.has(g.id)) {
-        const detail = node('tr', undefined, 'address-row'), td = node('td'); td.colSpan = 6;
-        for (const address of expanded.get(g.id)) { const a = node('div', undefined, 'inline-address'); a.append(checkbox(`Select ${address.messages} matching messages from ${address.address}`, address.messages, selectedCount(g.id, address.address), checked => selectGroups([g.id], checked, address.address)), addressLink(g,address)); td.append(a); } detail.append(td); body.append(detail);
+        const detail = node('tr', undefined, 'address-row'), td = node('td'); td.colSpan = 7;
+        for (const address of expanded.get(g.id)) { const a = node('div', undefined, 'inline-address'); a.append(addressLink(g,address)); td.append(a); } detail.append(td); body.append(detail);
       }
     });
     restore();
   }
   async function expandGroup(g) {
     if (expanded.has(g.id)) { expanded.delete(g.id); renderGroups(); return; }
-    const epoch = filterEpoch;
-    try { const detail = await api(`groups/${g.id}?${query()}`); if (epoch !== filterEpoch || detail.revision !== state.revision) return; expanded.set(g.id, detail.addresses); renderGroups(); } catch (error) { notice(error.message); }
+    const epoch = filterEpoch, request = listRequest;
+    try { const detail = await api(`groups/${g.id}/addresses?${query()}`); if (request !== listRequest || epoch !== filterEpoch || detail.revision !== state.revision) return; expanded.set(g.id, detail.addresses); renderGroups(); } catch (error) { if (request === listRequest && epoch === filterEpoch) notice(error.message); }
   }
   function addressLink(g,a) {
     const button=node('button',`${a.displayName || a.address}${a.displayName ? ' · '+a.address : ''} · ${fmt(a.messages)} messages`,'sender-focus');
     button.onclick=()=>{ state.address=a.address; state.tab='messages'; focusGroup(g,true); $('messagesTab').click(); $('messagesTab').focus(); };
     return button;
   }
-  function focusGroup(g,retainAddress=false) { if(!retainAddress)state.address=null; state.focused = g; state.messagePage = 0; state.details = null; $('detail').hidden = false; renderGroups(); renderDetail(); loadDetails(); }
-  async function loadDetails() {
-    if (!state.focused) return; const request = ++detailRequest, group = state.focused.id, epoch = filterEpoch;
-    try { const details = await api(`groups/${group}?${query()}&unreadOnly=${$('detailUnreadOnly').checked}&messagePage=${state.messagePage}${state.address ? "&address="+encodeURIComponent(state.address) : ""}`); if (request !== detailRequest || epoch !== filterEpoch || group !== state.focused?.id) return; if (details.revision !== state.revision) { filtersChanged(); return; } const lastPage = Math.max(0, Math.ceil(details.total / 10) - 1); if (state.messagePage > lastPage) { state.messagePage = lastPage; return loadDetails(); } state.details = details; renderDetail(); }
-    catch (error) { if (request === detailRequest) notice(error.message); }
+  function focusGroup(g, retainAddress = false) {
+    if (!allMatchingSelected && (state.focused?.id !== g.id || state.messagePage || state.address || retainAddress)) clearSelection();
+    if(!retainAddress)state.address=null; state.focused = g; state.messagePage = 0; state.details = null; $('detail').hidden = false; renderGroups(); renderDetail(); return loadDetails(); }
+  function loadDetails(refresh = false) {
+    if (!state.focused) return Promise.resolve();
+    const group = state.focused.id, epoch = filterEpoch, tab = state.tab;
+    const parameters = `${query()}&unreadOnly=${$('detailUnreadOnly').checked}&messagePage=${state.messagePage}${state.address ? "&address="+encodeURIComponent(state.address) : ""}`;
+    const key = `${epoch}/${group}/${tab}?${parameters}`;
+    if (!refresh && detailLoad?.key === key && !detailLoad.controller.signal.aborted) return detailLoad.promise;
+    detailLoad?.controller.abort();
+    const controller = new AbortController(), request = ++detailRequest;
+    const promise = (async () => {
+      try {
+        let details;
+        if (tab === 'messages') {
+          details = await api(`groups/${group}?${parameters}`, undefined, controller.signal);
+        } else {
+          const addresses = await api(`groups/${group}/addresses?${query()}`, undefined, controller.signal);
+          const rows = addresses.addresses.filter(a => !state.address || a.address === state.address);
+          details = { ...addresses, total: rows.reduce((n, a) => n + a.messages, 0) };
+        }
+        if (request !== detailRequest || epoch !== filterEpoch || group !== state.focused?.id || tab !== state.tab) return;
+        if (details.revision !== state.revision) { filtersChanged(); return; }
+        if (tab === 'messages') {
+          const lastPage = Math.max(0, Math.ceil(details.total / 10) - 1);
+          if (state.messagePage > lastPage) { state.messagePage = lastPage; return loadDetails(); }
+        }
+        state.details = details; renderDetail();
+      } catch (error) { if (!controller.signal.aborted && request === detailRequest && epoch === filterEpoch) notice(error.message); }
+      finally { if (detailLoad?.controller === controller) detailLoad = null; }
+    })();
+    detailLoad = { key, controller, promise };
+    return promise;
   }
   function renderDetail() {
     if (!state.focused) return;
     $('detailTitle').textContent = state.focused.label; $('detailBadge').textContent = state.focused.label.slice(0, 1).toUpperCase();
     $('detailCounts').textContent = state.details ? `${fmt(state.details.total)} matching ${$('detailUnreadOnly').checked ? 'unread messages' : 'messages'}` : `${fmt(state.focused.messages)} matching messages · ${fmt(state.focused.unread)} unread`;
-    $('selectUnread').disabled = selectionBusy > 0 || listLoading || !state.details;
     $('detailUnreadOnly').disabled = state.tab !== 'messages' || selectionBusy > 0;
     const content = $('detailContent'), restore = rememberFocus(content); content.replaceChildren(); const detail = state.details;
     if (!detail) { content.append(node('p', 'Loading indexed details…', 'evidence')); return; }
-    if (state.address) { const back=node('button','All messages in this group'); back.onclick=()=>{state.address=null;state.messagePage=0;state.details=null;renderDetail();loadDetails();}; content.append(node('p',state.address,'evidence'),back); }
+    if (state.address) { const back=node('button','All messages in this group'); back.onclick=()=>{if (!allMatchingSelected) clearSelection();state.address=null;state.messagePage=0;state.details=null;renderDetail();loadDetails();}; content.append(node('p',state.address,'evidence'),back); }
     if (state.tab === 'messages') {
       const visible = node('div', undefined, 'evidence'), count = detail.messages.filter(m => selected.has(m.id)).length;
-      visible.append(checkbox(`Select visible messages (${detail.messages.length})`, detail.messages.length, count, checked => { for (const m of detail.messages) { if (checked) selected.set(m.id, m); else selected.delete(m.id); } invalidatePreview(); renderSelectionControls(); }), node('span', ' Select visible messages')); content.append(visible);
-      for (const m of detail.messages) { const row = node('div', undefined, 'message-row'), text = node('div', undefined, 'message-text'); text.append(node('span', m.subject || '(No subject)', 'message-subject'), node('small', `${m.displayName ? m.displayName+' · ' : ''}${m.address}`, 'muted'), node('small', `${dateText(m.receivedAt)} · ${m.unread ? 'Unread' : 'Read'} · ${categoryName(m.category)}${m.category === "UNCLASSIFIED" ? "" : m.categorySource === "MANUAL" ? " · Manual correction" : " · Jev (sender and subject)"}`, 'muted')); if (m.reviewedPattern) text.append(node('small',`Reviewed pattern: ${categoryName(m.reviewedPattern)} · Importance is not determined by this pattern`, 'muted')); if (m.pendingState) text.append(node('small', pendingText(m.pendingState), 'pending')); appendEvidence(text,m); appendRecommendation(text,m,(detail.recommendations || []).find(r => r.message === m.id)); row.append(checkbox(`Select message ${m.subject || '(No subject)'}`, 1, selected.has(m.id) ? 1 : 0, checked => { if (checked) selected.set(m.id, m); else selected.delete(m.id); invalidatePreview(); renderSelectionControls(); }), text); content.append(row); }
+      visible.append(checkbox(`Select visible messages (${detail.messages.length})`, detail.messages.length, count, checked => { for (const m of detail.messages) { if (checked) selected.set(m.id, m); else selected.delete(m.id); } invalidatePreview(); renderSelectionControls(); }), node('span', ' Select visible messages'));
+      const total = Number(state.data?.summary[$('detailUnreadOnly').checked ? 'unread' : 'messages'] || 0);
+      if (count && count === detail.messages.length && total > count && !allMatchingSelected) {
+        const all = node('button', `Select all ${fmt(total)} matching ${$('detailUnreadOnly').checked ? 'unread messages' : 'messages'}`);
+        all.disabled = selectionBusy > 0 || listLoading;
+        all.onclick = selectAllMatching;
+        visible.append(all);
+      }
+      content.append(visible);
+      for (const m of detail.messages) { const row = node('div', undefined, 'message-row'), text = node('div', undefined, 'message-text'); text.append(node('span', m.subject || '(No subject)', 'message-subject'), node('small', `${m.displayName ? m.displayName+' · ' : ''}${m.address}`, 'muted'), node('small', `${dateText(m.receivedAt)} · ${m.unread ? 'Unread' : 'Read'}`, 'muted')); if (m.reviewedPattern) text.append(node('small',`Reviewed pattern: ${categoryName(m.reviewedPattern)} · Importance is not determined by this pattern`, 'muted')); if (m.pendingState) text.append(node('small', pendingText(m.pendingState), 'pending')); const recommendation = (detail.recommendations || []).find(r => r.message === m.id);
+        appendMessageLabels(text, m, recommendation); appendEvidence(text,m); appendRecommendation(text,m,recommendation); row.append(checkbox(`Select message ${m.subject || '(No subject)'}`, 1, selected.has(m.id) ? 1 : 0, checked => { if (checked) selected.set(m.id, m); else selected.delete(m.id); invalidatePreview(); renderSelectionControls(); }), text); content.append(row); }
       if (!detail.total) content.append(node('p', 'No matching messages in this group.', 'evidence'));
       const paging = node('div', undefined, 'paging'), prev = node('button', '‹'), next = node('button', '›'); prev.setAttribute('aria-label', 'Previous message page'); next.setAttribute('aria-label', 'Next message page'); prev.disabled = state.messagePage === 0; next.disabled = (state.messagePage + 1) * 10 >= detail.total;
-      prev.dataset.focusKey = 'message-prev'; next.dataset.focusKey = 'message-next'; prev.onclick = () => { state.messagePage--; loadDetails(); }; next.onclick = () => { state.messagePage++; loadDetails(); }; paging.append(prev, node('span', detail.messages.length ? `${state.messagePage * 10 + 1}–${state.messagePage * 10 + detail.messages.length} of ${fmt(detail.total)}` : '0 messages'), next); content.append(paging);
+      prev.dataset.focusKey = 'message-prev'; next.dataset.focusKey = 'message-next'; prev.onclick = () => pageMessages(-1, prev); next.onclick = () => pageMessages(1, next); paging.append(prev, node('span', detail.messages.length ? `${state.messagePage * 10 + 1}–${state.messagePage * 10 + detail.messages.length} of ${fmt(detail.total)}` : '0 messages'), next); content.append(paging);
     } else {
-      for (const a of detail.addresses) { const row = node('div', undefined, 'message-row'); row.append(checkbox(`Select ${a.messages} matching messages from ${a.address}`, a.messages, selectedCount(state.focused.id, a.address), checked => selectGroups([state.focused.id], checked, a.address)), addressLink(state.focused,a)); content.append(row); }
-      const reasons = [...new Set(detail.units.map(u => u.reason))]; content.append(node('p', [state.focused.evidence, ...reasons].filter(Boolean).join(' · '), 'evidence'));
-      const controls = node('div', undefined, 'corrections'), organize = node('button', 'Merge / keep separate'); organize.disabled = !detail.units.some(u => u.kind !== 'MESSAGE'); organize.dataset.focusKey = 'organize'; organize.onclick = openCorrections; controls.append(organize); if (organize.disabled) controls.append(node('p', 'Fresh sender metadata is needed before grouping corrections.', 'muted')); content.append(controls);
+      for (const a of detail.addresses) { const row = node('div', undefined, 'message-row'); row.append(addressLink(state.focused,a)); content.append(row); }
+      content.append(node('p', state.focused.evidence, 'evidence'));
+      const controls = node('div', undefined, 'corrections'), organize = node('button', 'Organize sender group');
+      organize.dataset.focusKey = 'organize';
+      organize.onclick = () => openCorrections([state.focused], 'SPLIT');
+      controls.append(organize); content.append(controls);
     }
     restore();
   }
+  async function pageMessages(delta, button) {
+    const group = state.focused.id, page = state.messagePage + delta;
+    const restore = rememberFocus($('detailContent'));
+    state.details = null;
+    state.messagePage = page;
+    if (!allMatchingSelected) clearSelection();
+    else renderDetail();
+    await loadDetails();
+    if (state.focused?.id === group && state.messagePage === page &&
+        (document.activeElement === document.body || document.activeElement === button)) restore();
+  }
   async function openPreview() {
-    const epoch = filterEpoch, ids = [...selected.keys()]; $('review').disabled = true;
+    const epoch = filterEpoch, ids = [...selected.keys()], actionType = state.action; $('review').disabled = true;
     try {
-      const preview = await api('previews', { filter: filter(), ids, action: state.action, revision: state.revision, classificationRevision: state.data?.classificationRevision }); if (epoch !== filterEpoch || ids.length !== selected.size || ids.some(id => !selected.has(id))) { api(`previews/${preview.id}/invalidate`, {}); return; }
+      const preview = await api('previews', { filter: filter(), ids, action: actionType, revision: state.revision, classificationRevision: state.data?.classificationRevision }); if (epoch !== filterEpoch || actionType !== state.action || ids.length !== selected.size || ids.some(id => !selected.has(id))) { api(`previews/${preview.id}/invalidate`, {}); return; }
       state.preview = preview; state.targetPage = 0;
       $('confirmAction').disabled = confirming || !preview.effective;
       $('actionAvailability').textContent = 'Work is saved before processing. Closing this page does not cancel it.';
-      const action = preview.action === 'MARK_READ' ? `Mark ${fmt(preview.effective)} as read` : preview.action === 'ARCHIVE' ? `Archive ${fmt(preview.effective)} messages` : `Move ${fmt(preview.effective)} to Trash`;
+      const action = preview.action === 'MARK_READ' ? `Mark ${fmt(preview.effective)} as read` : preview.action === 'ARCHIVE' ? `Archive ${fmt(preview.effective)} messages` : preview.action === 'MARK_READ_ARCHIVE' ? `Mark as Read + Archive ${fmt(preview.effective)} messages` : `Move ${fmt(preview.effective)} to Trash`;
       $('confirmTitle').textContent = action + '?'; $('confirmAction').textContent = action;
-      $('confirmScope').textContent = `${preview.filter.scope === 'inbox' ? 'Inbox' : preview.filter.scope === 'indexed' ? 'All indexed mail' : preview.filter.suggestion === 'large' ? 'Received and Sent mail' : 'All received mail'} · ${preview.filter.start || 'All indexed dates'}${preview.filter.end ? ' through ' + preview.filter.end : ''} · ${preview.filter.zone}${preview.filter.q ? ' · Search: ' + preview.filter.q : ''}`;
+      $('confirmScope').textContent = `${preview.filter.scope === 'inbox' ? 'Inbox' : preview.filter.scope === 'indexed' ? 'All indexed mail' : preview.filter.suggestion === 'large' ? 'Received and Sent mail' : 'All Mailbox'} · ${preview.filter.start || 'All indexed dates'}${preview.filter.end ? ' through ' + preview.filter.end : ''} · ${preview.filter.zone}${preview.filter.q ? ' · Search: ' + preview.filter.q : ''}`;
       $('confirmCounts').textContent = `${fmt(preview.selected)} fixed targets · ${fmt(preview.effective)} eligible changes · ${fmt(preview.skipped)} will be skipped (${fmt(preview.protectedCount)} protected) · ${bytesText(preview.knownBytes)} selected${preview.unknownSizes ? ' · '+fmt(preview.unknownSizes)+' sizes unknown' : ''}`;
       $('confirmCoverage').textContent = `Indexed messages only · ${dateText(preview.coverage.oldest)}–${dateText(preview.coverage.newest)} · As of ${dateText(preview.coverage.as_of)}`;
-      $('actionExplanation').textContent = preview.action === 'ARCHIVE' ? 'Archive removes mail from Inbox but does not free storage.' : preview.action === 'TRASH' ? `Move to Trash may reclaim approximately ${bytesText(preview.effectiveBytes)} after Gmail permanently deletes the emails, normally after 30 days.` : 'Already-read messages will be skipped.';
+      $('actionExplanation').textContent = preview.action === 'ARCHIVE' ? 'Archive removes mail from Inbox but does not free storage.' : preview.action === 'TRASH' ? `Move to Trash may reclaim approximately ${bytesText(preview.effectiveBytes)} after Gmail permanently deletes the emails, normally after 30 days.` : preview.action === 'MARK_READ_ARCHIVE' ? 'Gmail removes the Unread and Inbox labels in one request. Messages already read and outside Inbox are skipped.' : 'Already-read messages will be skipped.';
       $('confirm').querySelector('.dialog-notice')?.remove(); $('confirm').showModal(); await loadTargets();
     } catch (error) { notice(error.message); } finally { updateSelection(); }
   }
@@ -258,21 +390,75 @@
     if (!state.preview) return; const id = state.preview.id, page = state.targetPage;
     try { const result = await api(`previews/${id}/targets?page=${page}`); if (state.preview?.id !== id || state.targetPage !== page) return; $('exactTargets').replaceChildren(); for (const target of result.rows) { const row = node('div', undefined, 'target'); row.append(node('strong', target.subject_header || '(No subject)'), node('div', `${target.sender_address} · ${dateText(target.received_at)}`), node('small', target.reason, 'muted')); $('exactTargets').append(row); } $('targetRange').textContent = `${page * 10 + 1}–${page * 10 + result.rows.length} of ${fmt(result.total)}`; $('targetPrev').disabled = page === 0; $('targetNext').disabled = (page + 1) * 10 >= result.total; } catch (error) { notice(error.message); invalidatePreview(); }
   }
-  async function openCorrections() {
-    correctionDraft = null; $('applyCorrection').disabled = true; $('correctionAffected').replaceChildren(); $('correctionUnit').replaceChildren();
-    for (const u of state.details?.units || []) { const option = node('option', `${u.kind} · ${u.key || u.reason}`); option.value = u.id; $('correctionUnit').append(option); }
-    try { const history = await api('corrections'); $('resetCorrection').replaceChildren(); for (const item of history) { const o = node('option', `${item.kind} · ${item.label || dateText(item.created_at)}`); o.value = item.public_id; $('resetCorrection').append(o); } $('correction').showModal(); mergePage = 0; correctionFields(); await findMergeGroups(); } catch (error) { notice(error.message); }
+  function invalidateCorrection() {
+    correctionRequest++;
+    correctionDraft = null; $('applyCorrection').disabled = true; $('correctionAffected').replaceChildren();
   }
-  function correctionFields() { const op = $('correctionKind').value; $('mergeFields').hidden = op !== 'MERGE'; $('resetLabel').hidden = op !== 'RESET'; $('unitLabel').hidden = op === 'RESET'; correctionDraft = null; $('applyCorrection').disabled = true; $('correctionAffected').replaceChildren(); }
-  async function findMergeGroups() { try { const result = await api('page?' + query({ scope: 'all', q: $('mergeSearch').value, start: '', end: '', zone: $('zone').value, page: mergePage })); $('mergeGroup').replaceChildren(); for (const g of result.groups.filter(g => g.id !== state.focused?.id)) { const o = node('option', g.label); o.value = g.id; $('mergeGroup').append(o); } $('mergeRange').textContent = `Page ${mergePage + 1}`; $('mergePrev').disabled = mergePage === 0; $('mergeNext').disabled = (mergePage + 1) * 10 >= result.summary.groups; } catch (error) { notice(error.message); } }
-  async function previewCorrection() {
-    correctionDraft = null; $('applyCorrection').disabled = true; const operation = $('correctionKind').value;
+  async function openCorrections(groups, operation) {
+    const epoch = filterEpoch, revision = state.revision;
+    invalidateCorrection();
+    const request = correctionRequest;
     try {
-      const units = operation === 'RESET' ? [] : [$('correctionUnit').value]; if (operation === 'MERGE') { if (!$('mergeGroup').value) throw new Error('Find a second sender group first.'); const second = await api(`groups/${$('mergeGroup').value}?${query({ scope: 'all', q: '', start: '', end: '', zone: $('zone').value, page: 0 })}`); if (!second.units.length) throw new Error('This group has no eligible units. Reload and try again.'); units.push(second.units[0].id); }
-      const request = { operation, units, label: $('mergeLabel').value, resetId: operation === 'RESET' ? $('resetCorrection').value : null, revision: state.revision }; const review = await api('corrections/preview', request); correctionDraft = request; $('correctionAffected').replaceChildren(node('p', `${fmt(review.affected.length)} affected address/list/message units. ${review.explanation}`)); for (const u of review.affected) $('correctionAffected').append(node('div', u.label)); $('applyCorrection').disabled = false;
+      const [history, ...members] = await Promise.all([api('corrections'), ...groups.map(group =>
+        api(`groups/${group.id}/grouping`))]);
+      if (epoch !== filterEpoch || revision !== state.revision || request !== correctionRequest) return;
+      if (members.some(result => result.revision !== revision)) throw new Error('Grouping changed. Reload and try again.');
+      correctionGroups = groups.map((group, i) => ({ ...group, units: members[i].units }));
+      $('correctionGroups').replaceChildren(...correctionGroups.map(group => {
+        const names = [...new Set(group.units.flatMap(u => u.addresses))];
+        const details = node('details'); details.append(node('summary', `${group.label} · ${names.length} addresses`), node('p', names.join(', ')));
+        return details;
+      }));
+      $('resetCorrection').replaceChildren();
+      for (const item of history) {
+        const option = node('option', `${item.kind} · ${item.label || dateText(item.created_at)}`);
+        option.value = item.public_id; $('resetCorrection').append(option);
+      }
+      $('splitAddresses').replaceChildren();
+      if (groups.length === 1) {
+        const addresses = new Set(correctionGroups[0].units.filter(u => u.kind !== 'MESSAGE').flatMap(u => u.addresses));
+        for (const address of [...addresses].sort()) {
+          const label = node('label'), box = node('input'); box.type = 'checkbox'; box.value = address;
+          box.onchange = invalidateCorrection;
+          label.append(box, document.createTextNode(address));
+          $('splitAddresses').append(label);
+        }
+      }
+      $('mergeLabel').value = ''; $('remainderLabel').value = '';
+      $('correctionKind').value = operation;
+      $('correctionKind').querySelector('[value=MERGE]').disabled = groups.length < 2;
+      $('correctionKind').querySelector('[value=SPLIT]').disabled = groups.length !== 1;
+      correctionFields();
+      if (!$('correction').open) $('correction').showModal();
+    } catch (error) { if (epoch === filterEpoch) notice(error.message); }
+  }
+  function correctionFields() {
+    const op = $('correctionKind').value;
+    $('splitFields').hidden = op !== 'SPLIT'; $('resetLabel').hidden = op !== 'RESET';
+    $('groupName').hidden = op === 'RESET';
+    invalidateCorrection();
+  }
+  async function previewCorrection() {
+    invalidateCorrection();
+    const operation = $('correctionKind').value, generation = correctionRequest;
+    try {
+      const units = operation === 'MERGE' ? correctionGroups.map(group => group.units.find(u => u.kind !== 'MESSAGE')?.id) : [];
+      const addresses = operation === 'SPLIT' ? [...$('splitAddresses').querySelectorAll(':checked')].map(box => box.value) : [];
+      const label = $('mergeLabel').value.trim();
+      if (operation !== 'RESET' && !label) throw new Error('Enter a group name.');
+      if (operation === 'MERGE' && units.some(id => !id)) throw new Error('Fresh sender metadata is needed for all groups.');
+      if (operation === 'SPLIT' && !addresses.length) throw new Error('Select at least one address.');
+      const request = { operation, units, addresses, group: operation === 'SPLIT' ? correctionGroups[0].id : null,
+        label, remainderLabel: $('remainderLabel').value.trim(),
+        resetId: operation === 'RESET' ? $('resetCorrection').value : null, revision: state.revision };
+      const review = await api('corrections/preview', request);
+      if (!$('correction').open || request.revision !== state.revision || generation !== correctionRequest) return;
+      correctionDraft = request;
+      $('correctionAffected').textContent = `${fmt(review.affected.length)} sender identities in this change. ${review.explanation}`;
+      $('applyCorrection').disabled = false;
     } catch (error) { $('correctionAffected').textContent = error.message; }
   }
-  async function applyCorrection() { if (!correctionDraft) return; $('applyCorrection').disabled = true; try { await api('corrections', correctionDraft); $('correction').close(); state.focused = null; filtersChanged(); notice('Grouping updated. Draft selection was cleared.'); } catch (error) { $('correctionAffected').textContent = error.message; } }
+  async function applyCorrection() { if (!correctionDraft) return; $('applyCorrection').disabled = true; try { await api('corrections', correctionDraft); $('correction').close(); state.focused = null; composition = null; filtersChanged(); notice('Grouping updated. Draft selection was cleared.'); } catch (error) { $('correctionAffected').textContent = error.message; } }
 
   function bytesText(value) {
     if (value === null || value === undefined) return 'Size unknown';
@@ -310,17 +496,20 @@
   const recommendationLabelNames = { CONTACT:'Contact',CALENDAR_INVITE:'Calendar invite',LARGE_MESSAGE:'Large email',HAS_ATTACHMENTS:'Has attachments',HUMAN_CORRESPONDENCE:'Personal',SENT:'Sent' };
   function recommendationLabel(value) { return recommendationLabelNames[value] || value.toLowerCase().replaceAll('_',' ').replace(/^./,c=>c.toUpperCase()); }
   const recommendationDrafts=new Map(), openRecommendationEditors=new Set();
+  function appendMessageLabels(text, message, recommendation) {
+    const labels = new Set((recommendation?.labels || []).filter(label => !['UNKNOWN','SENT'].includes(label)).map(recommendationLabel));
+    if (message.category !== 'UNCLASSIFIED') labels.add(recommendationLabel(message.category));
+    if (message.contact) labels.add('Contact');
+    if (message.calendarInvite) labels.add('Calendar invite');
+    if (message.attachmentState === 'PRESENT') labels.add('Has attachments');
+    text.append(node('small', labels.size ? `Labels: ${[...labels].join(' · ')}` : 'Labels pending', 'muted'));
+  }
   function appendRecommendation(text,m,view) {
     const result=view?.freshness === 'CURRENT' ? view.result : null;
     if (result) {
       text.append(node('strong',recommendationNames[result.action] || 'Review'));
       text.append(node('small',`Importance: ${importanceNames[result.importance] || 'Unknown'} · ${recommendationReasons[result.reason] || 'Review the available evidence.'}`,'muted'));
-      const labels=new Set((view?.labels || result.facets || []).filter(v=>!['CONTACT','CALENDAR_INVITE','LARGE_MESSAGE','SENT'].includes(v)).map(recommendationLabel));
-      if (result.purpose && !['UNKNOWN','OTHER'].includes(result.purpose)) labels.add(recommendationLabel(result.purpose));
-      if(labels.size) text.append(node('small',[...labels].join(' · '),'evidence'));
     } else {
-      const labels=(view?.labels || []).filter(v=>!['CONTACT','CALENDAR_INVITE','LARGE_MESSAGE','SENT','UNKNOWN'].includes(v)).map(recommendationLabel);
-      if(labels.length)text.append(node('small',[...new Set(labels)].join(' · '),'evidence'));
       text.append(node('small',view?.freshness === 'STALE' ? 'Recommendation updating — saved information changed.' : 'Not assessed yet. Build recommendations to assess this email.','muted'));
     }
     const edit=node('details'),summary=node('summary','Adjust recommendation'),form=node('div',undefined,'recommendation-edit');
@@ -343,8 +532,8 @@
       try {
         await api(`messages/${m.id}/recommendation`,{action:action.value || null,importance:importance.value || null,revision:recommendationDrafts.get(m.id)?.revision ?? view.correction.revision});
         recommendationDrafts.delete(m.id);openRecommendationEditors.delete(m.id);
-        selected.clear();invalidatePreview();notice('Recommendation saved for this email. No mail was moved.');
-        state.details=null;await loadPage();await loadDetails();await loadRecommendations();
+        selected.clear();allMatchingSelected = false;invalidatePreview();notice('Recommendation saved for this email. No mail was moved.');
+        state.details=null;await loadPage();await loadRecommendations();
       } catch(error) { notice(error.message);save.disabled=false; }
     };
     form.append(actionLabel,importanceLabel,save,node('small','Automatic clears that correction. This changes your recommendation only.','muted'));edit.append(summary,form);text.append(edit);
@@ -366,8 +555,8 @@
   async function loadRecommendations() {
     try {
       const prior=recommendationStatus,status=await api('recommendations');renderRecommendationStatus(status);
-      if(prior && (prior.lastRun !== status.lastRun || prior.labeling?.updatedAt !== status.labeling?.updatedAt) && !document.querySelector('dialog[open]') && !selectionBusy) {
-        await loadPage(undefined,true);if(state.focused)await loadDetails();
+      if(prior && (prior.lastRun !== status.lastRun || prior.labeling?.updatedAt !== status.labeling?.updatedAt)) {
+        await loadPage(undefined,true,true);
       }
     } catch(error) { $('recommendationStatus').textContent='Recommendation status unavailable'; }
   }
@@ -378,7 +567,14 @@
     catch(error) { notice(error.message); }
     finally { recommendationStatusBusy=false;if(recommendationStatus)renderRecommendationStatus(recommendationStatus); }
   };
-  for(const id of ['recommendation','importance','recommendationLabel']) $(id).addEventListener('change',filtersChanged);
+  function updateLabelSummary() {
+    const count = labelChoices.filter(input => input.checked).length;
+    $('labelSummary').textContent = count ? `Labels (${count}, ${$('labelMatch').value === 'all' ? 'match all' : 'match any'})` : 'Labels';
+  }
+  function labelFilterChanged() { updateLabelSummary(); filtersChanged(); }
+  for (const input of [...labelChoices, $('labelMatch')]) input.addEventListener('change', labelFilterChanged);
+  $('clearLabels').onclick = () => { labelChoices.forEach(input => { input.checked = false; }); labelFilterChanged(); };
+  for (const id of ['recommendation', 'importance']) $(id).addEventListener('change', filtersChanged);
   function appendEvidence(text,m) {
     if (state.suggestion === 'large' && m.sent) text.append(node('small', 'Sent', 'evidence'));
     if (m.sizeEstimate > 1000000) text.append(node('small', 'Large email', 'evidence'));
@@ -411,7 +607,7 @@
       for (const event of view.stale ? [] : evidence.reconciledEvents || []) {
         output.append(node('p',event.reason));
         if (event.latestObservedEndDate) output.append(node('small',`All-day schedule ends before ${event.latestObservedEndDate} (exclusive end date) · ${event.observedInstances} observed instance(s)`, 'muted'));
-        if (event.latestObservedEnd) output.append(node('small',`Latest observed end: ${dateTimeText(event.latestObservedEnd)} (${$('zone').value}) · ${event.messages.length} contributing email(s)`, 'muted'));
+        if (event.latestObservedEnd) output.append(node('small',`Latest observed end: ${dateTimeText(event.latestObservedEnd)} (${zone}) · ${event.messages.length} contributing email(s)`, 'muted'));
       }
       const retryable=(evidence.calendars || []).some(c=>c.state === 'FAILED');
       const calendarPresent=(evidence.calendars || []).length>0;
@@ -434,9 +630,11 @@
     details.append(summary,node('p','Checks this email’s preview, attachment names and calendar information. Only calendar files are read; other attachments stay unopened. Nothing is sent to a model.','muted'),check,output);text.append(details);
   }
   function setSuggestion(value) {
-    document.querySelector('[data-scope="all"]').textContent=value === 'large' ? 'Received and Sent mail' : 'All received mail';
-    const sentOption=$('recommendationLabel').querySelector('[value="SENT"]');sentOption.hidden=value !== 'large';sentOption.disabled=value !== 'large';
-    if(value !== 'large' && $('recommendationLabel').value === 'SENT') $('recommendationLabel').value='';
+    document.querySelector('[data-scope="all"]').textContent=value === 'large' ? 'Received and Sent mail' : 'All Mailbox';
+    const sent = labelChoices.find(input => input.value === 'SENT');
+    sent.parentElement.hidden = value !== 'large';
+    if (value !== 'large') sent.checked = false;
+    updateLabelSummary();
     state.suggestion=value; $('activeSuggestion').hidden=!value; filtersChanged();
   }
   let patternReview=null, patternEpoch=0;
@@ -466,7 +664,7 @@
   };
   $('suggestionsView').onclick=()=>{ $('suggestionsPanel').hidden=false; $('suggestionsView').setAttribute('aria-pressed','true'); $('sendersView').setAttribute('aria-pressed','false'); };
   $('sendersView').onclick=()=>{ $('suggestionsPanel').hidden=true; $('suggestionsView').setAttribute('aria-pressed','false'); $('sendersView').setAttribute('aria-pressed','true'); setSuggestion(''); };
-  $('largeEmails').onclick=()=>{state.scope='all'; document.querySelectorAll('[data-scope]').forEach(b=>{b.classList.toggle('active',b.dataset.scope==='all');b.setAttribute('aria-pressed',String(b.dataset.scope==='all'));});setSuggestion('large');};
+  $('largeEmails').onclick=()=>{composition = null; setScope('all'); setSuggestion('large');};
   $('clearSuggestion').onclick=()=>setSuggestion('');
 
   let labelingScope=null,labelingPreview=null,labelingBusy=false,labelingEpoch=0,labelingPolling=false,labelingRecentStamp='',labelingViewEpoch=0,labelingFinancialReview=null;
@@ -602,7 +800,7 @@
     try {
       const previous = classification; classification = await api('classification'); renderClassification();
       if (previous && (previous.done !== classification.done || previous.state !== classification.state)) {
-        if (!document.querySelector('dialog[open]')) await loadPage();
+        if (!document.querySelector('dialog[open]')) await loadPage(undefined, true, previous.done !== classification.done);
         if (classifying(previous) && classification.state === 'COMPLETE') notice('Classification complete. Categories and sender groups updated; mailbox actions require your selection and confirmation.');
       }
     } catch (error) { if ($('classification').open) $('classificationStatus').textContent = error.message; } finally { classificationLoading = false; }
@@ -617,36 +815,53 @@
   $('categoryCorrectionApply').onclick = async () => { const ids = [...selected.keys()]; $('categoryCorrectionApply').disabled = true; try { await api('classification/category', { ids, category: $('categoryCorrection').value, revision: state.revision }); clearSelection('Category correction saved.'); $('classification').close(); } catch (error) { $('classificationStatus').textContent = error.message; } finally { renderClassification(); } };
   pollClassification(); setInterval(pollClassification, 5000);
 
-  document.querySelectorAll('[data-scope]').forEach(button => button.onclick = () => { if (state.scope === button.dataset.scope) return; state.scope = button.dataset.scope; document.querySelectorAll('[data-scope]').forEach(b => { b.classList.toggle('active', b === button); b.setAttribute('aria-pressed', String(b === button)); }); filtersChanged(); });
+  function setScope(scope) {
+    state.scope = scope;
+    document.querySelectorAll('[data-scope]').forEach(button => {
+      const active = button.dataset.scope === scope;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+  }
+  document.querySelectorAll('[data-scope]').forEach(button => button.onclick = () => {
+    if (state.scope === button.dataset.scope && !composition) return;
+    composition = null;
+    setScope(button.dataset.scope);
+    filtersChanged();
+  });
   $('search').addEventListener('input', filtersChanged);
   function sortChanged() {
     const unread = $('sort').value === 'unread';
-    $('sortMessages').textContent = unread ? 'Messages ↕' : 'Messages ↓';
+    $('sortMessages').textContent = $('sort').value === 'messages' ? 'Total ↓' : 'Total ↕';
     $('sortUnread').textContent = unread ? 'Unread ↓' : 'Unread ↕';
-    $('sortMessages').closest('th').setAttribute('aria-sort', unread ? 'none' : 'descending');
+    $('sortMessages').closest('th').setAttribute('aria-sort', $('sort').value === 'messages' ? 'descending' : 'none');
     $('sortUnread').closest('th').setAttribute('aria-sort', unread ? 'descending' : 'none');
-    $('sortSummary').textContent = unread ? 'Sorted by unread count' : 'Sorted by message count';
+    $('sortSummary').textContent = 'Sorted by ' + $('sort').selectedOptions[0].textContent.toLowerCase();
     filtersChanged();
   }
   $('sort').addEventListener('change', sortChanged);
   $('sortMessages').onclick = () => { $('sort').value = 'messages'; sortChanged(); };
   $('sortUnread').onclick = () => { $('sort').value = 'unread'; sortChanged(); };
   $('detailUnreadOnly').onchange = () => { state.messagePage = 0; state.details = null; clearSelection('Message view changed. Draft selection was cleared.'); renderDetail(); loadDetails(); };
-  $('selectUnread').onclick = () => { if (state.focused) selectGroups([state.focused.id], true, state.address ?? undefined, true); };
-  for (const id of ['date', 'start', 'end', 'zone', 'category']) $(id).addEventListener('change', () => { if (id === 'zone') api('settings', { zone: $('zone').value }).catch(error => notice(error.message)); $('startLabel').hidden = $('endLabel').hidden = $('date').value !== 'custom'; filtersChanged(); });
-  $('prevPage').onclick = () => { state.page--; loadPage('prevPage'); }; $('nextPage').onclick = () => { state.page++; loadPage('nextPage'); }; $('selectPage').onchange = e => selectGroups((state.data?.groups || []).map(g => g.id), e.target.checked);
+  for (const id of ['start','end']) $(id).addEventListener('change', filtersChanged);
+  $('prevPage').onclick = () => { state.page--; loadPage('prevPage'); };
+  $('nextPage').onclick = () => { state.page++; loadPage('nextPage'); };
+  $('combineGroups').onclick = () => openCorrections([...groupingSelection.values()], 'MERGE');
+  $('splitGroup').onclick = () => openCorrections([...groupingSelection.values()], 'SPLIT');
+  $('clearGroups').onclick = () => { groupingSelection.clear(); renderSelectionControls(); };
   $('clear').onclick = () => clearSelection(); $('review').onclick = openPreview;
   document.querySelectorAll('[data-action]').forEach(button => button.onclick = () => { state.action = button.dataset.action; invalidatePreview(); document.querySelectorAll('[data-action]').forEach(b => { b.classList.toggle('active', b === button); b.setAttribute('aria-pressed', String(b === button)); }); });
-  document.querySelectorAll('[data-tab]').forEach((button, index, tabs) => { button.onclick = () => { state.tab = button.dataset.tab; tabs.forEach(b => { b.classList.toggle('active', b === button); b.setAttribute('aria-selected', String(b === button)); b.tabIndex = b === button ? 0 : -1; }); $('detailContent').setAttribute('aria-labelledby', button.id); renderDetail(); }; button.onkeydown = e => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) { e.preventDefault(); const next = tabs[e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : (index + 1) % 2]; next.click(); next.focus(); } }; });
+  document.querySelectorAll('[data-tab]').forEach((button, index, tabs) => { button.onclick = () => { const changed = state.tab !== button.dataset.tab; state.tab = button.dataset.tab; if (changed) state.details = null; tabs.forEach(b => { b.classList.toggle('active', b === button); b.setAttribute('aria-selected', String(b === button)); b.tabIndex = b === button ? 0 : -1; }); $('detailContent').setAttribute('aria-labelledby', button.id); renderDetail(); if (changed) loadDetails(); }; button.onkeydown = e => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) { e.preventDefault(); const next = tabs[e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : (index + 1) % 2]; next.click(); next.focus(); } }; });
   document.querySelectorAll('[data-close]').forEach(button => button.onclick = () => $(button.dataset.close).close());
-  $('confirm').addEventListener('close', () => { (selected.size ? $('review') : $('senderTable')).focus(); }); $('correction').addEventListener('close', () => { correctionDraft = null; ($('detailContent').querySelector('[data-focus-key=organize]') || $('senderTable')).focus(); });
+  $('confirm').addEventListener('close', () => { (selected.size ? $('review') : $('senderTable')).focus(); }); $('correction').addEventListener('close', () => { invalidateCorrection(); ($('detailContent').querySelector('[data-focus-key=organize]') || $('senderTable')).focus(); });
   $('targetPrev').onclick = () => { state.targetPage--; loadTargets(); }; $('targetNext').onclick = () => { state.targetPage++; loadTargets(); };
   $('activityOpen').onclick = () => { $('activity').querySelector('.dialog-notice')?.remove(); renderActivity(); $('activity').showModal(); $('activity').querySelector('[data-close]').focus(); pollJobs(); loadHistory(true); };
   $('historyMore').onclick = () => loadHistory();
   $('confirmAction').onclick = confirmJob;
   $('activity').addEventListener('close', () => $('activityOpen').focus());
-  $('correctionKind').onchange = correctionFields; for (const id of ['correctionUnit', 'mergeGroup', 'mergeLabel', 'resetCorrection']) $(id).addEventListener('input', () => { correctionDraft = null; $('applyCorrection').disabled = true; });
-  $('findGroups').onclick = () => { mergePage = 0; findMergeGroups(); }; $('mergePrev').onclick = () => { mergePage--; findMergeGroups(); }; $('mergeNext').onclick = () => { mergePage++; findMergeGroups(); }; $('previewCorrection').onclick = previewCorrection; $('applyCorrection').onclick = applyCorrection;
+  $('correctionKind').onchange = correctionFields;
+  for (const id of ['mergeLabel', 'remainderLabel', 'resetCorrection']) $(id).addEventListener('input', invalidateCorrection);
+  $('previewCorrection').onclick = previewCorrection; $('applyCorrection').onclick = applyCorrection;
   function keepFocusVisible() {
     const target = document.activeElement;
     if (!target || target === document.body || $('dock').hidden || $('dock').contains(target) || target.closest('dialog')) return;
@@ -658,7 +873,7 @@
   pollJobs(); setInterval(pollJobs, 2000);
   loadRecommendations();setInterval(()=>{if(!document.hidden)loadRecommendations();},5000);
   if (location.hash === '#activity') $('activityOpen').click();
-  api('settings').then(settings => { if (![...$('zone').options].some(o => o.value === settings.zone)) { const o = node('option', settings.zone); o.value = settings.zone; $('zone').append(o); } $('zone').value = settings.zone; return loadPage(); }).catch(error => notice(error.message));
+  loadPage();
   setInterval(() => loadPage(undefined, true), 15000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) loadPage(undefined, true); });
 })();

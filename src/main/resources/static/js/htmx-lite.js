@@ -6,7 +6,7 @@
  * feeling responsive. It issues declarative requests from elements carrying
  * hx-get / hx-post / hx-target / hx-swap / hx-trigger attributes, swaps the
  * returned HTML into the DOM, provides polling for live views (e.g. the Inbox
- * activity / Reply Zero queues refreshing while background sync runs), formats
+ * activity widgets refreshing while background sync runs), formats
  * server-rendered dates into the visitor's local timezone, and honors CSRF
  * tokens so state-changing requests stay secure. It also exposes window.htmx.ajax
  * for programmatic cases like the Cleanup category lazy-loading.

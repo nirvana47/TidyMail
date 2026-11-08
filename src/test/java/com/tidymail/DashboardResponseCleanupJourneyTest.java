@@ -66,7 +66,7 @@ class DashboardResponseCleanupJourneyTest extends PostgresJourneyTest {
         var p=jobs.get(account,job);
         assertThat(p.changed()+p.failed()+p.skipped()+p.cancelled()+p.remaining()+p.unresolved()).isEqualTo(p.total());return p;
     }
-    @ParameterizedTest @EnumSource(value=BulkActionType.class,names={"MARK_READ","ARCHIVE","TRASH"})
+    @ParameterizedTest @EnumSource(value=BulkActionType.class,names={"MARK_READ","ARCHIVE","TRASH","MARK_READ_ARCHIVE"})
     void twoThousandOneHundredSixtyFiveTargetsNeedThreeRequestsAndNoVerificationReads(BulkActionType action) throws Exception {
         provider(action,ids->{});var job=seed(2165,action);
         for(int i=0;i<3;i++){ready(job.id());worker.runOnce();}
@@ -79,11 +79,32 @@ class DashboardResponseCleanupJourneyTest extends PostgresJourneyTest {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM message_metadata WHERE 'CUSTOM'=ANY(labels)",Long.class)).isEqualTo(2165);
         long inbox=((Number)dashboard.page(account,filter()).summary().get("messages")).longValue();
         assertThat(inbox).isEqualTo(action==BulkActionType.MARK_READ?2165:0);
-        if(action==BulkActionType.MARK_READ)assertThat(jdbc.queryForObject("SELECT count(*) FROM message_metadata WHERE unread",Long.class)).isZero();
+        if(action==BulkActionType.MARK_READ || action==BulkActionType.MARK_READ_ARCHIVE)assertThat(jdbc.queryForObject("SELECT count(*) FROM message_metadata WHERE unread",Long.class)).isZero();
         mockMvc.perform(get("/dashboard/api/jobs/{id}",job.id()).with(authenticatedAs(OWNER)))
             .andExpect(status().isOk()).andExpect(jsonPath("$.executionMode").value("RESPONSE"))
             .andExpect(jsonPath("$.changed").value(2165));
     }
+    @Test void combinedActionKeepsPartiallySatisfiedTargetsAndVerifiesBothLabelsAfterTimeout() {
+        var action = BulkActionType.MARK_READ_ARCHIVE;
+        provider(action, ids -> { throw new IllegalStateException("timeout after dispatch"); });
+        var job = seed(3, action);
+        jdbc.update("UPDATE message_metadata SET unread=false,labels=ARRAY['INBOX','CUSTOM'] WHERE provider_message_id='response-0'");
+        worker.runOnce();
+        assertThat(result(job.id()).unresolved()).isEqualTo(3);
+        when(gmailProvider.getCleanupMetadata(any(),anyList())).thenReturn(List.of(
+            new MailMessage("response-0","thread","google",Instant.now(),Map.of(),Set.of("CUSTOM"),
+                null,BigInteger.valueOf(11),AttachmentState.UNKNOWN),
+            new MailMessage("response-1","thread","google",Instant.now(),Map.of(),Set.of("INBOX","CUSTOM")),
+            new MailMessage("response-2","thread","google",Instant.now(),Map.of(),Set.of("UNREAD","CUSTOM"))));
+        ready(job.id()); worker.runOnce();
+        assertThat(result(job.id()).changed()).isOne();
+        assertThat(result(job.id()).unresolved()).isEqualTo(2);
+        assertThat(sends).containsExactly(List.of("response-0","response-1","response-2"));
+        assertThat(jdbc.queryForObject("""
+            SELECT unread OR labels && ARRAY['UNREAD','INBOX'] FROM message_metadata WHERE provider_message_id='response-0'
+            """,Boolean.class)).isFalse();
+    }
+
     @Test void localProtectionAndEligibilityAreRecheckedWithoutProviderReads() {
         provider(BulkActionType.TRASH,ids->{});var job=seed(3,BulkActionType.TRASH);
         jdbc.update("UPDATE message_metadata SET labels=ARRAY['TRASH'] WHERE provider_message_id='response-0'");

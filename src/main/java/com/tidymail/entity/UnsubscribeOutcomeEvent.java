@@ -55,54 +55,6 @@ public class UnsubscribeOutcomeEvent {
     protected UnsubscribeOutcomeEvent() {
     }
 
-    /**
-     * Records an unsubscribe outcome event from validated facts about the attempt.
-     */
-    public static UnsubscribeOutcomeEvent create(
-            long accountId,
-            long attemptId,
-            UnsubscribeOutcomeStatus status,
-            Instant occurredAt,
-            UnsubscribeReasonCode reason,
-            Integer statusClass,
-            UnsubscribeConfirmationSource source) {
-        if (accountId <= 0 || attemptId <= 0 || status == null || occurredAt == null
-                || reason == null || statusClass != null && (statusClass < 2 || statusClass > 5)
-                || !validOutcomeFacts(status, reason, statusClass, source)) {
-            throw new IllegalArgumentException("Invalid unsubscribe outcome event");
-        }
-        UnsubscribeOutcomeEvent event = new UnsubscribeOutcomeEvent();
-        event.accountId = accountId;
-        event.attemptId = attemptId;
-        event.status = status;
-        event.occurredAt = occurredAt;
-        event.reasonCode = reason;
-        event.httpStatusClass = statusClass == null ? null : statusClass.shortValue();
-        event.confirmationSource = source;
-        return event;
-    }
-
-    private static boolean validOutcomeFacts(
-            UnsubscribeOutcomeStatus status,
-            UnsubscribeReasonCode reason,
-            Integer statusClass,
-            UnsubscribeConfirmationSource source) {
-        return switch (status) {
-            case PENDING -> reason == UnsubscribeReasonCode.NONE
-                && statusClass == null && source == null;
-            case ACCEPTED -> reason == UnsubscribeReasonCode.NONE
-                && Integer.valueOf(2).equals(statusClass)
-                && source == UnsubscribeConfirmationSource.ENDPOINT_ACCEPTED;
-            case FAILED -> reason != UnsubscribeReasonCode.NONE && source == null;
-            case MANUAL_REQUIRED -> reason == UnsubscribeReasonCode.USER_COMPLETED
-                && statusClass == null && source == null;
-            case VERIFICATION_PENDING -> statusClass == null && source == null;
-            case CONFIRMED -> reason == UnsubscribeReasonCode.USER_COMPLETED
-                && statusClass == null
-                && source == UnsubscribeConfirmationSource.USER_CONFIRMED;
-        };
-    }
-
     public Long getId() { return id; }
     public Long getAccountId() { return accountId; }
     public Long getAttemptId() { return attemptId; }

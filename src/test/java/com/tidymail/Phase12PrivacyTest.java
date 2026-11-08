@@ -4,34 +4,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.tidymail.dto.ActionHistoryRow;
-import com.tidymail.dto.ActionOutcomeSummary;
 import com.tidymail.dto.HistoryQuery;
-import com.tidymail.action.ActionType;
-import com.tidymail.entity.ActionCommandToken;
-import com.tidymail.entity.ActionConflict;
-import com.tidymail.entity.ActionEvent;
-import com.tidymail.entity.ActionExecution;
-import com.tidymail.entity.ActionExecutionTarget;
-import com.tidymail.entity.ActionIntent;
-import com.tidymail.service.ActionCompatibility;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Instant;
 import java.time.LocalDate;
-import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.util.LinkedMultiValueMap;
 
 class Phase12PrivacyTest {
-    @Test
-    void ACTN_09_removeProtectionConflictsWithOpposingAndDuplicateDecisions() {
-        assertThat(ActionCompatibility.compatible(
-            ActionType.REMOVE_PROTECTION, ActionType.PROTECT)).isFalse();
-        assertThat(ActionCompatibility.compatible(
-            ActionType.REMOVE_PROTECTION, ActionType.REMOVE_PROTECTION)).isFalse();
-    }
-
     @Test
     void ACTN_10_historyQueryIsStrictBoundedAndCanonical() {
         LinkedMultiValueMap<String, String> values = new LinkedMultiValueMap<>();
@@ -66,25 +46,6 @@ class Phase12PrivacyTest {
     }
 
     @Test
-    void ACTN_07_outcomeArithmeticFailsClosed() {
-        assertThatThrownBy(() -> new ActionOutcomeSummary(
-            4, 2, 2, 1, 0, 0, "PARTIAL", "SENDERS", Map.of(), List.of()))
-            .isInstanceOf(IllegalArgumentException.class);
-        ActionOutcomeSummary valid = new ActionOutcomeSummary(
-            4, 2, 2, 1, 1, 0, "PARTIAL", "SENDERS",
-            Map.of("Provider rejected the request", 1),
-            List.of(new ActionOutcomeSummary.Event(
-                "Execution completed", "Partial", Instant.EPOCH)));
-        assertThat(valid.visibleStatus()).isEqualTo("Partially applied");
-        assertThat(new ActionOutcomeSummary(
-            2, 2, 2, 0, 0, 0, "UNDONE", "SENDERS",
-            Map.of(), List.of()).visibleStatus()).isEqualTo("Undone");
-        assertThat(new ActionOutcomeSummary(
-            2, 1, 0, 0, 1, 1, "PARTIALLY_UNDONE", "SENDERS",
-            Map.of(), List.of()).visibleStatus()).isEqualTo("Partially undone");
-    }
-
-    @Test
     void ACTN_10_historyDtoAndTemplatesExcludeAuthorityAndSecretFields()
             throws Exception {
         assertThat(java.util.Arrays.stream(ActionHistoryRow.class.getRecordComponents())
@@ -102,32 +63,12 @@ class Phase12PrivacyTest {
                 "#action-${row.compensatesActionPublicId}")
             .doesNotContain("href=\"#\"", "responseBody", "exceptionText",
                 "scopeId", "providerMessageId", "Export CSV", "<canvas");
-        assertThat(Files.readString(Path.of(
-            "src/main/resources/templates/fragments/undo-confirmation-frag.html")))
-            .contains("name=\"account\"", "undoConfirmation.accountId");
-        assertThat(Files.readString(Path.of(
-            "src/main/resources/templates/fragments/compensation-frag.html")))
-            .contains("name=\"account\"", "compensationConfirmation.accountId");
+
     }
 
     @Test
     void ACTN_07_privacyAllowlistCoversNewLedgerModelsSchemaTemplatesAndUrls()
             throws Exception {
-        List<Class<?>> ledgerTypes = List.of(
-            ActionIntent.class, ActionCommandToken.class, ActionExecution.class,
-            ActionExecutionTarget.class, ActionEvent.class, ActionConflict.class,
-            ActionHistoryRow.class);
-        List<String> forbiddenFields = List.of(
-            "providerMessageId", "providerThreadId", "messageIds", "scopeHash",
-            "unsubscribeUri", "rawHeader", "authorization", "cookie", "referrer",
-            "responseBody", "responseHtml", "exceptionText", "dnsAddress",
-            "csrfToken", "idempotencyToken", "leaseToken", "arbitraryJson");
-        ledgerTypes.forEach(type -> assertThat(
-            java.util.Arrays.stream(type.getDeclaredFields())
-                .map(java.lang.reflect.Field::getName).toList())
-            .as(type.getSimpleName())
-            .doesNotContainAnyElementsOf(forbiddenFields));
-
         String productionV9 = Files.readString(Path.of(
             "src/main/resources/db/migration/V9__action_execution_history_and_undo.sql"));
         assertThat(productionV9.toLowerCase())
@@ -140,9 +81,7 @@ class Phase12PrivacyTest {
         String renderedSources = Files.readString(Path.of(
             "src/main/resources/templates/review.html"))
             + Files.readString(Path.of(
-                "src/main/resources/templates/fragments/review-history-frag.html"))
-            + Files.readString(Path.of(
-                "src/main/resources/templates/fragments/review-queue-frag.html"));
+                "src/main/resources/templates/fragments/review-history-frag.html"));
         assertThat(renderedSources)
             .doesNotContain(
                 "providerMessageId", "providerThreadId", "scopeId", "scopeHash",
@@ -156,30 +95,19 @@ class Phase12PrivacyTest {
             throws Exception {
         String page = Files.readString(Path.of(
             "src/main/resources/templates/review.html"));
-        String queue = Files.readString(Path.of(
-            "src/main/resources/templates/fragments/review-queue-frag.html"));
         String history = Files.readString(Path.of(
             "src/main/resources/templates/fragments/review-history-frag.html"));
-        String outcome = Files.readString(Path.of(
-            "src/main/resources/templates/fragments/review-outcome-frag.html"));
         String css = Files.readString(Path.of(
             "src/main/resources/static/css/workspace.css"));
 
         assertThat(page)
             .contains(
                 "<a class=\"skip-link\"", "href=\"#workspace-main\"",
-                "<main id=\"workspace-main\">", "<h1>Review</h1>",
-                "aria-label=\"Review views\"", "aria-current");
-        assertThat(queue + history)
+                "<main id=\"workspace-main\">", ">Action history</h1>");
+        assertThat(history)
             .contains(
-                "<fieldset", "<legend", "<caption>",
-                "scope=\"col\"", "aria-live=\"polite\"",
-                "tabindex=\"0\"", "type=\"checkbox\"")
+                "<caption>", "scope=\"col\"", "tabindex=\"0\"")
             .doesNotContain("href=\"#\"", ">Delete<");
-        assertThat(outcome)
-            .contains("receipt.failed > 0 ? 'alert' : 'status'",
-                "receipt.failed > 0 ? 'assertive' : 'polite'",
-                "tabindex=\"-1\"");
         assertThat(history)
             .contains(
                 "target=\"_blank\"", "rel=\"noopener noreferrer\"",

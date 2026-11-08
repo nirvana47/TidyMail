@@ -13,10 +13,8 @@ import com.tidymail.config.ScheduleConfig;
 import com.tidymail.entity.SenderStat;
 import com.tidymail.entity.SyncProgress;
 import com.tidymail.entity.UserAccount;
-import com.tidymail.entity.UserAction;
 import com.tidymail.job.IncrementalSyncJob;
 import com.tidymail.job.SenderStatsVacuumJob;
-import com.tidymail.job.UserActionCleanupJob;
 import com.tidymail.mail.MailProvider;
 import com.tidymail.repository.SenderStatRepository;
 import com.tidymail.repository.SyncProgressRepository;
@@ -28,10 +26,8 @@ import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -69,11 +65,6 @@ class Phase8DeploymentTest {
         @Test
         @DisplayName("T8a_01 scheduleAnnotations — cron/configurable cycle + @EnableScheduling config")
         void T8a_01_scheduleAnnotations() throws Exception {
-            Method cleanupRun = UserActionCleanupJob.class.getMethod("run");
-            Scheduled cleanupSched = cleanupRun.getAnnotation(Scheduled.class);
-            assertNotNull(cleanupSched, "CleanupJob.run must have @Scheduled");
-            assertEquals("0 0 * * * *", cleanupSched.cron(), "CleanupJob cron");
-
             Method vacuumRun = SenderStatsVacuumJob.class.getMethod("run");
             Scheduled vacuumSched = vacuumRun.getAnnotation(Scheduled.class);
             assertNotNull(vacuumSched, "VacuumJob.run must have @Scheduled");
@@ -94,34 +85,8 @@ class Phase8DeploymentTest {
         }
 
         @Test
-        @DisplayName("T8a_02 cleanupPredicateAndSemaphore — 4-case filter + Semaphore(1) tryAcquire")
-        void T8a_02_cleanupPredicateAndSemaphore() {
-            Instant now = Instant.now();
-            Instant past = now.minusSeconds(10);
-
-            UserAction case1 = new UserAction();
-            case1.setExpiresAt(past);
-            case1.setUndoneAt(null);
-
-            UserAction case2 = new UserAction();
-            case2.setExpiresAt(past);
-            case2.setUndoneAt(Instant.now());
-
-            UserAction case3 = new UserAction();
-            case3.setExpiresAt(now.plusSeconds(10));
-            case3.setUndoneAt(null);
-
-            UserAction case4 = new UserAction();
-            case4.setExpiresAt(null);
-            case4.setUndoneAt(null);
-
-            List<UserAction> rows = List.of(case1, case2, case3, case4);
-            long passing = rows.stream()
-                .filter(row -> (row.getExpiresAt() != null && row.getExpiresAt().isBefore(now))
-                    && row.getUndoneAt() == null)
-                .count();
-            assertEquals(1, passing, "exactly 1 row passes predicate (expired + not undone)");
-
+        @DisplayName("T8a_02 Semaphore(1) tryAcquire")
+        void T8a_02_semaphore() {
             Semaphore sem = new Semaphore(1);
             assertTrue(sem.tryAcquire(), "first tryAcquire returns true");
             assertFalse(sem.tryAcquire(), "second tryAcquire returns false (saturated)");
@@ -513,7 +478,7 @@ class Phase8DeploymentTest {
         }
 
         @Test
-        @DisplayName("T8d_02_cssBreakpoints — dashboard.html has @media 375px + 44px touch targets; reply-zero.html has @media")
+        @DisplayName("T8d_02_cssBreakpoints — dashboard.html has @media 375px + 44px touch targets")
         void T8d_02_cssBreakpoints() throws Exception {
             File dashboard = new File("src/main/resources/templates/dashboard.html");
             assertTrue(dashboard.exists(), "dashboard.html exists");
@@ -523,10 +488,7 @@ class Phase8DeploymentTest {
             assertThat(dashContents).contains("375px");
             assertThat(dashContents).contains("min-height: 44px");
 
-            File replyZero = new File("src/main/resources/templates/reply-zero.html");
-            assertTrue(replyZero.exists(), "reply-zero.html exists");
-            String rzContents = Files.readString(replyZero.toPath());
-            assertThat(rzContents).contains("@media");
+
         }
     }
 }

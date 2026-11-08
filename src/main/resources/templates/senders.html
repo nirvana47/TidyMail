@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>TidyMail - Bulk Archive/Delete</title>
+    <title>TidyMail - Senders</title>
     <link rel="stylesheet" th:href="@{/static/css/workspace.css}">
     <script defer th:src="@{/static/js/htmx-lite.js}"></script>
     <script defer th:src="@{/static/js/cleanup-categories.js}"></script>
@@ -18,15 +18,7 @@
             <div class="page-title-stack cleanup-title-stack">
                 <p class="eyebrow">Inbox cleanup</p>
                 <div class="cleanup-header-control-row">
-                    <h1>Bulk Archive/Delete</h1>
-                    <span class="page-help" tabindex="0"
-                          aria-label="How Bulk Archive/Delete staging works"
-                          aria-describedby="senders-page-help">
-                        <sup class="page-help-icon" aria-hidden="true">?</sup>
-                        <span id="senders-page-help" class="page-help-tooltip" role="tooltip">
-                            Actions are staged from exact message IDs and require Review approval before mailbox changes.
-                        </span>
-                    </span>
+                    <h1>Senders</h1>
                     <button type="button" class="cleanup-header-toggle" data-category-toggle-all
                             data-expand-label="Expand all" data-collapse-label="Collapse all">
                         Expand all
@@ -35,39 +27,11 @@
             </div>
         </header>
 
-        <form id="sender-bulk-stage" class="cleanup-bulk-stage"
-              method="post" action="/api/cleanup-actions"
-              hx-post="/api/cleanup-actions" hx-swap="none"
-              data-cleanup-stage data-selection-bar hidden>
-            <input type="hidden" name="surface" value="SENDERS">
-            <input type="hidden" name="requestToken"
-                   th:value="${T(java.util.UUID).randomUUID()}">
-            <input th:each="entry : ${page.canonicalQuery.entrySet()}"
-                   type="hidden" th:name="${entry.key}" th:value="${entry.value}">
-            <input type="hidden" th:if="${_csrf != null}"
-                   th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
-            <p data-selection-summary>Select senders first, then stage them together.</p>
-            <p class="cleanup-stage-feedback visually-hidden"
-               role="status" aria-live="polite" tabindex="-1"
-               data-cleanup-feedback></p>
+        <div id="sender-selection" class="cleanup-bulk-stage" data-selection-bar hidden>
+            <p data-selection-summary></p>
             <button type="button" data-clear-selection>Clear selection</button>
-            <button type="button" data-dialog-open="sender-category-dialog">
-                Change type
-            </button>
-            <button type="submit" class="cleanup-action"
-                    name="action" value="MARK_READ">
-                Mark as Read
-            </button>
-            <button type="submit" class="cleanup-action"
-                    name="action" value="ARCHIVE">
-                Archive
-            </button>
-            <button type="button" class="cleanup-action"
-                    data-delete-source="sender-bulk-stage"
-                    data-delete-action="TRASH">
-                Delete selected
-            </button>
-        </form>
+            <button type="button" data-dialog-open="sender-category-dialog">Change type</button>
+        </div>
         <div th:replace="~{fragments/senders-results-frag :: results(${page})}"></div>
     </main>
 </div>
@@ -105,29 +69,6 @@
         <div class="dialog-actions">
             <button type="button" data-dialog-close>Cancel</button>
             <button type="submit" class="primary-button">Save change</button>
-        </div>
-    </form>
-</dialog>
-
-<dialog id="sender-delete-dialog" class="cleanup-dialog cleanup-delete-dialog"
-        aria-labelledby="sender-delete-title">
-    <form id="sender-delete-confirmation" method="post"
-          action="/api/cleanup-actions"
-          hx-post="/api/cleanup-actions" hx-swap="none"
-          data-cleanup-stage>
-        <h2 id="sender-delete-title">Stage Delete for Review?</h2>
-        <p>Messages moved to Gmail Trash can typically be restored for up to 30 days.</p>
-        <label class="delete-acknowledgement">
-            <input type="checkbox" name="deleteAcknowledged" value="true" required>
-            I understand the typical 30-day Trash recovery window.
-        </label>
-        <div data-delete-fields></div>
-        <p class="cleanup-stage-feedback visually-hidden"
-           role="status" aria-live="polite" tabindex="-1"
-           data-cleanup-feedback></p>
-        <div class="dialog-actions">
-            <button type="button" data-dialog-close>Cancel</button>
-            <button type="submit" class="cleanup-action">Stage Delete</button>
         </div>
     </form>
 </dialog>

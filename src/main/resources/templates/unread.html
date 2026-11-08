@@ -20,7 +20,7 @@
                 <div class="cleanup-header-control-row">
                     <h1>Unread Only</h1>
                     <span class="page-help" tabindex="0"
-                          aria-label="How Unread Only staging works"
+                          aria-label="How Unread Only works"
                           aria-describedby="unread-page-help">
                         <sup class="page-help-icon" aria-hidden="true">?</sup>
                         <span id="unread-page-help" class="page-help-tooltip" role="tooltip">
@@ -53,39 +53,11 @@
             </small>
         </section>
 
-        <form id="unread-bulk-stage" class="cleanup-bulk-stage"
-              method="post" action="/api/cleanup-actions"
-              hx-post="/api/cleanup-actions" hx-swap="none"
-              data-cleanup-stage data-selection-bar hidden>
-            <input type="hidden" name="surface" value="UNREAD">
-            <input type="hidden" name="requestToken"
-                   th:value="${T(java.util.UUID).randomUUID()}">
-            <input th:each="entry : ${page.canonicalQuery.entrySet()}"
-                   type="hidden" th:name="${entry.key}" th:value="${entry.value}">
-            <input type="hidden" th:if="${_csrf != null}"
-                   th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
-            <p data-selection-summary>Select senders first, then stage their exact Inbox-unread messages.</p>
-            <p class="cleanup-stage-feedback visually-hidden"
-               role="status" aria-live="polite" tabindex="-1"
-               data-cleanup-feedback></p>
+        <div id="unread-selection" class="cleanup-bulk-stage" data-selection-bar hidden>
+            <p data-selection-summary></p>
             <button type="button" data-clear-selection>Clear selection</button>
-            <button type="button" data-dialog-open="unread-category-dialog">
-                Change type
-            </button>
-            <button type="submit" class="cleanup-action"
-                    name="action" value="MARK_READ">
-                Mark as Read
-            </button>
-            <button type="submit" class="cleanup-action"
-                    name="action" value="ARCHIVE">
-                Archive
-            </button>
-            <button type="button" class="cleanup-action"
-                    data-delete-source="unread-bulk-stage"
-                    data-delete-action="TRASH">
-                Delete selected
-            </button>
-        </form>
+            <button type="button" data-dialog-open="unread-category-dialog">Change type</button>
+        </div>
         <div th:replace="~{fragments/unread-results-frag :: results(${page})}"></div>
     </main>
 </div>
@@ -168,27 +140,5 @@
     </form>
 </dialog>
 
-<dialog id="unread-delete-dialog" class="cleanup-dialog cleanup-delete-dialog"
-        aria-labelledby="unread-delete-title">
-    <form id="unread-delete-confirmation" method="post"
-          action="/api/cleanup-actions"
-          hx-post="/api/cleanup-actions" hx-swap="none"
-          data-cleanup-stage>
-        <h2 id="unread-delete-title">Stage Delete for Review?</h2>
-        <p>Messages moved to Gmail Trash can typically be restored for up to 30 days.</p>
-        <label class="delete-acknowledgement">
-            <input type="checkbox" name="deleteAcknowledged" value="true" required>
-            I understand the typical 30-day Trash recovery window.
-        </label>
-        <div data-delete-fields></div>
-        <p class="cleanup-stage-feedback visually-hidden"
-           role="status" aria-live="polite" tabindex="-1"
-           data-cleanup-feedback></p>
-        <div class="dialog-actions">
-            <button type="button" data-dialog-close>Cancel</button>
-            <button type="submit" class="cleanup-action">Stage Delete</button>
-        </div>
-    </form>
-</dialog>
 </body>
 </html>

@@ -38,18 +38,4 @@ public interface MailProvider {
      */
     List<MailFolderOrLabel> listFoldersOrLabels(UserAccount account);
 
-    /**
-     * Applies a bulk mutation, returning exact per-message outcomes.
-     */
-    BulkActionResult batchModify(UserAccount account, BulkActionRequest request);
-
-    /**
-     * Adds or removes a label on the given messages in bulk.
-     */
-    BulkActionResult applyLabel(UserAccount account, List<String> messageIds, String labelId, boolean add);
-
-    /**
-     * Fetches metadata-only summary for a single thread.
-     */
-    MailThreadSummary getThreadMetadata(UserAccount account, String threadId);
 }

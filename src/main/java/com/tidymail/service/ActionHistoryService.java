@@ -6,7 +6,6 @@ import com.tidymail.dto.ActionOutcomeSummary;
 import com.tidymail.dto.HistoryQuery;
 import com.tidymail.dto.WorkspacePageModel;
 import com.tidymail.repository.ActionHistoryRepository;
-import java.time.Clock;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.Collections;
@@ -34,7 +33,6 @@ public class ActionHistoryService {
 
     private final ActionHistoryRepository history;
     private final ProviderDeepLinkService providerLinks;
-    private final Clock clock = Clock.systemUTC();
 
     public ActionHistoryService(
             ActionHistoryRepository history,
@@ -93,20 +91,6 @@ public class ActionHistoryService {
             eventRecords.stream().map(event -> new ActionOutcomeSummary.Event(
                 visible(event.type()), visible(event.status()), event.occurredAt()))
                 .toList());
-        boolean reversible = List.of("ARCHIVE", "TRASH", "MARK_READ")
-            .contains(record.action());
-        boolean undoEligible = reversible && record.appliedCount() > 0
-            && record.undoCount() == 0 && record.undoEligibleUntil() != null
-            && clock.instant().isBefore(record.undoEligibleUntil())
-            && List.of("APPLIED", "PARTIAL").contains(record.status());
-        String unavailable = undoEligible ? null
-            : !reversible ? "This action has no mechanical undo."
-            : legacy ? "Undo unavailable - applied target detail was not recorded."
-            : record.appliedCount() == 0
-                ? "Undo unavailable - no applied targets were recorded."
-                : record.undoCount() > 0
-                    ? "Undo unavailable - this action was already used for undo."
-                    : "Undo unavailable - the eligibility window expired.";
         String external = "UNSUBSCRIBE".equals(record.action())
             ? providerLinks.accountPage(record.provider(), record.accountEmail())
                 .orElse(null)
@@ -114,38 +98,32 @@ public class ActionHistoryService {
         String countLabel = "%d requested / %d applied".formatted(
             value(record.requested()), record.appliedCount());
         String availability = availability(
-            undoEligible, record.action(), record.compensatesActionPublicId(),
-            external, unavailable);
+            record.action(), record.compensatesActionPublicId(), external);
         return new ActionHistoryRow(
             record.actionPublicId(), accountLabel(
                 record.accountEmail(), record.provider()), record.targetLabel(),
             visible(record.action()), visible(record.mode()), visible(record.status()),
             record.occurredAt(), PRIMARY_TIME.format(record.occurredAt()),
             DETAIL_TIME.format(record.occurredAt()), countLabel, availability,
-            outcome, legacy, undoEligible,
-            record.appliedCount(), unavailable,
+            outcome, legacy,
             "UNSUBSCRIBE".equals(record.action()),
             record.unsubscribeOutcome() == null
                 ? null : visible(record.unsubscribeOutcome()),
             external,
-            "PROTECT".equals(record.action()), null,
             record.compensatesActionPublicId());
     }
 
     /** Summarizes the follow-up availability for a history row. */
     private static String availability(
-            boolean undoEligible,
             String action,
             java.util.UUID compensatesActionPublicId,
-            String external,
-            String unavailable) {
-        if (undoEligible) return "Undo available";
+            String external) {
         if ("UNSUBSCRIBE".equals(action)) {
             return external == null ? "Manual follow-up" : "Provider options";
         }
-        if ("PROTECT".equals(action)) return "Protection follow-up";
+        if ("PROTECT".equals(action)) return "Protection recorded";
         if (compensatesActionPublicId != null) return "Compensation linked";
-        return unavailable == null ? "No follow-up" : "Details available";
+        return "Details available";
     }
 
     /** Groups and limits raw failure reasons into safe display labels. */

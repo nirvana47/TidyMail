@@ -50,20 +50,6 @@
                             <span th:if="${card.bulkMarketingScore() == 3}" class="score-3" title="3 bulk-mail signals: strongest candidate for review.">◆◆◆</span>
                         </td>
                         <td>
-                            <div class="action-buttons">
-                                <form method="post" th:attr="hx-post=|/api/actions/bulk-by-sender/${card.fromAddress()}?action=ARCHIVE|" hx-target="#action-feedback-slot" hx-swap="outerHTML" style="margin:0;">
-                                    <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}" th:if="${_csrf != null}">
-                                    <button type="submit" class="action-btn archive">Archive</button>
-                                </form>
-                                <form method="post" th:attr="hx-post=|/api/actions/bulk-by-sender/${card.fromAddress()}?action=MARK_READ|" hx-target="#action-feedback-slot" hx-swap="outerHTML" style="margin:0;">
-                                    <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}" th:if="${_csrf != null}">
-                                    <button type="submit" class="action-btn mark-read">Mark Read</button>
-                                </form>
-                                <form method="post" th:attr="hx-post=|/api/actions/bulk-by-sender/${card.fromAddress()}?action=TRASH|" hx-target="#action-feedback-slot" hx-swap="outerHTML" style="margin:0;">
-                                    <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}" th:if="${_csrf != null}">
-                                    <button type="submit" class="action-btn trash">Trash</button>
-                                </form>
-                            </div>
                         </td>
                     </tr>
                 </tbody>

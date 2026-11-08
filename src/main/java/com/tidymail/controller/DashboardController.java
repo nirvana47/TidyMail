@@ -68,6 +68,13 @@ public class DashboardController {
         return dashboard.page(account(auth), DashboardFilter.from(parameters));
     }
 
+    @GetMapping("/api/inbox-composition")
+    @ResponseBody
+    public List<DashboardRepository.Composition> inboxComposition(@RequestParam Map<String,String> parameters,
+            OAuth2AuthenticationToken auth) {
+        return dashboard.inboxComposition(account(auth),DashboardFilter.from(parameters));
+    }
+
     @PostMapping("/api/messages/{message}/evidence")
     @ResponseBody
     public com.fasterxml.jackson.databind.JsonNode evidence(@PathVariable UUID message, OAuth2AuthenticationToken auth) {
@@ -175,12 +182,23 @@ public class DashboardController {
     @ResponseBody
     public DashboardRepository.Details details(@PathVariable UUID group, @RequestParam Map<String, String> parameters,
             @RequestParam(defaultValue = "0") int messagePage, @RequestParam(defaultValue = "false") boolean unreadOnly, OAuth2AuthenticationToken auth) {
-        long account=account(auth);
-        var details=dashboard.details(account, DashboardFilter.from(parameters), group, messagePage,parameters.get("address"),unreadOnly);
-        return details;
+        return dashboard.details(account(auth), DashboardFilter.from(parameters), group, messagePage,parameters.get("address"),unreadOnly);
     }
 
-    public record Selection(DashboardFilter filter, List<UUID> groups, String address, long revision, boolean unreadOnly) {
+    @GetMapping("/api/groups/{group}/addresses")
+    @ResponseBody
+    public DashboardRepository.Addresses addresses(@PathVariable UUID group, @RequestParam Map<String, String> parameters,
+            OAuth2AuthenticationToken auth) {
+        return dashboard.addresses(account(auth), DashboardFilter.from(parameters), group);
+    }
+
+    @GetMapping("/api/groups/{group}/grouping")
+    @ResponseBody
+    public DashboardRepository.Grouping grouping(@PathVariable UUID group, OAuth2AuthenticationToken auth) {
+        return dashboard.grouping(account(auth), group);
+    }
+
+    public record Selection(DashboardFilter filter, List<UUID> groups, String address, long revision, boolean unreadOnly, boolean allMatching) {
     }
 
     @PostMapping("/api/selection")
@@ -190,7 +208,7 @@ public class DashboardController {
         if (request.filter() == null)
             throw new IllegalArgumentException("Filters are required");
         return dashboard.selection(account(auth), request.filter(), request.groups(), request.address(),
-                request.revision(), request.unreadOnly());
+                request.revision(), request.unreadOnly(), request.allMatching());
     }
 
     @PostMapping("/api/previews")

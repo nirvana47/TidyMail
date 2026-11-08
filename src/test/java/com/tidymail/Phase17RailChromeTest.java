@@ -91,15 +91,11 @@ class Phase17RailChromeTest {
 
         assertThat(rail)
             .contains(
-                "<span>Bulk Archive/Delete</span>",
+                "<span>Senders</span>",
                 "<span>Unread Only</span>",
-                "<span>Bulk Unsubscribe</span>",
-                "<span>Review</span>",
-                "<span>Analytics</span>",
+                "<span>Action history</span>",
                 "workspace.inboxUnreadCountAvailable()",
-                "'Unread Only, ' + workspace.inboxUnreadCount + ' Inbox unread messages'",
-                "workspace.queueCountAvailable()",
-                "'Review, ' + workspace.queuedActionCount + ' queued actions'");
+                "'Unread Only, ' + workspace.inboxUnreadCount + ' Inbox unread messages'");
         assertThat(rail)
             .doesNotContain(
                 "rail-nav-badge",

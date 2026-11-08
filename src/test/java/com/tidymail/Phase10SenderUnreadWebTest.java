@@ -168,7 +168,7 @@ class Phase10SenderUnreadWebTest {
                 .with(authentication(auth)))
             .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         assertThat(sender)
-            .contains("<h1>Bulk Archive/Delete</h1>")
+            .contains("<h1>Senders</h1>")
             .contains("sender@example.com");
         assertThat(sender)
             .doesNotContain("id=\"sender-search\"", "id=\"sender-sort\"",
@@ -197,7 +197,7 @@ class Phase10SenderUnreadWebTest {
                 .with(authentication(auth)))
             .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         assertThat(unreadRows)
-            .contains("sender@example.com", "form=\"unread-bulk-stage\"")
+            .contains("sender@example.com", "data-selection=\"unread-selection\"")
             .doesNotContain("Select row", "<span>Action</span>");
         verifyNoInteractions(gmailProvider, outlookProvider);
     }
@@ -228,7 +228,7 @@ class Phase10SenderUnreadWebTest {
     }
 
     @Test
-    void send01ThroughSend04RenderQuietClosedCategoriesAndExactActions() throws Exception {
+    void sendersRenderQuietCategoriesAndCategoryControls() throws Exception {
         UserAccount account = account(EMAIL);
         seed(account, "sender-1", "news@example.com", "Daily News", "Newsletter",
             Instant.now().minus(10, ChronoUnit.DAYS), "thread-news");
@@ -239,15 +239,12 @@ class Phase10SenderUnreadWebTest {
 
         String body = page("/senders", account);
         assertThat(body)
-            .contains("Bulk Archive/Delete")
+            .contains("Senders")
             .contains("Change type", "Expand all")
             .contains("Lists and newsletters", "Automated notifications",
                 "Receipts and transactions", "Personal senders", "Other")
             .contains("Daily News", "news@example.com", "example.com")
             .contains("data-label=\"All Mail unread\">1</span>")
-            .contains("name=\"surface\" value=\"SENDERS\"")
-            .contains("name=\"action\" value=\"ARCHIVE\"")
-            .contains("class=\"cleanup-action\"")
             .contains("Change type", "sender-category-dialog", "Create a new category")
             .contains("data-selection-bar hidden")
             .doesNotContain("id=\"sender-search\"", "id=\"sender-sort\"",
@@ -256,16 +253,7 @@ class Phase10SenderUnreadWebTest {
                 "Move selected", "Create category",
                 "Select senders first, then choose where they belong.");
 
-        String delete = mockMvc.perform(get("/senders")
-                .param("account", String.valueOf(account.getId()))
-                .param("cleanupAction", "delete")
-                .with(authentication(auth(EMAIL))))
-            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
-        assertThat(delete)
-            .contains("data-delete-action=\"TRASH\"")
-            .contains("data-delete-source=\"sender-bulk-stage\"", "Delete selected")
-            .contains("id=\"sender-delete-dialog\"", "Stage Delete for Review?")
-            .contains("Gmail Trash can typically be restored for up to 30 days");
+
     }
 
     @Test
@@ -300,7 +288,7 @@ class Phase10SenderUnreadWebTest {
         String body = page("/unread", account);
         assertThat(body)
             .contains("<h1>Unread Only</h1>")
-            .contains("How Unread Only staging works")
+            .contains("How Unread Only works")
             .contains("Lists and automated mail", "Older than 30 days",
                 "Direct mail", "Has attachments", "Other")
             .contains("1 sender", "1 Inbox unread")
@@ -311,7 +299,7 @@ class Phase10SenderUnreadWebTest {
                 "decision-filters", "metric-strip", "pagination", "next-route",
                 "Counts and rows reflect the last completed metadata sync",
                 "Unread groups are not mutually exclusive",
-                "cleanup-action-status", "Ready to stage for Review",
+                "cleanup-action-status", "Ready to stage",
                 "Visible subject header", "private-provider-message", "message body",
                 "snippet", "attachment content", "Open in Gmail");
 
@@ -323,7 +311,7 @@ class Phase10SenderUnreadWebTest {
             .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         assertThat(rows)
             .contains("Person", "person@example.com")
-            .contains("form=\"unread-bulk-stage\"")
+            .contains("data-selection=\"unread-selection\"")
             .doesNotContain("Visible subject header", "private-provider-message",
                 "Select row", "<span>Action</span>");
         verifyNoInteractions(gmailProvider, outlookProvider);
@@ -336,12 +324,12 @@ class Phase10SenderUnreadWebTest {
         String css = Files.readString(Path.of("src/main/resources/static/css/workspace.css"));
 
         assertThat(sender).contains("<details class=\"cleanup-category\"",
-            "data-category-key", "form=\"sender-bulk-stage\"")
+            "data-category-key", "data-selection=\"sender-selection\"")
             .doesNotContain("<details class=\"cleanup-category\" open", "metric-strip",
                 "pagination", "cleanup-row-state", "<span>Action</span>");
         assertThat(unread).contains("<details class=\"cleanup-category\"",
             "Load more", "Load all",
-              "form=\"unread-bulk-stage\"", "DecisionRowKey).unreadSender")
+              "data-selection=\"unread-selection\"", "DecisionRowKey).unreadSender")
             .doesNotContain("<details class=\"cleanup-category\" open", "metric-strip",
                 "pagination", "/api/selection-preview", "unread-category-dialog",
                 "cleanup-row-state", "<span>Action</span>",
@@ -354,55 +342,24 @@ class Phase10SenderUnreadWebTest {
             .contains("Expand all", "cleanup-categories.js",
                   "action=\"/api/sender-categories/correct\"",
                   "id=\"unread-category-dialog\"",
-                  "id=\"unread-bulk-stage\"", "action=\"/api/cleanup-actions\"",
+                  "id=\"unread-selection\"",
                   "page-header",
-                  "How Unread Only staging works",
-                  "data-cleanup-feedback",
-                  "Gmail Trash can typically be restored for up to 30 days")
+                  "How Unread Only works")
             .doesNotContain("unread-search", "filter-summary", "next-route",
                 "Tidy up your unread emails",
                 "workspace-download", "selection-preview",
                 "cleanup-action-result-frag :: status", "cleanup-action-status",
-                "Ready to stage for Review");
-        assertThat(Files.readString(Path.of(
-            "src/main/resources/templates/fragments/selection-preview-frag.html")))
-            .contains("aria-labelledby=\"selection-preview-heading\"")
-            .contains(
-                "id=\"selection-preview-heading\" tabindex=\"-1\"",
-                "When should TidyMail run this action?",
-                "Stage for Review",
-                "Run after this confirmation",
-                "Send exact scope to Review",
-                "Confirm and run exact scope",
-                "#strings.substring(scope.scopeHash, 0, 12)");
+                "Ready to stage");
         assertThat(css)
             .contains("@media (max-width: 980px)")
             .contains("@media (max-width: 720px)")
             .contains("@media (max-width: 375px)")
             .contains("min-height: 44px")
-            .contains(".cleanup-action")
             .contains(".cleanup-dialog::backdrop")
             .contains("overflow-x: auto")
             .contains(":focus-visible")
             .contains("@media (prefers-reduced-motion: reduce)")
             .doesNotContain("@import url", "cdn.jsdelivr", "unpkg.com");
-    }
-
-    @Test
-    void previewPostRejectsUnknownValuesAndNeverCallsProviders() throws Exception {
-        UserAccount account = account(EMAIL);
-        seed(account, "preview-message", "preview@example.com", "Preview",
-            "Preview subject", Instant.now(), "preview-thread");
-
-        mockMvc.perform(post("/api/selection-preview")
-                .with(authentication(auth(EMAIL))).with(csrf())
-                .param("surface", "UNREAD")
-                .param("mode", "ALL_MATCHING")
-                .param("action", "REVIEW")
-                .param("account", String.valueOf(account.getId()))
-                .param("unknown", "private"))
-            .andExpect(status().isBadRequest());
-        verifyNoInteractions(gmailProvider, outlookProvider);
     }
 
     @Test

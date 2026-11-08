@@ -5,8 +5,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * The top-level workspace routes (Senders, Unread, Unsubscribe, Review, Activity,
- * Analytics), each carrying its display metadata, purpose copy, and capability
+ * The top-level workspace routes (Senders, Unread, Action history, Activity),
+ * each carrying its display metadata, purpose copy, and capability
  * phase used to render the navigation rail and page headers.
  *
  * <p>Product functionality supported: the workspace navigation and the
@@ -14,41 +14,29 @@ import org.springframework.web.server.ResponseStatusException;
  */
 public enum WorkspaceRoute {
     SENDERS(
-        "senders", "/senders", "Bulk Archive/Delete", "Sender cleanup",
-        "Review indexed sender metadata and prepare exact cleanup decisions.",
-        "Bulk Archive/Delete", 10, "Sender decisions",
-        "Filter indexed sender patterns and preview exact cleanup impact. No mailbox changes are applied here.",
+        "senders", "/senders", "Senders", "Sender categories",
+        "Browse indexed senders and organize their categories.",
+        "Senders", 10, "Sender decisions",
+        "Browse indexed senders by category.",
         "mailbox execution controls"),
     UNREAD(
         "unread", "/unread", "Unread Only", "Unread cleanup",
-        "Prepare indexed unread-message decisions without rescanning the mailbox.",
+        "Browse indexed unread mail without rescanning the mailbox.",
         "Unread Only", 10, "Unread emails",
-        "Review indexed unread metadata, understand each recommendation, and preview exact impact.",
+        "Browse categories of indexed Inbox-unread mail.",
         "mailbox execution controls"),
-    UNSUBSCRIBE(
-        "unsubscribe", "/unsubscribe", "Bulk Unsubscribe", "Unsubscribe safety",
-        "Inspect detected unsubscribe methods and destinations before choosing one.",
-        "Bulk Unsubscribe", 11, "Unsubscribe candidates",
-        "Browse metadata-derived candidates and inspect redacted destination facts. No request is sent from this page.",
-        "later method confirmation is implemented"),
     REVIEW(
-        "review", "/review", "Review", "Approval and action history",
-        "Approve staged exact scopes, resolve conflicts, and verify what happened.",
-        "Review", 12, "Review actions",
-        "Approve selected or all eligible exact scopes through one outcome ledger.",
-        "history and undo controls"),
+        "review", "/review", "Action history", "Action history",
+        "Inspect retained action outcomes.",
+        "Action history", 12, "Action history",
+        "Inspect recorded outcomes and their timeline.",
+        "retained history"),
     ACTIVITY(
         "activity", "/activity", "Sync / Activity", "Mailbox status",
         "Inspect factual mailbox indexing and provider freshness activity.",
         "Sync / Activity", 19, "Mailbox sync activity",
         "Inspect indexing readiness, freshness, and bounded recent sync activity.",
-        "provider-backed mailbox status"),
-    ANALYTICS(
-        "analytics", "/analytics", "Analytics", "Mailbox cleanup",
-        "Inspect received evidence, UTC trends, comparisons, and source rows.",
-        "Analytics", 13, "Cleanup analytics",
-        "Inspect owned received facts with explicit historical availability.",
-        "date controls, comparisons, charts, and drilldowns");
+        "provider-backed mailbox status");
 
     private final String value;
     private final String path;
@@ -98,11 +86,9 @@ public enum WorkspaceRoute {
     public WorkspaceRoute nextRoute() {
         return switch (this) {
             case SENDERS -> UNREAD;
-            case UNREAD -> UNSUBSCRIBE;
-            case UNSUBSCRIBE -> REVIEW;
+            case UNREAD -> REVIEW;
             case REVIEW -> ACTIVITY;
-            case ACTIVITY -> ANALYTICS;
-            case ANALYTICS -> SENDERS;
+            case ACTIVITY -> SENDERS;
         };
     }
 

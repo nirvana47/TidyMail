@@ -9,27 +9,20 @@ import com.google.api.services.gmail.Gmail;
 import com.google.api.services.gmail.model.BatchModifyMessagesRequest;
 import com.google.api.services.gmail.model.Label;
 import com.google.api.services.gmail.model.History;
-import com.google.api.services.gmail.model.HistoryLabelAdded;
-import com.google.api.services.gmail.model.HistoryLabelRemoved;
 import com.google.api.services.gmail.model.HistoryMessageAdded;
 import com.google.api.services.gmail.model.HistoryMessageDeleted;
 import com.google.api.services.gmail.model.ListLabelsResponse;
 import com.google.api.services.gmail.model.ListHistoryResponse;
 import com.google.api.services.gmail.model.ListMessagesResponse;
-import com.google.api.services.gmail.model.ListThreadsResponse;
 import com.google.api.services.gmail.model.Message;
 import com.google.api.services.gmail.model.MessagePart;
 import com.google.api.services.gmail.model.MessagePartHeader;
-import com.google.api.services.gmail.model.Thread;
 import com.tidymail.entity.UserAccount;
-import com.tidymail.mail.BulkActionRequest;
-import com.tidymail.mail.BulkActionResult;
 import com.tidymail.mail.BulkActionType;
 import com.tidymail.mail.AttachmentState;
 import com.tidymail.mail.MailFolderOrLabel;
 import com.tidymail.mail.MailMessage;
 import com.tidymail.mail.MailProvider;
-import com.tidymail.mail.MailThreadSummary;
 import com.tidymail.mail.PageResult;
 import com.tidymail.mail.sync.AttachmentMembershipPage;
 import com.tidymail.mail.sync.BackfillRequest;
@@ -43,9 +36,7 @@ import java.math.BigInteger;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
-import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -120,25 +111,6 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
      *  otherwise.  (Pitfall G2.)
      */
     private static final String USER_ID_ME = "me";
-
-    /**
-     * Maps each provider-agnostic {@link BulkActionType} to (addLabelIds,
-     * removeLabelIds) arrays for Gmail's batch-modify JSON endpoint.
-     * System-label IDs used below are Gmail reserved strings, not DB IDs:
-     *   INBOX — the user's Inbox label; removing it = archive
-     *   TRASH — Trash folder; adding it = move to trash
-     *   UNREAD — virtual label applied to unread messages
-     */
-    private static final Map<BulkActionType, LabelDelta> BULK_ACTION_LABELS;
-
-    static {
-        Map<BulkActionType, LabelDelta> m = new EnumMap<>(BulkActionType.class);
-        m.put(BulkActionType.ARCHIVE,      LabelDelta.remove("INBOX"));
-        m.put(BulkActionType.TRASH,        LabelDelta.add("TRASH"));
-        m.put(BulkActionType.MARK_READ,    LabelDelta.remove("UNREAD"));
-        m.put(BulkActionType.MARK_UNREAD,  LabelDelta.add("UNREAD"));
-        BULK_ACTION_LABELS = Collections.unmodifiableMap(m);
-    }
 
     static {
         // Static assertion matching tracer T4(a).  If this trips at class load
@@ -498,7 +470,7 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
     public void cleanupOnce(UserAccount account,List<String> messageIds,BulkActionType action) {
         if(messageIds==null||messageIds.isEmpty()||messageIds.size()>1000||messageIds.stream().anyMatch(id->id==null||id.isBlank())||new HashSet<>(messageIds).size()!=messageIds.size())
             throw new IllegalArgumentException("Cleanup requires 1–1000 unique exact IDs");
-        if(!java.util.Set.of(BulkActionType.MARK_READ,BulkActionType.ARCHIVE,BulkActionType.TRASH).contains(action))
+        if(!java.util.Set.of(BulkActionType.MARK_READ,BulkActionType.ARCHIVE,BulkActionType.TRASH,BulkActionType.MARK_READ_ARCHIVE).contains(action))
             throw new IllegalArgumentException("Unsupported dashboard action");
         Gmail gmail=clientFactory.buildFor(account);
         rateLimiter.supplyWithCleanupPermit(() -> {
@@ -506,7 +478,12 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
             try {
                 var body=new BatchModifyMessagesRequest().setIds(List.copyOf(messageIds));
                 if(action==BulkActionType.TRASH)body.setAddLabelIds(List.of("TRASH"));
-                else body.setRemoveLabelIds(List.of(action==BulkActionType.ARCHIVE?"INBOX":"UNREAD"));
+                else body.setRemoveLabelIds(switch (action) {
+                    case ARCHIVE -> List.of("INBOX");
+                    case MARK_READ -> List.of("UNREAD");
+                    case MARK_READ_ARCHIVE -> List.of("UNREAD", "INBOX");
+                    case TRASH -> throw new IllegalStateException();
+                });
                 var request=gmail.users().messages().batchModify(USER_ID_ME,body);
                 var http=request.buildHttpRequest();
                 http.setNumberOfRetries(0);
@@ -521,161 +498,6 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
             } catch(IOException error) {
                 // Never convert transport failure into a definite per-target rejection.
                 throw new IllegalStateException("Dashboard mutation needs label verification",error);
-            }
-        });
-    }
-
-    /**
-     * Applies a bulk label add/remove action to the given messages, reporting
-     * partial failures per message.
-     */
-    @Override
-    public BulkActionResult batchModify(UserAccount account, BulkActionRequest request) {
-        LabelDelta delta = BULK_ACTION_LABELS.get(request.actionType());
-        if (delta == null) {
-            // Any BulkActionType we don't know about → fail the entire
-            // request with a clear error (no silent no-op).  Known types map
-            // exhaustively above via EnumMap so this is a future-type guard.
-            Map<String,String> failed = new LinkedHashMap<>();
-            for (String id : request.messageIds()) failed.put(id, "unsupported action: " + request.actionType());
-            return BulkActionResult.withPartialFailures(request.messageIds().size(), List.of(), failed);
-        }
-
-        Gmail gmail = clientFactory.buildFor(account);
-        return rateLimiter.supplyWithPermit(() -> {
-            try {
-                BatchModifyMessagesRequest body = new BatchModifyMessagesRequest();
-                body.setIds(new ArrayList<>(request.messageIds()));
-                body.setAddLabelIds(delta.addLabelIds);
-                body.setRemoveLabelIds(delta.removeLabelIds);
-
-                gmail.users().messages().batchModify(USER_ID_ME, body).execute();
-
-                // Gmail's JSON batch API returns HTTP 204 No Content on
-                // success and does not report per-id successes; if any id is
-                // 404 the whole call still returns 204 (documented behavior).
-                // We therefore treat every id in the request as succeeded
-                // (matching the optimistic pattern of Google's API), and any
-                // caller that wants finer granularity can re-query.
-                return BulkActionResult.ok(request.messageIds().size(), request.messageIds());
-            } catch (IOException ex) {
-                // Translate transport-level failure into a partial-failure
-                // result where every id is tagged with the transport error
-                // message.  This preserves D-4.6 fail-slow contract.
-                Map<String,String> failed = new LinkedHashMap<>();
-                String reason = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
-                for (String id : request.messageIds()) failed.put(id, reason);
-                return BulkActionResult.withPartialFailures(request.messageIds().size(), List.of(), failed);
-            }
-        });
-    }
-
-    // ---------------------------------------------------------------------
-    // applyLabel
-    // ---------------------------------------------------------------------
-    /**
-     * Adds or removes a single label on the given messages.
-     */
-    @Override
-    public BulkActionResult applyLabel(UserAccount account, List<String> messageIds, String labelId, boolean add) {
-        if (labelId == null || labelId.isBlank()) {
-            Map<String,String> failed = new LinkedHashMap<>();
-            for (String id : messageIds) failed.put(id, "labelId is blank");
-            return BulkActionResult.withPartialFailures(messageIds.size(), List.of(), failed);
-        }
-        LabelDelta delta = add
-            ? LabelDelta.add(labelId)
-            : LabelDelta.remove(labelId);
-
-        Gmail gmail = clientFactory.buildFor(account);
-        return rateLimiter.supplyWithPermit(() -> {
-            try {
-                BatchModifyMessagesRequest body = new BatchModifyMessagesRequest();
-                body.setIds(new ArrayList<>(messageIds));
-                body.setAddLabelIds(delta.addLabelIds);
-                body.setRemoveLabelIds(delta.removeLabelIds);
-                gmail.users().messages().batchModify(USER_ID_ME, body).execute();
-                return BulkActionResult.ok(messageIds.size(), messageIds);
-            } catch (IOException ex) {
-                Map<String,String> failed = new LinkedHashMap<>();
-                String reason = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
-                for (String id : messageIds) failed.put(id, reason);
-                return BulkActionResult.withPartialFailures(messageIds.size(), List.of(), failed);
-            }
-        });
-    }
-
-    // ---------------------------------------------------------------------
-    // getThreadMetadata
-    // ---------------------------------------------------------------------
-    /**
-     * Fetches metadata for a thread and summarizes its participants, domains,
-     * and message count.
-     */
-    @Override
-    public MailThreadSummary getThreadMetadata(UserAccount account, String threadId) {
-        Gmail gmail = clientFactory.buildFor(account);
-        return rateLimiter.supplyWithPermit(() -> {
-            try {
-                Thread thread = gmail.users().threads()
-                    .get(USER_ID_ME, threadId)
-                    .setFormat("METADATA")
-                    .setMetadataHeaders(new ArrayList<>(METADATA_HEADERS))
-                    .execute();
-
-                List<Message> msgs = thread.getMessages();
-                if (msgs == null || msgs.isEmpty()) {
-                    return new MailThreadSummary(
-                        threadId, List.of(), Set.of(), 0, null, null, List.of());
-                }
-
-                List<String> participants = new ArrayList<>();
-                Set<String> domains = new HashSet<>();
-                List<String> orderedIds = new ArrayList<>(msgs.size());
-                Instant oldest = null;
-                Instant newest = null;
-
-                for (Message m : msgs) {
-                    orderedIds.add(m.getId());
-                    MailMessage wrapped = toMailMessage(account.getProvider(), m);
-                    wrapped.from().ifPresent(from -> {
-                        participants.add(from);
-                        String domain = extractDomain(from);
-                        if (domain != null) domains.add(domain);
-                    });
-                    wrapped.to().ifPresent(to -> {
-                        for (String piece : to.split(",")) {
-                            String t = piece.trim();
-                            if (!t.isEmpty()) {
-                                participants.add(t);
-                                String d = extractDomain(t);
-                                if (d != null) domains.add(d);
-                            }
-                        }
-                    });
-                    Instant ts = wrapped.receivedAt();
-                    if (ts != null) {
-                        if (oldest == null || ts.isBefore(oldest)) oldest = ts;
-                        if (newest == null || ts.isAfter(newest)) newest = ts;
-                    }
-                }
-                // De-duplicate participants preserving insertion order
-                List<String> uniqueParticipants = participants.stream()
-                    .distinct()
-                    .collect(Collectors.toList());
-
-                return new MailThreadSummary(
-                    threadId,
-                    uniqueParticipants,
-                    Collections.unmodifiableSet(domains),
-                    msgs.size(),
-                    oldest,
-                    newest,
-                    List.copyOf(orderedIds));
-            } catch (IOException ex) {
-                throw new GmailClientInitException(
-                    "Gmail getThreadMetadata failed for thread=" + threadId
-                        + " account=" + account.getEmail(), ex);
             }
         });
     }
@@ -1008,31 +830,6 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
         }
     }
 
-    /** Extracts domain portion from an RFC5322 address.  Handles both "Name <user@domain>"
-     *  and plain "user@domain" forms.  Returns null for unparseable inputs. */
-    public static String extractDomain(CharSequence rfc5322Address) {
-        if (rfc5322Address == null) return null;
-        String s = rfc5322Address.toString();
-        int lt = s.lastIndexOf('<');
-        int at;
-        if (lt >= 0) {
-            int gt = s.lastIndexOf('>');
-            if (gt <= lt) return null;
-            String inner = s.substring(lt + 1, gt).trim();
-            at = inner.lastIndexOf('@');
-            if (at <= 0 || at == inner.length() - 1) return null;
-            return lowerOrNull(inner.substring(at + 1).trim());
-        } else {
-            at = s.lastIndexOf('@');
-            if (at <= 0 || at == s.length() - 1) return null;
-            return lowerOrNull(s.substring(at + 1).trim());
-        }
-    }
-
-    private static String lowerOrNull(String s) {
-        return s == null || s.isEmpty() ? null : s.toLowerCase(java.util.Locale.ROOT);
-    }
-
     /** Gmail API label "type" integer → human-readable string. */
     private static String labelTypeHuman(String type) {
         // Gmail docs: "system" or "user".  Values are lowercase strings via
@@ -1051,23 +848,5 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
      * of any caller inputs aren't needed because the only builders are
      * private in this file and pass list-of-one literals.
      */
-    private static final class LabelDelta {
-        final List<String> addLabelIds;
-        final List<String> removeLabelIds;
 
-        LabelDelta(List<String> addLabelIds, List<String> removeLabelIds) {
-            this.addLabelIds = (addLabelIds == null || addLabelIds.isEmpty())
-                ? null : new ArrayList<>(addLabelIds);
-            this.removeLabelIds = (removeLabelIds == null || removeLabelIds.isEmpty())
-                ? null : new ArrayList<>(removeLabelIds);
-        }
-
-        static LabelDelta add(String... ids) {
-            return new LabelDelta(Arrays.asList(ids), List.of());
-        }
-
-        static LabelDelta remove(String... ids) {
-            return new LabelDelta(List.of(), Arrays.asList(ids));
-        }
-    }
 }

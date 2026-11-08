@@ -1,17 +1,14 @@
 package com.tidymail.controller;
 
-import com.tidymail.dto.ReplyZeroPageResponse;
 import com.tidymail.dto.SenderPageResponse;
 import com.tidymail.entity.UserAccount;
 import com.tidymail.mail.MailMessage;
 import com.tidymail.mail.MailProvider;
 import com.tidymail.mail.PageResult;
 import com.tidymail.repository.UserAccountRepository;
-import com.tidymail.service.ReplyZeroDetector;
 import com.tidymail.service.SenderAggregator;
 import com.tidymail.service.SenderStatsPersistService;
 import com.tidymail.util.CursorUtil;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -25,15 +22,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
-/**
- * JSON API for sender aggregation, full sync, and the Reply Zero queue.
- *
- * <p>Product functionality supported: the <em>Senders</em> dashboard and
- * <em>Reply Zero</em> queue, plus a manual full-sync trigger. These endpoints
- * fetch messages from the mail provider, aggregate them by sender (and detect
- * Reply Zero items), and persist a snapshot so the dashboard can be served
- * quickly without re-hitting the provider on every load.</p>
- */
+/** JSON API for sender aggregation and the manual full-sync trigger. */
 @RestController
 @RequestMapping("/api")
 public class SenderAggregationController {
@@ -41,19 +30,16 @@ public class SenderAggregationController {
     private final Map<String, MailProvider> mailProviderMap;
     private final UserAccountRepository userAccountRepository;
     private final SenderAggregator senderAggregator;
-    private final ReplyZeroDetector replyZeroDetector;
     private final SenderStatsPersistService senderStatsPersistService;
 
     public SenderAggregationController(
             Map<String, MailProvider> mailProviderMap,
             UserAccountRepository userAccountRepository,
             SenderAggregator senderAggregator,
-            ReplyZeroDetector replyZeroDetector,
             SenderStatsPersistService senderStatsPersistService) {
         this.mailProviderMap = mailProviderMap;
         this.userAccountRepository = userAccountRepository;
         this.senderAggregator = senderAggregator;
-        this.replyZeroDetector = replyZeroDetector;
         this.senderStatsPersistService = senderStatsPersistService;
     }
 
@@ -152,35 +138,4 @@ public class SenderAggregationController {
         return Map.of("syncedSenders", n, "messagesScanned", agg.totalMessagesScanned(), "pagesFetched", pages);
     }
 
-    /**
-     * Returns a page of Reply Zero items: messages old enough to warrant
-     * attention that the detector flags as personal and awaiting a reply,
-     * paginated via the mail provider's cursor.
-     */
-    @GetMapping("/reply-zero")
-    public ReplyZeroPageResponse getReplyZero(
-            @RequestParam(name = "olderThanDays", defaultValue = "3") int olderThanDays,
-            @RequestParam(name = "cursor", required = false) String cursor,
-            @RequestParam(name = "size", defaultValue = "20") int size,
-            OAuth2AuthenticationToken auth) {
-        UserAccount account = currentAccount(auth);
-        MailProvider provider = resolveProvider(account);
-        String googleTok = "";
-        long localOff = 0;
-        if (cursor != null && !cursor.isBlank()) {
-            try {
-                CursorUtil.CursorParts p = CursorUtil.decode(cursor);
-                googleTok = p.googlePageToken();
-                localOff = p.localOffset();
-            } catch (IllegalArgumentException e) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "bad_cursor");
-            }
-        }
-        PageResult<MailMessage> pr = provider.listMessages(account, googleTok.isBlank() ? null : googleTok, size);
-        SenderAggregator.AggregationResult agg = senderAggregator.aggregate(pr.items());
-        int clampDays = Math.max(1, olderThanDays);
-        var items = replyZeroDetector.analyze(pr.items(), agg.perSender(), account, provider, clampDays, Instant.now());
-        String newCursor = pr.nextPageToken() == null ? null : CursorUtil.encode(pr.nextPageToken(), localOff + 1, "countDesc");
-        return new ReplyZeroPageResponse(List.copyOf(items), newCursor);
-    }
 }

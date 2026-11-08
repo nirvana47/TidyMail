@@ -1,7 +1,5 @@
 package com.tidymail;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -10,8 +8,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
@@ -23,23 +19,15 @@ import com.tidymail.controller.SenderAggregationController;
 import org.springframework.security.oauth2.core.user.DefaultOAuth2User;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import com.tidymail.dto.DomainRollup;
-import com.tidymail.dto.ReplyZeroItem;
-import com.tidymail.dto.ReplyZeroPageResponse;
-import com.tidymail.dto.SenderCard;
 import com.tidymail.dto.SenderPageResponse;
 import com.tidymail.entity.SenderStat;
 import com.tidymail.entity.UserAccount;
-import com.tidymail.mail.BulkActionRequest;
-import com.tidymail.mail.BulkActionResult;
-import com.tidymail.mail.MailFolderOrLabel;
 import com.tidymail.mail.MailMessage;
 import com.tidymail.mail.MailProvider;
-import com.tidymail.mail.MailThreadSummary;
 import com.tidymail.mail.PageResult;
 import com.tidymail.repository.SenderStatRepository;
 import com.tidymail.repository.UserAccountRepository;
 import com.tidymail.security.crypto.CryptoUtil;
-import com.tidymail.service.ReplyZeroDetector;
 import com.tidymail.service.SenderAggregator;
 import com.tidymail.service.SenderStatsPersistService;
 import com.tidymail.util.CursorUtil;
@@ -50,9 +38,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -69,7 +55,6 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
-import org.springframework.security.oauth2.core.OAuth2AuthenticatedPrincipal;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -424,10 +409,9 @@ class Phase6SenderAggregationTest {
         when(mockPersist.upsertSnapshot(any(), any())).thenReturn(List.of());
 
         SenderAggregator realAgg = new SenderAggregator(mockPersist);
-        ReplyZeroDetector realRzd = new ReplyZeroDetector();
 
         SenderAggregationController controller = new SenderAggregationController(
-            providerMap, mockRepo, realAgg, realRzd, mockPersist);
+            providerMap, mockRepo, realAgg, mockPersist);
 
         OAuth2User principal = mock(OAuth2User.class);
         when(principal.getAttribute("email")).thenReturn("me@example.com");
@@ -450,98 +434,6 @@ class Phase6SenderAggregationTest {
         CursorUtil.CursorParts cp = CursorUtil.decode(resp.nextCursor());
         assertEquals("page2tok", cp.googlePageToken());
         assertEquals(1L, cp.localOffset());
-    }
-
-    // ============================================================
-    // T6(d): ReplyZeroDetector with FakeMailProvider
-    // Pure Java. No Spring context.
-    // ============================================================
-
-    static class FakeMailProvider implements MailProvider {
-        private final Map<String, MailThreadSummary> threadMap = new HashMap<>();
-
-        void put(String threadId, List<String> participants, Instant at,
-                 List<String> orderedIds) {
-            Set<String> domains = new HashSet<>();
-            for (String p : participants) {
-                String d = Rfc5322Util.extractDomain(p);
-                if (d != null) domains.add(d);
-            }
-            threadMap.put(threadId, new MailThreadSummary(
-                threadId, participants, domains,
-                orderedIds.size(), at, at, orderedIds));
-        }
-
-        @Override public MailThreadSummary getThreadMetadata(UserAccount me, String tid) {
-            MailThreadSummary s = threadMap.get(tid);
-            if (s == null) {
-                return new MailThreadSummary(tid, List.of(), Set.of(), 0,
-                    null, null, List.of());
-            }
-            return s;
-        }
-
-        @Override public PageResult<MailMessage> listMessages(UserAccount a, String pt, int n) {
-            throw new UnsupportedOperationException(); }
-        @Override public List<MailFolderOrLabel> listFoldersOrLabels(UserAccount a) {
-            throw new UnsupportedOperationException(); }
-        @Override public BulkActionResult batchModify(UserAccount a, BulkActionRequest r) {
-            throw new UnsupportedOperationException(); }
-        @Override public BulkActionResult applyLabel(UserAccount a, List<String> ids,
-                                                       String lid, boolean add) {
-            throw new UnsupportedOperationException(); }
-    }
-
-    @Test
-    @DisplayName("T6_d_01 ReplyZeroDetector.analyze — exactly 1 reply-zero from 5 candidates")
-    void T6_d_01_replyZeroDetectorOneMatch() {
-        Instant now = Instant.parse("2026-08-07T12:00:00Z");
-        Instant tAge7d = now.minus(7, ChronoUnit.DAYS);
-        Instant tAge2d = now.minus(2, ChronoUnit.DAYS);
-
-        List<MailMessage> all = new ArrayList<>();
-        all.add(msg("m1", "t1", "Alice Friend <alice@example.com>",
-            "me@example.com, carol@example.com", "Project sync notes",
-            tAge7d, Set.of(), null, null));
-        all.add(msg("m2", "t2", "Bob Coworker <bob@example.com>",
-            "me@example.com", "Doc review",
-            tAge7d, Set.of(), null, null));
-        all.add(msg("m3", "t3", "News <news@bulk-esp.example.sendgrid.net>",
-            "me@example.com", "Bulk promo",
-            tAge7d, Set.of(), null, null));
-        all.add(msg("m4", "t4", "Dana <dana@example.com>",
-            "me@example.com", "Quick question",
-            tAge2d, Set.of(), null, null));
-        all.add(msg("m5", "t5", "Phishy <diamond@hotmail.ru>",
-            "me@example.com", "You won!",
-            tAge7d, Set.of(), null, null));
-
-        FakeMailProvider fake = new FakeMailProvider();
-        fake.put("t1", List.of("Alice <alice@example.com>"), tAge7d, List.of("m1"));
-        fake.put("t2", List.of("Bob <bob@example.com>", "Me <me@example.com>"),
-            tAge7d, List.of("m2"));
-
-        UserAccount me = new UserAccount();
-        me.setEmail("me@example.com");
-        me.setId(1L);
-        me.setProvider("google");
-        me.setProviderAccountId("prov1");
-
-        SenderAggregator agg = new SenderAggregator(null);
-        SenderAggregator.AggregationResult aggRes = agg.aggregate(all);
-        var senderAggs = aggRes.perSender();
-
-        ReplyZeroDetector rzd = new ReplyZeroDetector();
-        List<ReplyZeroItem> items = rzd.analyze(all, senderAggs, me, fake, 3, now);
-
-        assertEquals(1, items.size());
-        ReplyZeroItem it = items.get(0);
-        assertEquals("t1", it.threadId());
-        assertEquals("alice@example.com", it.fromAddress());
-        assertEquals(7L, it.ageDays());
-        assertFalse(it.bulkSender());
-        assertEquals(1, it.participantCount());
-        assertEquals("Project sync notes", it.subject());
     }
 
     // ============================================================
@@ -793,41 +685,6 @@ class Phase6SenderAggregationTest {
                 .andExpect(jsonPath("$.totalMessagesScanned").value(40));
         }
 
-        @Test
-        @DisplayName("T6_e_02 GET /api/reply-zero?olderThanDays=3 — 2 personal threads reply-zero")
-        void T6_e_02_replyZeroMvc() throws Exception {
-            UserAccount me = insertMeAccount();
-            List<MailMessage> data = build40MsgDataset();
-            when(gmailProvider.listMessages(any(), any(), anyInt()))
-                .thenReturn(PageResult.of(data, null, 100));
 
-            MailThreadSummary empty = new MailThreadSummary(
-                null, List.of(), Set.of(), 0, null, null, List.of());
-            when(gmailProvider.getThreadMetadata(any(), any())).thenReturn(empty);
-
-            when(gmailProvider.getThreadMetadata(eq(me), eq("epz0")))
-                .thenReturn(new MailThreadSummary("epz0",
-                    List.of("Pers 0 <personal1@example.com>"),
-                    Set.of("example.com"),
-                    1,
-                    Instant.parse("2026-08-07T12:00:00Z").minus(5, ChronoUnit.DAYS),
-                    Instant.parse("2026-08-07T12:00:00Z").minus(5, ChronoUnit.DAYS),
-                    List.of("e20")));
-            when(gmailProvider.getThreadMetadata(eq(me), eq("epz1")))
-                .thenReturn(new MailThreadSummary("epz1",
-                    List.of("Pers 1 <personal2@example.com>"),
-                    Set.of("example.com"),
-                    1,
-                    Instant.parse("2026-08-07T12:00:00Z").minus(4, ChronoUnit.DAYS),
-                    Instant.parse("2026-08-07T12:00:00Z").minus(4, ChronoUnit.DAYS),
-                    List.of("e21")));
-
-            mockMvc.perform(get("/api/reply-zero")
-                    .param("olderThanDays", "3")
-                    .with(authentication(buildAuthToken("me@example.com", "google"))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.items.length()").value(
-                    org.hamcrest.Matchers.greaterThanOrEqualTo(2)));
-        }
     }
 }

@@ -4,10 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.tidymail.dto.WorkspaceRoute;
@@ -15,16 +12,13 @@ import com.tidymail.dto.WorkspaceState;
 import com.tidymail.entity.MessageMetadata;
 import com.tidymail.entity.SyncProgress;
 import com.tidymail.entity.UserAccount;
-import com.tidymail.entity.UserAction;
 import com.tidymail.mail.MailProvider;
 import com.tidymail.repository.MessageMetadataRepository;
 import com.tidymail.repository.SyncProgressRepository;
 import com.tidymail.repository.UserAccountRepository;
-import com.tidymail.repository.UserActionRepository;
 import com.tidymail.security.crypto.CryptoUtil;
 import com.tidymail.service.MessageMetadataQueryService;
 import com.tidymail.service.WorkspaceModelService;
-import com.tidymail.service.ReviewOperationIntentService;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -68,13 +62,11 @@ class Phase9WorkspaceShellTest {
 
     @Autowired MockMvc mockMvc;
     @Autowired UserAccountRepository accountRepository;
-    @Autowired UserActionRepository actionRepository;
     @Autowired SyncProgressRepository progressRepository;
     @Autowired MessageMetadataRepository metadataRepository;
     @Autowired MessageMetadataQueryService metadataQueryService;
     @Autowired CryptoUtil cryptoUtil;
     @Autowired JdbcTemplate jdbcTemplate;
-    @Autowired ReviewOperationIntentService reviewOperationIntents;
 
     @MockBean(name = "gmailMailService")
     MailProvider gmailProvider;
@@ -101,7 +93,7 @@ class Phase9WorkspaceShellTest {
                 .contains("href=\"#workspace-main\"")
                 .contains("<main id=\"workspace-main\">")
                 .contains("<h1")
-                .contains("Review, 0 queued actions")
+                .contains("view=history", ">Action history</span>")
                 .contains(account.getEmail())
                 .contains("name=\"_csrf\"")
                 .contains("aria-label=\"Switch account\"")
@@ -119,26 +111,18 @@ class Phase9WorkspaceShellTest {
                     .doesNotContain("Export filtered")
                     .doesNotContain("decision-filters")
                     .doesNotContain("<button type=\"button\" disabled");
-            } else if (route == WorkspaceRoute.UNSUBSCRIBE
-                      || route == WorkspaceRoute.REVIEW) {
-                assertThat(body)
-                    .contains(route == WorkspaceRoute.REVIEW
-                        ? "Selected actions" : "Unsubscribe controls")
-                    .doesNotContain("<button type=\"button\" disabled");
-                if (route == WorkspaceRoute.REVIEW) {
-                    assertThat(body).contains("aria-label=\"Switch account\"", "Apply filters");
-                }
-            } else if (route == WorkspaceRoute.ANALYTICS) {
-                assertThat(body)
-                    .contains("Time period", "Group by")
-                    .doesNotContain("<button type=\"button\" disabled");
+            } else if (route == WorkspaceRoute.REVIEW) {
+                assertThat(body).contains("<h1>Action history</h1>", "Filter history")
+                    .doesNotContain("id=\"review-queue\"");
             } else {
                 assertThat(body)
                     .contains("Indexed messages", "Initial batch", "Freshness")
                     .doesNotContain("Time period", "Group by");
             }
             for (WorkspaceRoute linked : WorkspaceRoute.values()) {
-                assertThat(body).contains("href=\"" + linked.path() + "\"");
+                if (linked != WorkspaceRoute.REVIEW) {
+                    assertThat(body).contains("href=\"" + linked.path() + "\"");
+                }
             }
             assertThat(body)
                 .contains("aria-current=\"page\"")
@@ -150,18 +134,16 @@ class Phase9WorkspaceShellTest {
     }
 
     @Test
-    void accountSelectionQueueCountAndAuthorizationFailClosed() throws Exception {
+    void accountSelectionAndAuthorizationFailClosed() throws Exception {
         UserAccount owned = account(EMAIL, "google");
         UserAccount microsoft = account(EMAIL, "microsoft");
         UserAccount foreign = account("foreign@example.com", "google");
-        queuedAction(owned.getId());
 
         String selected = perform("/senders", String.valueOf(owned.getId()), auth(EMAIL, "google"))
             .getResponse().getContentAsString();
         assertThat(selected)
             .contains("aria-label=\"Switch account\"")
             .contains(">" + EMAIL + "</button>")
-            .contains("Review, 1 queued action")
             .doesNotContain("All linked accounts")
             .doesNotContain("<option value=\"" + microsoft.getId() + "\"")
             .doesNotContain("foreign@example.com");
@@ -230,35 +212,6 @@ class Phase9WorkspaceShellTest {
                 .param("account", String.valueOf(account.getId()))
                 .with(authentication(authentication)))
             .andExpect(status().isBadRequest());
-        verifyNoInteractions(gmailProvider, outlookProvider);
-    }
-
-    @Test
-    void reviewCancellationEndpointRemainsMappedAndCsrfProtected() throws Exception {
-        UserAccount account = account(EMAIL, "google");
-        UserAction action = queuedAction(account.getId());
-        OAuth2AuthenticationToken authentication = auth(EMAIL, "google");
-        String intent = reviewOperationIntents.issue(
-            EMAIL + ":google", "CANCEL",
-            ReviewOperationIntentService.subject(action.getPublicId()));
-
-        mockMvc.perform(post("/api/actions/" + action.getPublicId() + "/cancel")
-                .param("account", String.valueOf(account.getId()))
-                .param("operationIntent", intent)
-                .with(authentication(authentication)))
-            .andExpect(status().isForbidden());
-
-        mockMvc.perform(post("/api/actions/" + action.getPublicId() + "/cancel")
-                .param("account", String.valueOf(account.getId()))
-                .param("operationIntent", intent)
-                .with(authentication(authentication))
-                .with(csrf()))
-            .andExpect(status().is3xxRedirection())
-            .andExpect(redirectedUrl(
-                "/review?view=queued&account=" + account.getId()));
-
-        assertThat(actionRepository.findById(action.getId()).orElseThrow().getStatus())
-            .isEqualTo("CANCELLED");
         verifyNoInteractions(gmailProvider, outlookProvider);
     }
 
@@ -364,7 +317,7 @@ class Phase9WorkspaceShellTest {
     @Test
     void templatesAndCssLockAccessibilityResponsiveAndLocalContracts() throws Exception {
         Path templates = Path.of("src/main/resources/templates");
-        for (String name : List.of("senders", "unread", "unsubscribe", "review", "analytics")) {
+        for (String name : List.of("senders", "unread", "review")) {
             String source = Files.readString(templates.resolve(name + ".html"));
             assertThat(source)
                 .contains("fragments/workspace-nav")
@@ -375,15 +328,12 @@ class Phase9WorkspaceShellTest {
                 .doesNotContain("href=\"#\"");
         }
         assertThat(Files.readString(templates.resolve("review.html")))
-            .contains("<h1>Review</h1>", "aria-label=\"Review views\"", ">Queue</a>", ">History</a>")
+            .contains(">Action history</h1>", "review-history-frag :: history")
             .doesNotContain(
                 "fragments/workspace-state",
                 "Showing partial indexed data",
                 "Sync metadata",
                 "Approve staged exact scopes");
-        assertThat(Files.readString(templates.resolve("unsubscribe.html")))
-            .contains("class=\"unsubscribe-top-controls\"")
-            .doesNotContain("fragments/workspace-state");
         String css = Files.readString(Path.of("src/main/resources/static/css/workspace.css"));
         assertThat(css)
             .contains("--shell-rail: 248px")
@@ -496,17 +446,6 @@ class Phase9WorkspaceShellTest {
         return accountRepository.save(account);
     }
 
-    private UserAction queuedAction(Long accountId) {
-        UserAction action = new UserAction();
-        action.setAccountId(accountId);
-        action.setActionType("ARCHIVE");
-        action.setSenderGroupKey("sender@example.com");
-        action.setMessageIds(List.of("message-1"));
-        action.setAffectedCount(1);
-        action.setStatus("QUEUED");
-        return actionRepository.save(action);
-    }
-
     private void progress(
             UserAccount account, String status, Instant lastSuccessfulAt, String error) {
         progress(account, status, lastSuccessfulAt, error, "FRESHNESS");
@@ -570,12 +509,10 @@ class Phase9WorkspaceShellTest {
 
     private static String navLabel(WorkspaceRoute route) {
         return switch (route) {
-            case SENDERS -> "Bulk Archive/Delete";
+            case SENDERS -> "Senders";
             case UNREAD -> "Unread Only";
-            case UNSUBSCRIBE -> "Bulk Unsubscribe";
-            case REVIEW -> "Review";
+            case REVIEW -> "Action history";
             case ACTIVITY -> "Sync / Activity";
-            case ANALYTICS -> "Analytics";
         };
     }
 

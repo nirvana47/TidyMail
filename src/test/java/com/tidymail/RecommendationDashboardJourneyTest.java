@@ -115,6 +115,10 @@ class RecommendationDashboardJourneyTest extends PostgresJourneyTest {
         var preview=previews.create(account,new DashboardPreviewService.Request(f,List.of(id),"ARCHIVE",page.revision()));
         jdbc.update("UPDATE message_metadata SET size_estimate=3000 WHERE dashboard_message_id=?",id);
         assertThat(count(f)).isZero();assertThat(count(filter("STALE","","") )).isEqualTo(1);
+        var group=page.groups().getFirst().id();
+        assertThat(dashboard.addresses(account,f,group).addresses()).isEmpty();
+        assertThat(dashboard.grouping(account,group).units()).hasSize(1);
+        assertThat(dashboard.addresses(account,filter("STALE","",""),group).addresses()).hasSize(1);
         assertThatThrownBy(()->jobs.confirm(account,preview.id())).hasMessageContaining("Recommendations or labels changed");
         recommendations.recompute(account,List.of(id));assertThat(count(f)).isEqualTo(1);
         // A second update while already dirty must still change the compact source revision.

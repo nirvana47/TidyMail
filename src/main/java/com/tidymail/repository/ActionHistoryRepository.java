@@ -24,7 +24,7 @@ public class ActionHistoryRepository {
             SELECT a.id AS action_id, a.public_id AS action_public_id,
                    a.account_id, ua.email AS account_email, ua.provider,
                    a.action_type, a.execution_mode, a.decision_source, a.status,
-                   a.action_scope_id, a.undo_eligible_until,
+                   a.action_scope_id,
                    COALESCE(i.safe_target_label, a.sender_group_key, 'Legacy action')
                        AS safe_target_label,
                    i.compensates_action_id,
@@ -52,8 +52,7 @@ public class ActionHistoryRepository {
                        AS occurred_at,
                    (SELECT COUNT(*) FROM action_execution_targets et
                      WHERE et.execution_id = e.id AND et.account_id = a.account_id
-                       AND et.status = 'SUCCEEDED') AS applied_count,
-                    CASE WHEN undo.id IS NULL THEN 0 ELSE 1 END AS undo_count
+                       AND et.status = 'SUCCEEDED') AS applied_count
             FROM user_actions a
             JOIN user_accounts ua ON ua.id = a.account_id
             LEFT JOIN action_intents i
@@ -197,9 +196,7 @@ public class ActionHistoryRepository {
             integer(result, "verification_pending_count"),
             integer(result, "not_dispatched_count"),
             result.getString("unsubscribe_outcome"),
-            instant(result, "occurred_at"), result.getTimestamp("undo_eligible_until") == null
-                ? null : result.getTimestamp("undo_eligible_until").toInstant(),
-            result.getInt("applied_count"), result.getInt("undo_count"),
+            instant(result, "occurred_at"), result.getInt("applied_count"),
             uuidOrNull(result, "compensates_action_public_id"));
     }
 
@@ -255,8 +252,8 @@ public class ActionHistoryRepository {
         String provider, String targetLabel, String action, String mode,
         String source, String status, Integer requested, Integer accepted,
         Integer succeeded, Integer failed, Integer pending, Integer notDispatched,
-        String unsubscribeOutcome, Instant occurredAt, Instant undoEligibleUntil, int appliedCount,
-        int undoCount, UUID compensatesActionPublicId
+        String unsubscribeOutcome, Instant occurredAt, int appliedCount,
+        UUID compensatesActionPublicId
     ) {
     }
 

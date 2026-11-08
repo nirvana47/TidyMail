@@ -80,7 +80,7 @@ class Phase15WorkspaceWebTest {
     }
 
     @Test
-    void senderMarkupUsesDirectExactStagingQuietControlsAndResponsiveReconciliation()
+    void senderMarkupKeepsCategorySelectionWithoutStaging()
             throws Exception {
         String page = Files.readString(TEMPLATES.resolve("senders.html"));
         String rows = Files.readString(
@@ -90,41 +90,14 @@ class Phase15WorkspaceWebTest {
         String css = Files.readString(
             Path.of("src/main/resources/static/css/workspace.css"));
 
-        assertThat(page)
-            .contains("Change type", "Archive", "Delete selected", "Mark as Read")
-            .contains("data-category-toggle-all", "sender-bulk-stage")
-            .contains("Gmail Trash can typically be restored for up to 30 days")
-            .contains("action=\"/api/cleanup-actions\"", "data-cleanup-stage",
-                "data-cleanup-feedback", "data-selection-bar hidden",
-                "name=\"action\" value=\"ARCHIVE\"",
-                "name=\"action\" value=\"MARK_READ\"")
-            .doesNotContain("selection-preview", "workspace-download",
-                "Export current senders", "filter-summary", "next-route",
-                "cleanup-action-result-frag :: status", "cleanup-action-status",
-                "Ready to stage for Review", "Choose the default action",
-                "sender-settings-dialog");
-        assertThat(rows)
-            .contains("Sender", "Domain", "All Mail unread", "Size (Estimated)")
-            .contains("form=\"sender-bulk-stage\"")
-            .doesNotContain("/api/selection-preview", "name=\"mode\"",
-                "Estimated size", "data-delete-source=\"closest\"",
-                "<span>Action</span>", "class=\"cleanup-row-state\"");
-        assertThat(script)
-            .contains("htmx:afterRequest", "reconcileCleanupResult",
-                "category.open", "content.replaceChildren()",
-                "deleteAcknowledged", "openButton.dataset.accountId",
-                "row.classList.add(\"is-staged\")",
-                "Already staged", "Staged", "data-cleanup-feedback",
-                "updateSelectionBars", "data-selection-bar",
-                "button.dataset.deleteAction || \"TRASH\"")
-            .doesNotContain("document.getElementById(\"cleanup-action-status\")",
-                "Queued actions:");
-        assertThat(css)
-            .contains(".cleanup-row-head", ".cleanup-row.is-staged",
-                ".cleanup-bulk-stage", ".cleanup-bulk-stage[hidden]",
-                ".cleanup-stage-feedback", "min-height: 44px")
-            .contains("@media (max-width: 720px)", "[data-label]::before")
-            .doesNotContain("overflow-x: hidden");
+        assertThat(page).contains("Change type", "data-category-toggle-all", "sender-selection")
+            .doesNotContain("/api/cleanup-actions", "Delete selected", "data-cleanup-stage");
+        assertThat(rows).contains("All Mail unread", "data-selection=\"sender-selection\"");
+        assertThat(script).contains("updateSelectionBars", "data-selection-bar", "openButton.dataset.accountId")
+            .doesNotContain("reconcileCleanupResult", "deleteAcknowledged");
+        assertThat(css).contains(".cleanup-row-head", ".cleanup-bulk-stage[hidden]",
+            "@media (max-width: 720px)", "[data-label]::before");
+
     }
 
     @Test
@@ -281,23 +254,21 @@ class Phase15WorkspaceWebTest {
                 .with(authentication(auth())))
             .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         assertThat(page)
-            .contains("How Unread Only staging works",
+            .contains("How Unread Only works",
                 "12 senders", "12 Inbox unread", "1 sender", "1 Inbox unread",
                   "data-category-key=\"unread-direct-mail\"",
-                  "id=\"unread-bulk-stage\"", "name=\"surface\" value=\"UNREAD\"",
-                  "action=\"/api/cleanup-actions\"", "data-cleanup-feedback",
-                  "Gmail Trash can typically be restored for up to 30 days")
+                  "id=\"unread-selection\"")
             .doesNotContain("direct-00@example.com", "overlap@example.com",
                 "Tidy up your unread emails",
                 "Counts and rows reflect the last completed metadata sync",
                 "Unread groups are not mutually exclusive",
                 "workspace-download", "/api/selection-preview",
-                "cleanup-action-status", "Ready to stage for Review");
+                "cleanup-action-status", "Ready to stage");
 
         String first = unreadChunk(account, "direct-mail", 0, false);
         assertThat(first)
             .contains("direct-00@example.com", "direct-04@example.com",
-                  "Load more", "form=\"unread-bulk-stage\"", "value=\"us1.",
+                  "Load more", "data-selection=\"unread-selection\"", "value=\"us1.",
                   "cleanup-row-head", "<span>Sender</span>",
                   "<span>Inbox unread</span>")
             .doesNotContain("direct-05@example.com", "Load all", "<span>Action</span>");
@@ -312,7 +283,7 @@ class Phase15WorkspaceWebTest {
         for (String category : List.of(
                 "lists-automated", "older-than-30-days", "attachments")) {
             assertThat(unreadChunk(account, category, 0, false))
-                .contains("overlap@example.com", "form=\"unread-bulk-stage\"");
+                .contains("overlap@example.com", "data-selection=\"unread-selection\"");
         }
 
         mockMvc.perform(post("/api/sender-categories/correct")
@@ -372,7 +343,7 @@ class Phase15WorkspaceWebTest {
                 .with(authentication(auth())))
             .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         assertThat(chunk)
-            .contains("owned-special@example.com", "form=\"sender-bulk-stage\"")
+            .contains("owned-special@example.com", "data-selection=\"sender-selection\"")
             .doesNotContain("foreign-special@example.com");
     }
 

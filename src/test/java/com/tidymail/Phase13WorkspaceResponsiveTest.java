@@ -11,8 +11,8 @@ class Phase13WorkspaceResponsiveTest {
     private static final Path TEMPLATES =
         Path.of("src/main/resources/templates");
     private static final List<String> PAGES = List.of(
-        "senders.html", "unread.html", "unsubscribe.html", "review.html",
-        "activity.html", "analytics.html");
+        "senders.html", "unread.html", "review.html",
+        "activity.html");
 
     @Test
     void allFivePagesHaveOneMainOneH1SkipViewportAndCurrentNavigation() throws Exception {
@@ -26,8 +26,8 @@ class Phase13WorkspaceResponsiveTest {
         }
         String rail = read("fragments/workspace-rail.html");
         assertThat(rail).contains(
-            "aria-current", "Bulk Archive/Delete", "Unread Only", "Bulk Unsubscribe",
-            "Review", "Analytics");
+            "aria-current", "Senders", "Unread Only",
+            "Action history");
     }
 
     @Test
@@ -80,16 +80,9 @@ class Phase13WorkspaceResponsiveTest {
         assertThat(read("unread.html"))
             .contains("Expand all")
             .doesNotContain("decision-filters", ".csv", "download", "Export");
-        assertThat(read("unsubscribe.html"))
-            .contains("Bulk Unsubscribe", "Apply controls")
-            .doesNotContain(".csv", "download", "Export");
         assertThat(read("fragments/review-history-frag.html"))
             .doesNotContain(".csv", "download", "Export");
-        String analytics = read("analytics.html");
-        assertThat(count(analytics, "<form class=\"analytics-control-row\"")).isEqualTo(1);
-        assertThat(analytics)
-            .contains("Time period", "Group by", "analytics-apply")
-            .doesNotContain(".csv", "snapshot", "download", "Export");
+
     }
 
     @Test
@@ -103,53 +96,6 @@ class Phase13WorkspaceResponsiveTest {
                         "onclick=", "javascript:");
             }
         }
-    }
-
-    @Test
-    void analyticsUsesCompactControlsAlignedPanelsAndAccessibleBars() throws Exception {
-        String analytics = read("fragments/analytics-results-frag.html");
-        String page = read("analytics.html");
-        String source = read("fragments/analytics-source-frag.html");
-        assertThat(analytics).contains(
-            "analytics-ranked-panel",
-            "class=\"analytics-ranked-controls\"",
-            "analytics-ranked-table",
-            "id=\"analytics-chart-axis\"",
-            "class=\"analytics-chart-y-axis\"",
-            "data-chart-y-tick=\"1\"",
-            "class=\"analytics-chart-date\"",
-            "th:text=\"${bucket.chartLabel()}\"",
-            "class=\"analytics-chart-tooltip\"",
-            "th:text=\"${bucket.tooltipDate()}\"",
-            "updateYAxis(tab.dataset.metric)",
-            "Date",
-            "class=\"analytics-chart-bar\" type=\"button\"",
-            "aria-pressed=\"false\"",
-            "aria-label=|Received: ${bucket.value} on ${bucket.tooltipDate()}|",
-            "data-chart-series=\"RECEIVED\"",
-            "data-chart-series=\"SENT\"",
-            "data-chart-series=\"READ\"",
-            "data-chart-series=\"ARCHIVED_DELETED\"",
-            "role=\"tablist\"", "aria-selected=\"true\"");
-        assertThat(analytics).doesNotContain("role=\"status\"", "aria-live=\"polite\"");
-        assertThat(analytics).doesNotContain(
-            "analytics-chart-value",
-            "Exact chart values",
-            "Metric chart values",
-            "analytics-legend",
-            "series-received",
-            "series-cleaned");
-        assertThat(count(page, "<form class=\"analytics-control-row\"")).isEqualTo(1);
-        assertThat(page)
-            .containsOnlyOnce("<span>Time period</span>")
-            .containsOnlyOnce("<span>Group by</span>")
-            .contains("name=\"period\"", "name=\"from\"", "name=\"to\"",
-                "name=\"group\"", "type=\"submit\">Apply");
-        assertThat(page)
-            .doesNotContain("hx-get=", "hx-target=", "hx-swap=", "hx-on::");
-        assertThat(source).contains(
-            "tabindex=\"-1\"", "<caption>", "scope=\"col\"",
-            "Back to analytics", "Previous page", "Next page");
     }
 
     @Test

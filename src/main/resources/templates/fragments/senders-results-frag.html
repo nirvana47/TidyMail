@@ -49,8 +49,7 @@
                  role="status" aria-live="polite"></div>
             <div class="category-page-content">
                 <th:block th:replace="~{:: categoryChunk(
-                        ${category.initialPage}, ${page.canonicalQuery},
-                        ${page.cleanupAction}, ${categoryUrls[category.key]}, '')}">
+                        ${category.initialPage}, ${categoryUrls[category.key]}, '')}">
                 </th:block>
             </div>
         </div>
@@ -58,7 +57,7 @@
 </section>
 
 <th:block th:fragment="categoryChunk(
-        categoryPage, canonicalQuery, cleanupAction,
+        categoryPage,
         nextCategoryUrl, loadAllCategoryUrl)">
     <p th:if="${categoryPage.rows.empty}" class="empty-results">
         No senders are currently in this category.
@@ -72,23 +71,23 @@
         <span>Size (Estimated)</span>
     </div>
     <th:block th:replace="~{:: categoryRows(
-            ${categoryPage}, ${canonicalQuery}, ${cleanupAction},
+            ${categoryPage},
             ${nextCategoryUrl}, ${loadAllCategoryUrl})}">
     </th:block>
 </th:block>
 
 <th:block th:fragment="categoryRows(
-        categoryPage, canonicalQuery, cleanupAction,
+        categoryPage,
         nextCategoryUrl, loadAllCategoryUrl)">
     <div class="cleanup-row" th:each="row : ${categoryPage.rows}"
          th:attr="data-sender-address=${row.senderAddress}">
         <label class="category-select">
             <input type="checkbox" name="rowKey" th:value="${row.rowKey}"
-                   form="sender-bulk-stage"
+                   data-selection="sender-selection"
                    th:disabled="${row.protectedSender}"
-                   th:attr="aria-label=|Select ${row.displayName} for staging|">
+                   th:attr="aria-label=|Select ${row.displayName} for categorization|">
             <span class="visually-hidden"
-                  th:text="|Select ${row.displayName} for staging|">Select</span>
+                  th:text="|Select ${row.displayName} for categorization|">Select</span>
         </label>
         <div class="cleanup-sender">
             <strong th:text="${row.displayName}">Sender</strong>

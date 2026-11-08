@@ -2,7 +2,6 @@ package com.tidymail.repository;
 
 import com.tidymail.dto.DecisionPage;
 import com.tidymail.dto.AnalyticsSenderScope;
-import com.tidymail.dto.SelectionMode;
 import com.tidymail.dto.SenderQuery;
 import com.tidymail.dto.UnreadScopeCounts;
 import com.tidymail.dto.UnreadQuery;
@@ -12,22 +11,17 @@ import com.tidymail.service.DecisionRuleSet.SenderType;
 import com.tidymail.service.DecisionRuleSet.ThreadState;
 import com.tidymail.service.DecisionRuleSet.UnreadCategory;
 import com.tidymail.service.DecisionRuleSet.UnreadRecommendation;
-import com.tidymail.service.DecisionRowKey.UnreadSenderLocator;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Collection;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Stream;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Repository;
-import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Executes the Senders/Unread decision-surface queries, materializing sender
@@ -246,259 +240,6 @@ public class DecisionSurfaceQueryRepository {
             parameters(spec), UNREAD_MAPPER);
     }
 
-    public MaterializationResult materializeSenders(
-            Collection<Long> authorizedAccountIds,
-            SenderQuery query,
-            SelectionMode mode,
-            List<SelectionLocator> locators,
-            boolean includeProtected,
-            Instant now) {
-        return materializeSenders(
-            authorizedAccountIds, query, mode, locators, includeProtected, now, null);
-    }
-
-    public MaterializationResult materializeSenders(
-            Collection<Long> authorizedAccountIds,
-            SenderQuery query,
-            SelectionMode mode,
-            List<SelectionLocator> locators,
-            boolean includeProtected,
-            Instant now,
-            AnalyticsSenderScope analyticsScope) {
-        DecisionSurfaceSql.QuerySpec spec =
-            DecisionSurfaceSql.sender(authorizedAccountIds, query, now, analyticsScope);
-        MapSqlParameterSource parameters = parameters(spec)
-            .addValue("include_protected", includeProtected ? 1 : 0);
-        String selected = selectedTargets(
-            spec, mode, locators, parameters, "account_id, sender_key, sender_risk, protected_sender",
-            "sender_key", SenderQuery.PAGE_SIZE, query.offset());
-        String materialized = spec.cte() + selected + """
-            , materialized_rows AS (
-                SELECT st.account_id, b.metadata_id, st.sender_key,
-                       st.sender_key AS target_key,
-                       st.protected_sender,
-                       CASE WHEN st.sender_risk = 'HIGH' THEN 1 ELSE 0 END AS high_risk,
-                       b.provider_message_id
-                FROM selected_targets st
-                JOIN base_rows b ON b.account_id = st.account_id
-                    AND b.sender_key = st.sender_key
-                WHERE b.provider_message_id IS NOT NULL
-            )
-            """;
-        return materialization(
-            materialized, parameters, "target_key", mode, locators.size());
-    }
-
-    public MaterializationResult materializeUnread(
-            Collection<Long> authorizedAccountIds,
-            UnreadQuery query,
-            SelectionMode mode,
-            List<SelectionLocator> locators,
-            boolean includeProtected,
-            Instant now) {
-        DecisionSurfaceSql.QuerySpec spec =
-            DecisionSurfaceSql.unread(authorizedAccountIds, query, now);
-        MapSqlParameterSource parameters = parameters(spec)
-            .addValue("include_protected", includeProtected ? 1 : 0);
-        List<SelectionLocator> distinctLocators =
-            locators == null ? List.of() : locators.stream().distinct().toList();
-        String selected = selectedTargets(
-            spec, mode, distinctLocators, parameters,
-            "metadata_id, account_id, sender_key, protected_sender, category, "
-                + "provider_message_id",
-            "metadata_id", UnreadQuery.PAGE_SIZE, query.offset());
-        String materialized = spec.cte() + selected + """
-            , materialized_rows AS (
-                SELECT account_id, metadata_id, sender_key,
-                       CAST(metadata_id AS VARCHAR) AS target_key,
-                       protected_sender,
-                       CASE WHEN protected_sender = 1 OR category = 'ONE_TO_ONE'
-                            THEN 1 ELSE 0 END AS high_risk,
-                       provider_message_id
-                FROM selected_targets
-                WHERE provider_message_id IS NOT NULL
-            )
-            """;
-        return materialization(
-            materialized, parameters, "metadata_id", mode, distinctLocators.size());
-    }
-
-    public MaterializationResult materializeUnreadSenders(
-            Collection<Long> authorizedAccountIds,
-            UnreadQuery query,
-            List<UnreadSenderLocator> locators,
-            Instant now) {
-        if (locators == null || locators.isEmpty()) {
-            throw new IllegalArgumentException(
-                "Unread sender materialization requires locators");
-        }
-        DecisionSurfaceSql.QuerySpec spec =
-            DecisionSurfaceSql.unread(authorizedAccountIds, query, now);
-        MapSqlParameterSource parameters = parameters(spec)
-            .addValue("include_protected", 0);
-        StringBuilder selected = new StringBuilder("""
-            , selected_targets AS (
-                SELECT metadata_id, account_id, sender_key, protected_sender,
-                       category, provider_message_id
-                FROM filtered_facts
-                WHERE
-            """);
-        for (int index = 0; index < locators.size(); index++) {
-            if (index > 0) selected.append(" OR ");
-            UnreadSenderLocator locator = locators.get(index);
-            String accountParameter = "unread_sender_account_" + index;
-            String senderParameter = "unread_sender_key_" + index;
-            selected.append("(account_id = :").append(accountParameter)
-                .append(" AND sender_key = :").append(senderParameter)
-                .append(" AND ")
-                .append(DecisionSurfaceSql.unreadCategoryPredicate(
-                    locator.categoryKey()))
-                .append(')');
-            parameters.addValue(accountParameter, locator.accountId());
-            parameters.addValue(senderParameter, locator.senderKey());
-        }
-        selected.append(")");
-        String materialized = spec.cte() + selected + """
-            , materialized_rows AS (
-                SELECT account_id, metadata_id, sender_key,
-                       sender_key AS target_key,
-                       protected_sender,
-                       CASE WHEN protected_sender = 1 OR category = 'ONE_TO_ONE'
-                            THEN 1 ELSE 0 END AS high_risk,
-                       provider_message_id
-                FROM selected_targets
-                WHERE provider_message_id IS NOT NULL
-            )
-            """;
-        int senderCount = Math.toIntExact(locators.stream()
-            .map(locator -> locator.accountId() + "\n" + locator.senderKey())
-            .distinct()
-            .count());
-        return materialization(
-            materialized, parameters, "sender_key",
-            SelectionMode.INDIVIDUAL, senderCount);
-    }
-
-    private MaterializationResult materialization(
-            String materialized,
-            MapSqlParameterSource parameters,
-            String targetColumn,
-            SelectionMode mode,
-            int locatorCount) {
-        String included = "(protected_sender = 0 OR :include_protected = 1)";
-        List<AccountCounts> counts = jdbc.query(materialized + """
-            SELECT account_id,
-                   COUNT(DISTINCT %s) AS total_target_count,
-                   COUNT(DISTINCT CASE WHEN %s THEN %s END) AS included_target_count,
-                   COUNT(DISTINCT CASE WHEN %s THEN provider_message_id END)
-                       AS included_message_count,
-                   COUNT(DISTINCT CASE WHEN protected_sender = 1 THEN sender_key END)
-                       AS protected_sender_count,
-                   COUNT(DISTINCT CASE WHEN protected_sender = 1 THEN provider_message_id END)
-                       AS protected_message_count,
-                   COUNT(DISTINCT CASE WHEN %s AND high_risk = 1
-                                       THEN provider_message_id END) AS high_risk_count
-            FROM materialized_rows
-            GROUP BY account_id
-            ORDER BY account_id
-            """.formatted(targetColumn, included, targetColumn, included, included),
-            parameters,
-            (result, rowNumber) -> new AccountCounts(
-                result.getLong("account_id"),
-                result.getLong("total_target_count"),
-                result.getLong("included_target_count"),
-                result.getLong("included_message_count"),
-                result.getLong("protected_sender_count"),
-                result.getLong("protected_message_count"),
-                result.getLong("high_risk_count")));
-
-        parameters.addValue("guard_limit", 1001);
-        List<GuardedId> guarded = jdbc.query(materialized + """
-            , included_ids AS (
-                SELECT DISTINCT account_id, provider_message_id
-                FROM materialized_rows
-                WHERE %s
-            ),
-            ranked_ids AS (
-                SELECT account_id, provider_message_id,
-                       ROW_NUMBER() OVER (
-                           PARTITION BY account_id ORDER BY provider_message_id
-                       ) AS row_number
-                FROM included_ids
-            )
-            SELECT account_id, provider_message_id
-            FROM ranked_ids
-            WHERE row_number <= :guard_limit
-            ORDER BY account_id, provider_message_id
-            """.formatted(included), parameters,
-            (result, rowNumber) ->
-                new GuardedId(result.getLong("account_id"), result.getString("provider_message_id")));
-
-        Map<Long, List<String>> idsByAccount = new LinkedHashMap<>();
-        guarded.forEach(row -> idsByAccount.computeIfAbsent(
-            row.accountId(), ignored -> new java.util.ArrayList<>()).add(row.messageId()));
-        List<AccountMaterialization> accounts = counts.stream()
-            .map(count -> new AccountMaterialization(
-                count.accountId(),
-                count.totalTargetCount(),
-                count.includedTargetCount(),
-                count.includedMessageCount(),
-                count.protectedSenderCount(),
-                count.protectedMessageCount(),
-                count.highRiskCount(),
-                idsByAccount.getOrDefault(count.accountId(), List.of())))
-            .toList();
-        long matchedTargets = counts.stream().mapToLong(AccountCounts::totalTargetCount).sum();
-        if (mode == SelectionMode.INDIVIDUAL && matchedTargets != locatorCount) {
-            throw new ResponseStatusException(
-                HttpStatus.BAD_REQUEST,
-                "One or more selected rows are stale, foreign, or no longer match the filters");
-        }
-        return new MaterializationResult(accounts, matchedTargets);
-    }
-
-    private static String selectedTargets(
-            DecisionSurfaceSql.QuerySpec spec,
-            SelectionMode mode,
-            List<SelectionLocator> locators,
-            MapSqlParameterSource parameters,
-            String columns,
-            String identityColumn,
-            int pageSize,
-            long offset) {
-        String select = ", selected_targets AS (SELECT " + columns + " FROM filtered_facts";
-        if (mode == SelectionMode.INDIVIDUAL) {
-            if (locators == null || locators.isEmpty()) {
-                throw new IllegalArgumentException("Individual selection requires locators");
-            }
-            StringBuilder predicate = new StringBuilder(" WHERE ");
-            for (int index = 0; index < locators.size(); index++) {
-                if (index > 0) predicate.append(" OR ");
-                SelectionLocator locator = locators.get(index);
-                String accountParameter = "selection_account_" + index;
-                String targetParameter = "selection_target_" + index;
-                predicate.append("(account_id = :").append(accountParameter)
-                    .append(" AND ").append(identityColumn).append(" = :")
-                    .append(targetParameter).append(')');
-                parameters.addValue(accountParameter, locator.accountId());
-                parameters.addValue(targetParameter,
-                    "metadata_id".equals(identityColumn)
-                        ? Long.parseLong(locator.target()) : locator.target());
-            }
-            return select + predicate + ")";
-        }
-        if (locators != null && !locators.isEmpty()) {
-            throw new IllegalArgumentException("Only individual selection accepts locators");
-        }
-        if (mode == SelectionMode.VISIBLE_PAGE) {
-            parameters.addValue("selection_limit", pageSize);
-            parameters.addValue("selection_offset", offset);
-            return select + " ORDER BY " + spec.orderBy()
-                + " LIMIT :selection_limit OFFSET :selection_offset)";
-        }
-        return select + ")";
-    }
-
     private long number(String sql, MapSqlParameterSource parameters) {
         Number value = jdbc.queryForObject(sql, parameters, Number.class);
         return value == null ? 0 : value.longValue();
@@ -709,62 +450,6 @@ public class DecisionSurfaceQueryRepository {
             return manualType == null
                 ? automatedSignal : manualType == SenderType.AUTOMATED;
         }
-    }
-
-    public record SelectionLocator(long accountId, String target) {
-        public SelectionLocator {
-            if (accountId <= 0 || target == null || target.isBlank()) {
-                throw new IllegalArgumentException("Valid selection locator is required");
-            }
-        }
-    }
-
-    public record MaterializationResult(
-        List<AccountMaterialization> accounts,
-        long matchedTargetCount
-    ) {
-        public MaterializationResult {
-            accounts = List.copyOf(accounts);
-        }
-    }
-
-    public record AccountMaterialization(
-        long accountId,
-        long totalTargetCount,
-        long includedTargetCount,
-        long exactMessageCount,
-        long protectedSenderCount,
-        long protectedMessageCount,
-        long highRiskCount,
-        List<String> messageIds
-    ) {
-        public AccountMaterialization {
-            messageIds = List.copyOf(messageIds);
-            if (accountId <= 0 || totalTargetCount < 0 || includedTargetCount < 0
-                    || exactMessageCount < 0 || protectedSenderCount < 0
-                    || protectedMessageCount < 0 || highRiskCount < 0) {
-                throw new IllegalArgumentException("Materialization facts must be non-negative");
-            }
-        }
-
-        @Override
-        public List<String> messageIds() {
-            return List.copyOf(messageIds);
-        }
-    }
-
-    private record AccountCounts(
-        long accountId,
-        long totalTargetCount,
-        long includedTargetCount,
-        long includedMessageCount,
-        long protectedSenderCount,
-        long protectedMessageCount,
-        long highRiskCount
-    ) {
-    }
-
-    private record GuardedId(long accountId, String messageId) {
     }
 
     private static String categoryKey(SenderType type) {

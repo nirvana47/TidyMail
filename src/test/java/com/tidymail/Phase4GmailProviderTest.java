@@ -151,35 +151,5 @@ class Phase4GmailProviderTest {
             .hasMessage("REAUTH_REQUIRED");
     }
 
-    @Test
-    @DisplayName("T4(e) — GmailMailService.extractDomain helper RFC5322 address parsing (6 cases)")
-    void extractDomainHelperTests() {
-        assertThat(GmailMailService.extractDomain("user@example.com"))
-            .as("Plain user@domain → domain")
-            .isEqualTo("example.com");
 
-        assertThat(GmailMailService.extractDomain("Display Name <addr@sub.domain.co.uk>"))
-            .as("Display Name <addr@sub.domain.co.uk> → sub.domain.co.uk")
-            .isEqualTo("sub.domain.co.uk");
-
-        assertThat(GmailMailService.extractDomain("no-at-sign"))
-            .as("No @ sign → null")
-            .isNull();
-
-        assertThat(GmailMailService.extractDomain("Name <bogus>"))
-            .as("No @ inside angle brackets → null")
-            .isNull();
-
-        assertThat(GmailMailService.extractDomain(""))
-            .as("Empty string → null")
-            .isNull();
-
-        assertThat(GmailMailService.extractDomain("@nodomainprefix.com"))
-            .as("@ prefix without local part → null")
-            .isNull();
-
-        assertThat(GmailMailService.extractDomain("Addr@"))
-            .as("Trailing @ without domain → null")
-            .isNull();
-    }
 }

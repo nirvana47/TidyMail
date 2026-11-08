@@ -1,40 +1,21 @@
 package com.tidymail;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.reset;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.tidymail.dto.ActionScopeRiskSummary;
-import com.tidymail.dto.ActionScopeTargetSummary;
-import com.tidymail.entity.ActionIntent;
-import com.tidymail.entity.ActionScope;
-import com.tidymail.entity.MessageMetadata;
+import com.tidymail.support.LegacyHistoryFixtures;
 import com.tidymail.entity.UserAccount;
-import com.tidymail.entity.UserAction;
-import com.tidymail.mail.BulkActionResult;
 import com.tidymail.mail.MailProvider;
-import com.tidymail.repository.ActionIntentRepository;
-import com.tidymail.repository.ActionScopeRepository;
-import com.tidymail.repository.MessageMetadataRepository;
 import com.tidymail.repository.UserAccountRepository;
-import com.tidymail.repository.UserActionRepository;
-import com.tidymail.service.ActionFingerprints;
-import com.tidymail.service.ActionScopeService;
-import com.tidymail.service.ExactScopeExecutor;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Instant;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -69,12 +50,6 @@ class Phase17ReviewHistoryTest {
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
     @Autowired UserAccountRepository accounts;
-    @Autowired UserActionRepository actions;
-    @Autowired ActionScopeRepository scopes;
-    @Autowired ActionIntentRepository actionIntents;
-    @Autowired MessageMetadataRepository metadata;
-    @Autowired ActionScopeService scopeService;
-    @Autowired ExactScopeExecutor executor;
 
     @MockBean(name = "gmailMailService")
     MailProvider gmail;
@@ -115,7 +90,6 @@ class Phase17ReviewHistoryTest {
                 "history-details-closed\">Hide details",
                 "outcomeCompact(${row.outcome})",
                 "outcomeDetails(${row.outcome})",
-                "Undo will target only the ${row.undoAppliedCount} messages recorded as applied.",
                 "Linked unsubscribe outcome: ${row.linkedUnsubscribeOutcome}",
                 "Open provider options",
                 "#action-${row.compensatesActionPublicId}")
@@ -150,18 +124,16 @@ class Phase17ReviewHistoryTest {
     void renderedHistoryUsesCompactRowsWhilePreservingUndoReasonsTimelineAndFollowUps()
             throws Exception {
         UserAccount account = account(EMAIL);
-        UserAction archive = create(
-            account, "ARCHIVE", "reason@example.com", List.of("R1", "R2"), "QUEUED");
-        when(gmail.batchModify(any(), any())).thenReturn(
-            BulkActionResult.withPartialFailures(
-                2, List.of("R1"), Map.of("R2", "provider rejection")));
-        executor.execute(account.getId(), archive.getPublicId(), UUID.randomUUID());
+        var archive = LegacyHistoryFixtures.action(jdbc, account.getId(), "ARCHIVE",
+            "reason@example.com", List.of("R1", "R2"), "PARTIAL");
+        LegacyHistoryFixtures.outcome(jdbc, archive, "PARTIAL",
+            List.of("SUCCEEDED", "FAILED"), List.of("NONE", "PROVIDER_REJECTED"), null);
 
-        UserAction unsubscribe = create(
-            account, "UNSUBSCRIBE", "linked-list@example.com",
-            List.of("linked-source"), "VERIFICATION_PENDING");
-        long attemptId = insertUnsubscribeAttempt(account.getId());
-        insertLinkedExecution(unsubscribe, attemptId);
+        var unsubscribe = LegacyHistoryFixtures.action(jdbc, account.getId(), "UNSUBSCRIBE",
+            "linked-list@example.com", List.of("linked-source"), "VERIFICATION_PENDING");
+        LegacyHistoryFixtures.outcome(jdbc, unsubscribe, "VERIFICATION_PENDING",
+            List.of("VERIFICATION_PENDING"), List.of("RESULT_UNKNOWN_AFTER_DISPATCH"),
+            insertUnsubscribeAttempt(account.getId()));
 
         String body = mvc.perform(get("/review")
                 .param("view", "history")
@@ -177,11 +149,8 @@ class Phase17ReviewHistoryTest {
                 ">Counts</th>",
                 ">Details</th>",
                 "requested / ",
-                "Undo available",
-                "Undo 1 applied",
                 "Details",
                 "Hide details",
-                "Undo will target only the 1 messages recorded as applied.",
                 "1 targets: Provider rejected the request",
                 "Append-only action timeline",
                 "Linked unsubscribe outcome: Verification pending",
@@ -190,12 +159,11 @@ class Phase17ReviewHistoryTest {
             .doesNotContain(
                 "<th scope=\"col\">Account</th>",
                 "<th scope=\"col\">Mode</th>",
-                "linked-source",
+                "linked-source", "Undo 1 applied", "/undo/confirm",
                 "provider_message_id",
                 "scopeHash",
                 "Export CSV");
-        verify(gmail).batchModify(any(), any());
-        verifyNoInteractions(outlook);
+        verifyNoInteractions(gmail, outlook);
     }
 
     private long insertUnsubscribeAttempt(long accountId) {
@@ -208,89 +176,6 @@ class Phase17ReviewHistoryTest {
         return jdbc.queryForObject(
             "SELECT MAX(id) FROM unsubscribe_attempts WHERE account_id=?",
             Long.class, accountId);
-    }
-
-    private void insertLinkedExecution(UserAction action, long attemptId) {
-        jdbc.update("""
-            INSERT INTO action_executions(
-                account_id,action_id,operation_kind,status,idempotency_fingerprint,
-                requested_count,accepted_count,succeeded_count,failed_count,
-                verification_pending_count,not_dispatched_count,reserved_at,
-                started_at,completed_at
-            ) VALUES (?,?,'FORWARD','VERIFICATION_PENDING',?,1,1,0,0,1,0,
-                      CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
-            """, action.getAccountId(), action.getId(),
-            ActionFingerprints.sha256("linked-execution"));
-        long executionId = jdbc.queryForObject(
-            "SELECT MAX(id) FROM action_executions WHERE action_id=?",
-            Long.class, action.getId());
-        jdbc.update("""
-            INSERT INTO action_execution_targets(
-                execution_id,account_id,scope_id,scope_ordinal,target_fingerprint,
-                dispatch_state,status,accepted_at,dispatched_at,completed_at,
-                reason_code,unsubscribe_attempt_id
-            )
-            SELECT ?,account_id,scope_id,scope_ordinal,target_fingerprint,
-                   'DISPATCHED','VERIFICATION_PENDING',CURRENT_TIMESTAMP,
-                   CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,
-                   'RESULT_UNKNOWN_AFTER_DISPATCH',?
-              FROM action_scope_targets
-             WHERE scope_id=? AND scope_ordinal=0
-            """, executionId, attemptId, action.getActionScopeId());
-    }
-
-    private UserAction create(
-            UserAccount account,
-            String actionType,
-            String label,
-            List<String> providerIds,
-            String status) {
-        providerIds.forEach(id -> {
-            if (metadata.findByAccountIdAndProviderMessageIdIn(
-                    account.getId(), List.of(id)).isEmpty()) {
-                MessageMetadata row = new MessageMetadata();
-                row.setAccountId(account.getId());
-                row.setProvider("google");
-                row.setProviderMessageId(id);
-                row.setProviderThreadId("thread-" + id);
-                row.setFromAddress(label.toLowerCase().replace(' ', '-') + "@example.com");
-                row.setFromDomain("example.com");
-                row.setLabels(List.of());
-                row.setReceivedAt(Instant.now());
-                metadata.saveAndFlush(row);
-            }
-        });
-        var preview = scopeService.createOrGet(
-            account.getId(), actionType,
-            "UNSUBSCRIBE".equals(actionType) ? "UNSUBSCRIBE_CANDIDATE" : "UNREAD_SELECTION",
-            providerIds,
-            new ActionScopeTargetSummary(label, label + "@example.com", null, providerIds.size()),
-            new ActionScopeRiskSummary(0, 0, List.of()));
-        ActionScope scope = scopeService.requireScope(account.getId(), preview.scopeId());
-        UserAction action = new UserAction();
-        action.setAccountId(account.getId());
-        action.setActionScopeId(scope.getId());
-        action.setActionType(actionType);
-        action.setMessageIds(scope.getMessageIds());
-        action.setInverseActionData(new HashMap<>());
-        action.setTargetKind(scope.getTargetKind());
-        action.setTargetIdJson(Map.of());
-        action.setAffectedCount(scope.getMessageCount());
-        action.setStatus(status);
-        action.setExecutionMode("STAGED");
-        action.setDecisionSource("REVIEW");
-        action.setExpiresAt(null);
-        action = actions.saveAndFlush(action);
-        ActionIntent intent = "UNSUBSCRIBE".equals(actionType)
-            ? ActionIntent.unsubscribe(
-                action.getId(), account.getId(), label, label,
-                ActionFingerprints.sha256("candidate-" + label),
-                ActionFingerprints.sha256("destination-" + label),
-                "RFC8058_POST", Instant.now())
-            : ActionIntent.messages(
-                action.getId(), account.getId(), label, label, Instant.now());
-        actionIntents.saveAndFlush(intent);
-        return action;
     }
 
     private UserAccount account(String email) {

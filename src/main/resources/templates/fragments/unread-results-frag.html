@@ -42,7 +42,7 @@
 </section>
 
 <th:block th:fragment="categoryChunk(
-        categoryPage, canonicalQuery, cleanupAction,
+        categoryPage,
         nextCategoryUrl, loadAllCategoryUrl)">
     <p th:if="${categoryPage.rows.empty}" class="empty-results">
         No unread senders are currently in this group.
@@ -56,26 +56,26 @@
         <span>Size (Estimated)</span>
     </div>
     <th:block th:replace="~{:: categoryRows(
-            ${categoryPage}, ${canonicalQuery}, ${cleanupAction},
+            ${categoryPage},
             ${nextCategoryUrl}, ${loadAllCategoryUrl})}">
     </th:block>
 </th:block>
 
 <th:block th:fragment="categoryRows(
-        categoryPage, canonicalQuery, cleanupAction,
+        categoryPage,
         nextCategoryUrl, loadAllCategoryUrl)">
     <div class="cleanup-row unread-cleanup-row"
          th:each="row : ${categoryPage.rows}"
          th:attr="data-sender-address=${row.senderAddress}">
         <label class="category-select" th:if="${!row.senderAddress.empty}">
             <input type="checkbox" name="rowKey"
-                   form="unread-bulk-stage"
+                   data-selection="unread-selection"
                    th:value="${T(com.tidymail.service.DecisionRowKey).unreadSender(
                        row.accountId, categoryPage.categoryKey, row.senderAddress)}"
                    th:disabled="${row.protectedSender}"
-                   th:attr="aria-label=|Select ${row.displayName} for staging|">
+                   th:attr="aria-label=|Select ${row.displayName} for categorization|">
             <span class="visually-hidden"
-                  th:text="|Select ${row.displayName} for staging|">Select</span>
+                  th:text="|Select ${row.displayName} for categorization|">Select</span>
         </label>
         <span th:if="${row.senderAddress.empty}"></span>
         <div class="cleanup-sender">

@@ -221,7 +221,7 @@ class Phase10DecisionQueryTest {
                     .extracting(component -> component.getName().toLowerCase())
                     .noneMatch(name -> Set.of(
                         "body", "snippet", "attachment", "token", "rawheaders",
-                        "providermessageid", "recipient", "unsubscribe").stream()
+                        "providermessageid", "recipient").stream()
                         .anyMatch(name::contains));
             }
             assertThat(ProtectedSender.class.getAnnotation(

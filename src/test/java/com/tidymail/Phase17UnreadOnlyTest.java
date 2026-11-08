@@ -2,11 +2,8 @@ package com.tidymail;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.reset;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -15,16 +12,12 @@ import com.google.api.services.gmail.model.MessagePart;
 import com.google.api.services.gmail.model.MessagePartBody;
 import com.google.api.services.gmail.model.MessagePartHeader;
 import com.tidymail.entity.MessageMetadata;
-import com.tidymail.entity.UserAction;
 import com.tidymail.entity.UserAccount;
 import com.tidymail.mail.AttachmentState;
 import com.tidymail.mail.MailProvider;
 import com.tidymail.mail.gmail.GmailMailService;
-import com.tidymail.repository.ActionScopeRepository;
 import com.tidymail.repository.MessageMetadataRepository;
 import com.tidymail.repository.UserAccountRepository;
-import com.tidymail.repository.UserActionRepository;
-import com.tidymail.service.DecisionRowKey;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -32,7 +25,6 @@ import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -68,8 +60,6 @@ class Phase17UnreadOnlyTest {
     @Autowired MockMvc mockMvc;
     @Autowired UserAccountRepository accounts;
     @Autowired MessageMetadataRepository metadata;
-    @Autowired UserActionRepository actions;
-    @Autowired ActionScopeRepository scopes;
     @Autowired JdbcTemplate jdbc;
 
     @MockBean(name = "gmailMailService")
@@ -80,8 +70,6 @@ class Phase17UnreadOnlyTest {
 
     @BeforeEach
     void clean() {
-        actions.deleteAll();
-        scopes.deleteAll();
         metadata.deleteAll();
         accounts.deleteAll();
         reset(gmail, outlook);
@@ -181,81 +169,6 @@ class Phase17UnreadOnlyTest {
         assertThat(message.attachmentState()).isEqualTo(AttachmentState.UNKNOWN);
         assertThat(message.labelIds()).contains("INBOX", "UNREAD");
         assertThatThrownByBodyAccess(message);
-    }
-
-    @Test
-    void deleteSelectedExactDialogPayloadStagesTrashToReviewWithoutProviderMutation()
-            throws Exception {
-        UserAccount account = account("delete-dialog@example.com");
-        MessageMetadata attachment =
-            row(account, "delete-attachment", "delete@example.com", true, List.of("INBOX"));
-        attachment.setHasAttachments(true);
-        attachment.setAttachmentState(AttachmentState.PRESENT);
-        attachment.setAttachmentObservedAt(Instant.now());
-        attachment.setAttachmentSource("GMAIL_SEARCH");
-        metadata.saveAndFlush(attachment);
-        row(account, "delete-direct", "delete@example.com", true, List.of("INBOX"));
-        row(account, "delete-archived", "delete@example.com", true, List.of());
-        String attachmentSelection = DecisionRowKey.unreadSender(
-            account.getId(), "attachments", "delete@example.com");
-        String directSelection = DecisionRowKey.unreadSender(
-            account.getId(), "direct-mail", "delete@example.com");
-
-        mockMvc.perform(post("/api/cleanup-actions")
-                .with(authentication(auth(account.getEmail())))
-                .with(csrf())
-                .header("HX-Request", "true")
-                .param("surface", "UNREAD")
-                .param("action", "TRASH")
-                .param("rowKey", attachmentSelection, directSelection, attachmentSelection)
-                .param("requestToken", UUID.randomUUID().toString())
-                .param("deleteAcknowledged", "true")
-                .param("account", account.getId().toString()))
-            .andExpect(status().isOk())
-            .andExpect(content().string(org.hamcrest.Matchers.containsString(
-                "\"action\":\"TRASH\"")))
-            .andExpect(content().string(org.hamcrest.Matchers.containsString(
-                "\"distinctMessageCount\":2")))
-            .andExpect(content().string(org.hamcrest.Matchers.containsString(
-                "Gmail Trash can typically be restored for up to 30 days")));
-
-        assertThat(actions.findAll()).singleElement().satisfies(action -> {
-            assertThat(action.getActionType()).isEqualTo("TRASH");
-            assertThat(action.getDecisionSource()).isEqualTo("UNREAD");
-            assertThat(action.getStatus()).isEqualTo("QUEUED");
-            assertThat(action.getExecutionMode()).isEqualTo("STAGED");
-            assertThat(action.getMessageIds())
-                .containsExactly("delete-attachment", "delete-direct");
-        });
-        assertThat(scopes.findAll()).singleElement().satisfies(scope -> {
-            assertThat(scope.getTargetKind()).isEqualTo("UNREAD_SELECTION");
-            assertThat(scope.getMessageIds())
-                .containsExactly("delete-attachment", "delete-direct");
-        });
-        verifyNoInteractions(gmail, outlook);
-    }
-
-    @Test
-    void destructiveSelectedActionStatesAndVisibleFailureFeedbackAreLocked()
-            throws Exception {
-        String css = Files.readString(CSS);
-        String script = Files.readString(SCRIPT);
-
-        assertThat(css)
-            .contains(
-                ".cleanup-bulk-stage .cleanup-action:hover",
-                ".cleanup-bulk-stage .cleanup-action:focus-visible",
-                ".cleanup-bulk-stage .cleanup-action:active",
-                ".cleanup-bulk-stage .cleanup-action.htmx-request",
-                ".cleanup-bulk-stage .cleanup-action:disabled",
-                ".cleanup-row.is-staged .cleanup-action",
-                "color: #fff");
-        assertThat(script)
-            .contains(
-                "Action not staged. Delete confirmation could not open.",
-                "Action not staged. Try again or refresh this category.",
-                "Action not staged. Select at least one sender before staging.",
-                "feedback.classList.toggle(\"visually-hidden\", !visible)");
     }
 
     private static void assertThatThrownByBodyAccess(com.tidymail.mail.MailMessage message) {

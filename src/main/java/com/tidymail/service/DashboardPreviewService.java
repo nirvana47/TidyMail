@@ -30,13 +30,13 @@ public class DashboardPreviewService {
     @Transactional(isolation=Isolation.REPEATABLE_READ)
     public Preview create(long account,Request request) {
         if(request==null || request.filter()==null || request.ids()==null || request.ids().isEmpty()
-            || !Set.of("ARCHIVE","MARK_READ","TRASH").contains(Objects.toString(request.action(),""))) throw bad("Choose messages and an action");
+            || !DashboardJobService.ACTIONS.contains(Objects.toString(request.action(),""))) throw bad("Choose messages and an action");
         var jdbc=repository.jdbc();
         jdbc.queryForObject("SELECT id FROM user_accounts WHERE id=:account FOR UPDATE",Map.of("account",account),Long.class);
         if(request.revision()!=repository.revision(account)) throw conflict("Grouping changed. Create a new preview.");
-        if(!request.filter().category().isEmpty() && request.classificationRevision()!=null && request.classificationRevision()!=repository.classificationRevision(account))throw conflict("Categories changed. Create a new preview.");
+        if((!request.filter().category().isEmpty() || !request.filter().labels().isEmpty()) && request.classificationRevision()!=null && request.classificationRevision()!=repository.classificationRevision(account))throw conflict("Categories changed. Create a new preview.");
         var ids=request.ids().stream().distinct().toList();
-        var p=repository.parameters(account,request.filter().cleanupScope()).addValue("ids",ids);
+        var p=repository.parameters(account,request.filter().cleanupScope()).addValue("ids",new org.springframework.jdbc.support.SqlArrayValue("uuid",ids.toArray()));
         var targets=jdbc.queryForList(repository.filtered(request.filter().cleanupScope())+"""
           SELECT m.provider_message_id,m.dashboard_message_id,m.subject_header,m.size_estimate,
             COALESCE(m.dashboard_from_address,m.from_address,'Unknown sender') address,m.received_at,
@@ -44,7 +44,7 @@ public class DashboardPreviewService {
             EXISTS(SELECT 1 FROM protected_senders protected WHERE protected.account_id=m.account_id
               AND protected.sender_address=lower(COALESCE(m.dashboard_from_address,m.from_address,''))) protected
           FROM message_metadata m LEFT JOIN filtered f ON f.id=m.id
-          WHERE m.account_id=:account AND m.dashboard_message_id IN (:ids) ORDER BY m.provider_message_id
+          WHERE m.account_id=:account AND m.dashboard_message_id=ANY(:ids) ORDER BY m.provider_message_id
           """,p);
         if(targets.size()!=ids.size()) throw new ResponseStatusException(HttpStatus.NOT_FOUND,"Some selected messages are unavailable for this account. Refresh selection.");
         int effective=0,protectedCount=0,unknownSizes=0; long knownBytes=0,effectiveBytes=0;
@@ -53,7 +53,9 @@ public class DashboardPreviewService {
             String reason=!Boolean.TRUE.equals(target.get("eligible")) ? "No longer matches these filters or received-mail eligibility"
                 : protectedTarget ? "Protected sender"
                 : request.action().equals("ARCHIVE") && !Boolean.TRUE.equals(target.get("inbox")) ? "Already outside Inbox"
-                : request.action().equals("MARK_READ") && !Boolean.TRUE.equals(target.get("unread")) ? "Already read" : "Eligible";
+                : request.action().equals("MARK_READ") && !Boolean.TRUE.equals(target.get("unread")) ? "Already read"
+                : request.action().equals("MARK_READ_ARCHIVE") && !Boolean.TRUE.equals(target.get("unread"))
+                    && !Boolean.TRUE.equals(target.get("inbox")) ? "Already read and outside Inbox" : "Eligible";
             boolean applies=reason.equals("Eligible");if(applies) effective++;
             if (target.get("size_estimate") instanceof Number size) { knownBytes+=size.longValue(); if(applies)effectiveBytes+=size.longValue(); } else unknownSizes++;
             target.put("effective",applies);target.put("reason",reason);

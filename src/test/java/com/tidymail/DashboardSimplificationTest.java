@@ -11,7 +11,6 @@ import java.util.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.TestPropertySource;
-import org.springframework.web.server.ResponseStatusException;
 
 @TestPropertySource(properties="app.mvp.enabled=true")
 class DashboardSimplificationTest extends PostgresJourneyTest {
@@ -19,9 +18,6 @@ class DashboardSimplificationTest extends PostgresJourneyTest {
     @Autowired DashboardJobService jobs;
     @Autowired DashboardPreviewService previews;
     @Autowired com.tidymail.repository.DashboardRepository dashboard;
-    @Autowired ExactScopeExecutor legacy;
-    @Autowired UndoService undo;
-    @Autowired UnsubscribeExecutionService unsubscribe;
     final DashboardFilter filter=new DashboardFilter("inbox","","","","UTC",0);
     UUID enqueue(long account,int number) {
         UUID id=UUID.randomUUID();
@@ -35,22 +31,10 @@ class DashboardSimplificationTest extends PostgresJourneyTest {
     }
     @Test void removedPagesAndEveryLegacyMutationFamilyAreBlocked() throws Exception {
         userAccounts.createAccount(OWNER);
-        for(String path:List.of("/senders","/unread","/unsubscribe","/unsubscribe/candidates/test/provider","/review","/analytics","/workspace/state","/accounts/connect/google","/reply-zero"))
+        for(String path:List.of("/senders","/unread","/unsubscribe","/unsubscribe/candidates/test/provider","/review","/analytics","/workspace/state","/accounts/connect/google","/reply-zero","/api/reply-zero","/reply-zero-frag"))
             mockMvc.perform(get(path).with(authenticatedAs(OWNER))).andExpect(status().isForbidden());
-        for(String path:List.of("/unsubscribe/execute","/unsubscribe/manual-complete","/api/action-commands","/api/cleanup-actions","/api/selection-preview","/api/actions/"+UUID.randomUUID()+"/undo","/review/undo-selected"))
+        for(String path:List.of("/unsubscribe/execute","/unsubscribe/manual-complete","/api/action-commands","/api/cleanup-actions","/api/selection-preview","/api/actions/"+UUID.randomUUID()+"/undo","/review/undo-selected","/review/approve-selected","/api/actions/"+UUID.randomUUID()+"/remove-protection"))
             mockMvc.perform(post(path).with(authenticatedAs(OWNER)).with(csrfToken())).andExpect(status().isForbidden());
-        verifyNoInteractions(gmailProvider);
-    }
-    @Test void retainedQueuedExecutionAndUndoCannotDispatchEvenWithoutHttp() {
-        long account=userAccounts.createAccount(OWNER);
-        UUID retained=jdbc.queryForObject("INSERT INTO user_actions(account_id,action_type,message_ids,affected_count,status,execution_mode,decision_source) VALUES(?,'UNSUBSCRIBE',ARRAY['legacy-target'],1,'QUEUED','STAGED','SENDERS') RETURNING public_id",UUID.class,account);
-        assertThatThrownBy(()->legacy.execute(account,retained,UUID.randomUUID())).isInstanceOf(ResponseStatusException.class).hasMessageContaining("410");
-        assertThatThrownBy(()->legacy.executeBatch(List.of(new ExactScopeExecutor.BatchAction(account,UUID.randomUUID(),UUID.randomUUID())))).hasMessageContaining("410");
-        assertThatThrownBy(()->undo.prepare(OWNER,account,UUID.randomUUID())).hasMessageContaining("410");
-        assertThatThrownBy(()->undo.execute(OWNER,account,UUID.randomUUID(),"old-intent")).hasMessageContaining("410");
-        assertThatThrownBy(()->unsubscribe.execute(List.of(account),"old-candidate",null,"old-intent")).hasMessageContaining("410");
-        assertThat(jdbc.queryForObject("SELECT status FROM user_actions WHERE public_id=?",String.class,retained)).isEqualTo("QUEUED");
-        assertThatThrownBy(()->unsubscribe.completeManual(List.of(account),"old-candidate",null,"old-intent",true)).hasMessageContaining("410");
         verifyNoInteractions(gmailProvider);
     }
     @Test void pendingRowsRestoreAndClearAfterCancellationAndStayAccountScoped() {

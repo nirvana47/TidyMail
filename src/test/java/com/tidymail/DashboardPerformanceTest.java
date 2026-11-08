@@ -92,7 +92,7 @@ class DashboardPerformanceTest extends PostgresJourneyTest {
                         measure(size,concurrent,"summary_page",pageBudget,()->dashboard.page(account,all));
                         measure(size,concurrent,"search_date",pageBudget,()->dashboard.page(account,filtered));
                         measure(size,concurrent,"sender_page_10",pageBudget,()->dashboard.page(account,later));
-                        measure(size,concurrent,"message_address_expansion",detailBudget,()->dashboard.details(account,all,group.id(),1));
+                        measure(size,concurrent,"message_address_expansion",detailBudget,()->dashboard.addresses(account,all,group.id()));
                         measure(size,concurrent,"authenticated_html_and_api",size==10000?2000:3000,()->{try{mockMvc.perform(get("/dashboard").with(authenticatedAs(owner))).andExpect(status().isOk());mockMvc.perform(get("/dashboard/api/page").param("scope","all").with(authenticatedAs(owner))).andExpect(status().isOk());}catch(Exception e){throw new RuntimeException(e);}});
                         for(int count:new int[]{501,5000}) {
                             var ids=jdbc.queryForList("SELECT dashboard_message_id FROM message_metadata WHERE account_id=? ORDER BY id LIMIT ?",UUID.class,account,count);

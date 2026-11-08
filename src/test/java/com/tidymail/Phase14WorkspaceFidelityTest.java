@@ -12,7 +12,6 @@ import com.tidymail.entity.UserAccount;
 import com.tidymail.repository.DecisionSurfaceQueryRepository;
 import com.tidymail.repository.SyncProgressRepository;
 import com.tidymail.repository.UserAccountRepository;
-import com.tidymail.repository.UserActionRepository;
 import com.tidymail.service.MessageMetadataQueryService;
 import com.tidymail.service.OwnedAccountScopeService;
 import com.tidymail.service.WorkspaceModelService;
@@ -47,8 +46,8 @@ class Phase14WorkspaceFidelityTest {
             .contains("class=\"workspace-rail\"", "class=\"rail-navigation\"")
             .contains("aria-label=\"Primary\"", "aria-current")
               .contains(
-                  "Bulk Archive/Delete", "Unread Only", "Bulk Unsubscribe",
-                  "Review", "Analytics")
+                  "Senders", "Unread Only",
+                  "Action history")
               .contains("Add new account")
             .contains("Feedback", "Collapse rail", "Expand rail")
               .contains(">Settings</summary>", "Logout", "Delete my data and logout")
@@ -96,7 +95,8 @@ class Phase14WorkspaceFidelityTest {
                   "<details class=\"cleanup-category\" open",
                   "action=\"/api/selection-preview\"", "Export");
         assertThat(senderPage)
-            .contains("action=\"/api/cleanup-actions\"", "name=\"surface\" value=\"SENDERS\"");
+            .contains("id=\"sender-selection\"", "data-selection-bar")
+            .doesNotContain("/api/cleanup-actions");
         assertThat(unread)
             .contains("<details class=\"cleanup-category\"")
             .contains("category-accent-lists", "category-accent-old")
@@ -111,13 +111,12 @@ class Phase14WorkspaceFidelityTest {
       void workspaceModelUsesOnlyAuthorizedAccountFactsAndOmitsUnavailableCounts() {
           OwnedAccountScopeService scopes = mock(OwnedAccountScopeService.class);
           UserAccountRepository accounts = mock(UserAccountRepository.class);
-          UserActionRepository actions = mock(UserActionRepository.class);
           SyncProgressRepository progress = mock(SyncProgressRepository.class);
           MessageMetadataQueryService metadata = mock(MessageMetadataQueryService.class);
           DecisionSurfaceQueryRepository decisions =
               mock(DecisionSurfaceQueryRepository.class);
           WorkspaceModelService workspaces = new WorkspaceModelService(
-              scopes, accounts, actions, progress, metadata, decisions);
+              scopes, accounts, progress, metadata, decisions);
           UserAccount selected = account(7L, "long-owned-account@example.com", "owner-key");
           UserAccount other = account(8L, "second@example.com", "owner-key");
 
@@ -128,7 +127,6 @@ class Phase14WorkspaceFidelityTest {
               .thenReturn(List.of());
           when(metadata.freshness(List.of(7L)))
               .thenReturn(new MessageMetadataQueryService.Freshness(5, null, null));
-          when(actions.countByAccountIdInAndStatus(List.of(7L), "QUEUED")).thenReturn(3L);
           when(decisions.unreadScopeCounts(List.of(7L)))
               .thenReturn(UnreadScopeCounts.available(2L, 2L));
 
@@ -141,7 +139,6 @@ class Phase14WorkspaceFidelityTest {
               assertThat(page.accountOptions())
                   .extracting(option -> option.label())
                   .containsExactly("long-owned-account@example.com", "second@example.com");
-              assertThat(page.queuedActionCount()).isEqualTo(3L);
               assertThat(page.inboxUnreadCount()).isEqualTo(2L);
           }
 
@@ -150,7 +147,6 @@ class Phase14WorkspaceFidelityTest {
           WorkspacePageModel unavailable = workspaces.buildResolved(
               WorkspaceRoute.UNREAD, "7", List.of(7L), auth());
           assertThat(unavailable.inboxUnreadCountAvailable()).isFalse();
-          assertThat(unavailable.queuedActionCount()).isEqualTo(3L);
     }
 
     @Test

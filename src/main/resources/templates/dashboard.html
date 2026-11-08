@@ -30,54 +30,32 @@
         </header>
         <nav class="row" aria-label="Mailbox views"><button id="sendersView" aria-pressed="true">Senders</button><button id="suggestionsView" aria-pressed="false">Suggestions</button></nav>
         <section id="suggestionsPanel" class="surface evidence" hidden><h2>Suggestions</h2><button id="largeEmails">Large emails (&gt;1 MB)</button><button id="patternsOpen">Review Amazon / Quora patterns</button><p>Find large messages, including archived and Sent mail. Review and select emails before taking action.</p></section>
-        <section class="surface evidence" aria-label="Email recommendations">
+        <details class="surface evidence" aria-label="Email recommendations"><summary>Label and recommendation status</summary>
             <div class="row"><strong>Labels</strong><span id="labelingCoverage" role="status">Checking label coverage…</span><button id="labelingOpen" type="button">Label / reclassify emails</button></div>
             <div class="row"><strong>Recommendations</strong><span id="recommendationStatus" role="status">Checking…</span>
                 <button id="recommendationProcessing" type="button">Build recommendations</button></div>
             <p class="muted">Labels and suggestions use information already saved locally. Review and select emails before taking any cleanup action.</p>
-        </section>
+        </details>
         <section class="surface filters" aria-label="Mailbox filters">
             <div class="row">
                 <div class="scope" role="group" aria-label="Mail scope"><button class="active" data-scope="inbox"
-                        aria-pressed="true">Inbox</button><button data-scope="all" aria-pressed="false">All received
-                        mail</button><button data-scope="indexed" aria-pressed="false">All indexed mail</button></div>
+                        aria-pressed="true">Inbox</button><button data-scope="all" aria-pressed="false">All Mailbox</button></div>
                 <label class="search"><input id="search" type="search" aria-label="Search senders or messages"
                         placeholder="Search senders or messages…" maxlength="200"></label>
-                <label class="date"><select id="date" aria-label="Date range">
-                        <option value="all">Any time</option>
-                        <option value="7">Last 7 days</option>
-                        <option value="custom">Custom dates</option>
-                    </select></label>
             </div>
-            <div class="date-fields"><label id="startLabel" hidden>From <input type="date" id="start"></label><label
-                    id="endLabel" hidden>Through <input type="date" id="end"></label>
-                <label>Timezone <select id="zone" aria-label="Displayed account timezone">
-                        <option value="UTC">UTC</option>
-                        <option value="America/Los_Angeles">Pacific</option>
-                        <option value="America/New_York">Eastern</option>
-                        <option value="Europe/London">London</option>
-                        <option value="Asia/Kolkata">India</option>
-                    </select></label>
-                <label>Category <select id="category" aria-label="Message category">
-                        <option value="">All categories</option>
-                        <option value="PERSONAL">Personal</option>
-                        <option value="MARKETING">Marketing</option>
-                        <option value="NEWSLETTER">Newsletters</option>
-                    <option value="SOCIAL">Social</option>
-                        <option value="RECEIPT">Receipts</option>
-                        <option value="SECURITY">Security</option>
-                        <option value="NOTIFICATION">Notifications</option>
-                        <option value="OTHER">Other</option>
-                        <option value="UNCLASSIFIED">Unclassified</option>
-                    </select></label>
+            <div class="row">
                 <label>Sort by <select id="sort" aria-label="Sort senders">
                         <option value="messages">Message count</option>
                         <option value="unread">Unread count</option>
+                        <option value="latest">Latest message</option>
+                        <option value="size">Total estimated size</option>
                     </select></label>
-                <button id="classificationOpen">Legacy categories</button><span id="classificationSummary" class="muted"
-                    role="status"></span>
             </div>
-            <div class="row">
+            <details class="evidence"><summary>More filters and label tools</summary>
+              <div class="row">
+                <label>From <input type="date" id="start"></label><label>Through <input type="date" id="end"></label>
+                <button id="classificationOpen">Legacy category tools</button>
+                <span id="classificationSummary" class="muted" role="status"></span>
                 <label>Recommendation <select id="recommendation" aria-label="Filter by recommendation">
                     <option value="">All (including unassessed)</option><option value="KEEP_IN_INBOX">Keep in inbox</option>
                     <option value="KEEP_STORED">Keep stored</option><option value="ARCHIVE">Archive</option>
@@ -88,39 +66,70 @@
                     <option value="">Any importance</option><option value="IMPORTANT">Important</option>
                     <option value="ROUTINE">Routine</option><option value="UNKNOWN">Unknown</option>
                 </select></label>
-                <label>Label <select id="recommendationLabel" aria-label="Filter by label">
-                    <option value="">Any label</option><option value="CONTACT">Contact</option>
-                    <option value="CALENDAR_INVITE">Calendar invite</option><option value="LARGE_MESSAGE">Large email</option>
-                    <option value="HAS_ATTACHMENTS">Has attachments</option><option value="HUMAN_CORRESPONDENCE">Personal</option>
-                    <option value="HEALTHCARE">Healthcare</option><option value="SCHOOL">School</option>
-                    <option value="MARKETING">Marketing</option><option value="SOCIAL">Social</option>
-                    <option value="RECEIPT">Receipt</option><option value="NEWSLETTER">Newsletter</option><option value="NOTIFICATION">Notification</option>
-                    <option value="ORDER">Order</option><option value="SHIPPING">Shipping</option>
-                    <option value="SECURITY">Security</option><option value="BILL">Bill</option><option value="STATEMENT">Statement</option>
-                    <option value="SENT" hidden disabled>Sent</option>
-                </select></label>
-            </div>
+              </div>
+            </details>
+            <details class="evidence" id="labelFilter">
+                <summary id="labelSummary">Labels</summary>
+                <div class="row">
+                    <label>Label matching <select id="labelMatch">
+                        <option value="all">Match all</option><option value="any">Match any</option>
+                    </select></label>
+                    <button id="clearLabels" type="button">Clear labels</button>
+                </div>
+                <div class="label-choices">
+                    <label><input type="checkbox" name="labelFilter" value="CONTACT">Contact</label>
+                    <label><input type="checkbox" name="labelFilter" value="CALENDAR_INVITE">Calendar invite</label>
+                    <label><input type="checkbox" name="labelFilter" value="LARGE_MESSAGE">Large email</label>
+                    <label><input type="checkbox" name="labelFilter" value="HAS_ATTACHMENTS">Has attachments</label>
+                    <label><input type="checkbox" name="labelFilter" value="HUMAN_CORRESPONDENCE">Personal</label>
+                    <label><input type="checkbox" name="labelFilter" value="HEALTHCARE">Healthcare</label>
+                    <label><input type="checkbox" name="labelFilter" value="SCHOOL">School</label>
+                    <label><input type="checkbox" name="labelFilter" value="MARKETING">Marketing</label>
+                    <label><input type="checkbox" name="labelFilter" value="SOCIAL">Social</label>
+                    <label><input type="checkbox" name="labelFilter" value="RECEIPT">Receipt</label>
+                    <label><input type="checkbox" name="labelFilter" value="NEWSLETTER">Newsletter</label>
+                    <label><input type="checkbox" name="labelFilter" value="NOTIFICATION">Notification</label>
+                    <label><input type="checkbox" name="labelFilter" value="ORDER">Order</label>
+                    <label><input type="checkbox" name="labelFilter" value="SHIPPING">Shipping</label>
+                    <label><input type="checkbox" name="labelFilter" value="SECURITY">Security</label>
+                    <label><input type="checkbox" name="labelFilter" value="BILL">Bill</label>
+                    <label><input type="checkbox" name="labelFilter" value="STATEMENT">Statement</label>
+                    <label hidden><input type="checkbox" name="labelFilter" value="SENT">Sent</label>
+                    <label><input type="checkbox" name="labelFilter" value="OTHER">Other</label>
+                    <label><input type="checkbox" name="labelFilter" value="UNCLASSIFIED">Unclassified</label>
+                </div>
+                <p class="muted">Messages with labels still pending may not appear in filtered results.</p>
+            </details>
             <div class="metrics">
                 <div class="metric"><b id="matching">—</b><span class="muted">Matching messages</span></div>
                 <div class="metric"><b id="unreadCount">—</b><span class="muted">Unread messages</span></div>
                 <div class="metric"><b id="groupCount">—</b><span class="muted">Sender groups</span></div>
             </div>
-            <p class="coverage" id="coverage">Coverage is unavailable until indexed metadata arrives.</p>
+            <details class="coverage"><summary>Index coverage</summary><p id="coverage"></p></details>
         </section>
         <p id="activeSuggestion" class="evidence" hidden>Large emails (&gt;1 MB) · Whole-message size, including inline images. <button id="clearSuggestion">Show all sizes</button></p>
         <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+        <details id="composition" class="surface composition">
+            <summary>Inbox composition</summary>
+            <p class="muted">Top 10 domains and sender groups by matching Inbox messages.</p>
+            <div id="compositionRows" role="list"></div>
+        </details>
+        <button id="clearComposition" hidden></button>
         <section class="workspace">
             <div class="list">
+                <div class="row evidence" id="groupingToolbar" hidden>
+                    <span id="groupingCount"></span><button id="combineGroups">Combine</button>
+                    <button id="splitGroup">Split</button><button id="clearGroups">Clear senders</button>
+                </div>
                 <div class="tablewrap">
                     <table id="senderTable" tabindex="-1">
                         <thead>
                             <tr>
-                                <th><input id="selectPage" type="checkbox" aria-label="Select groups on this page"
-                                        disabled></th>
+                                <th aria-label="Select sender groups for organizing"></th>
                                 <th>Sender</th>
-                                <th aria-sort="descending"><button id="sortMessages" class="column-sort" aria-label="Sort by message count, highest first">Messages ↓</button></th>
+                                <th aria-sort="descending"><button id="sortMessages" class="column-sort" aria-label="Sort by message count, highest first">Total ↓</button></th>
                                 <th aria-sort="none"><button id="sortUnread" class="column-sort" aria-label="Sort by unread count, highest first">Unread ↕</button></th>
-                                <th>Latest message</th>
+                                <th>Inbox</th><th>Latest message</th>
                                 <th></th>
                             </tr>
                         </thead>
@@ -135,12 +144,11 @@
             <aside class="detail" id="detail" aria-label="Sender details" hidden>
                 <div class="detail-head row"><span class="brand" id="detailBadge" aria-hidden="true"></span>
                     <div>
-                        <h2 id="detailTitle"></h2>
+                        <h2 id="detailTitle" tabindex="-1"></h2>
                         <p class="muted" id="detailCounts"></p>
                     </div>
                 </div>
-                <div class="evidence row"><label><input id="detailUnreadOnly" type="checkbox"> Unread only</label>
-                    <button id="selectUnread">Select all unread</button></div>
+                <div class="evidence row"><label><input id="detailUnreadOnly" type="checkbox"> Unread only</label></div>
                 <div class="tabs" role="tablist" aria-label="Sender detail"><button class="active" role="tab"
                         id="messagesTab" aria-controls="detailContent" aria-selected="true"
                         data-tab="messages">Messages</button><button role="tab" id="addressesTab"
@@ -156,7 +164,8 @@
                 </div><button id="correctSelectedCategory">Correct category</button><button class="ghost" id="clear">Clear selection</button>
                 <div class="actions row" role="group" aria-label="Choose cleanup action"><button class="active"
                         data-action="MARK_READ" aria-pressed="true">Mark as read</button><button data-action="ARCHIVE"
-                        aria-pressed="false">Archive</button><button class="trash" data-action="TRASH"
+                        aria-pressed="false">Archive</button><button data-action="MARK_READ_ARCHIVE"
+                        aria-pressed="false">Mark as Read + Archive</button><button class="trash" data-action="TRASH"
                         aria-pressed="false">Move to Trash</button><button id="review" class="primary">Review and
                         confirm →</button></div>
             </div>
@@ -259,8 +268,7 @@
         <div class="row spread">
             <h2 id="activityTitle">Activity</h2><button data-close="activity">Close</button>
         </div>
-        <p>Cancel stops remaining work. Completed changes are not reversed. Unresolved outcomes have not been confirmed.
-        </p>
+
         <div id="activityContent"></div>
         <p id="historySummary" class="muted"></p><button id="historyMore" hidden>Load older activity</button>
         <hr>
@@ -287,18 +295,16 @@
         </div>
         <p>Grouping organizes your dashboard. It does not select or change mail.</p>
         <label>Action <select id="correctionKind">
-                <option value="MERGE">Merge groups</option>
-                <option value="SEPARATE">Keep one unit separate</option>
-                <option value="RESET">Reset a correction</option>
+                <option value="MERGE">Combine</option><option value="SPLIT">Split</option>
+                <option value="RESET">Reset a saved correction</option>
             </select></label>
-        <label id="unitLabel">Address or mailing-list unit <select id="correctionUnit"></select></label>
-        <div id="mergeFields"><label>Find another group <input id="mergeSearch" type="search" maxlength="200"
-                    placeholder="Sender address, list or group"></label><button id="findGroups">Find
-                groups</button><label>Merge with <select id="mergeGroup"></select></label>
-            <div class="row"><button id="mergePrev">Previous</button><span id="mergeRange"></span><button
-                    id="mergeNext">Next</button></div><label>Group label <input id="mergeLabel" maxlength="160"
-                    placeholder="Merged senders"></label>
+        <div id="correctionGroups"></div>
+        <div id="splitFields" hidden>
+            <p>Choose addresses for the first group. Remaining addresses form the other group.</p>
+            <div id="splitAddresses"></div>
+            <label>Remaining addresses group name <input id="remainderLabel" maxlength="160"></label>
         </div>
+        <label id="groupName">Group name <input id="mergeLabel" maxlength="160"></label>
         <label id="resetLabel" hidden>Correction to reset <select id="resetCorrection"></select></label>
         <button id="previewCorrection">Preview grouping change</button>
         <div id="correctionAffected"></div><button class="primary" id="applyCorrection" disabled>Apply grouping

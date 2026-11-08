@@ -83,7 +83,7 @@ public class SenderCategoryController {
         String senderAddress = required(parameters, "senderAddress");
         String target = required(parameters, "correctionTarget");
         String returnTo = required(parameters, "returnTo");
-        String ownerKey = ActionCommandController.ownerKey(authentication);
+        String ownerKey = ownerKey(authentication);
 
         try {
             SenderType semanticType = SEMANTIC_TARGETS.get(target);
@@ -125,7 +125,7 @@ public class SenderCategoryController {
             HttpServletRequest request,
             OAuth2AuthenticationToken authentication) {
         try {
-            String ownerKey = ActionCommandController.ownerKey(authentication);
+            String ownerKey = ownerKey(authentication);
             List<String> senders = senderAddresses == null ? List.of() : senderAddresses;
             if (categoryName != null && !categoryName.isBlank()) {
                 SenderCategory created = categories.create(ownerKey, accountId, categoryName);
@@ -179,6 +179,15 @@ public class SenderCategoryController {
      * Normalizes the category target, defaulting a numeric {@code categoryId}
      * to the {@code custom:<id>} form.
      */
+    static String ownerKey(OAuth2AuthenticationToken authentication) {
+        String email = authentication.getPrincipal().getAttribute("email");
+        String provider = authentication.getAuthorizedClientRegistrationId();
+        if (email == null || provider == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
+        }
+        return email.strip().toLowerCase() + ":" + provider;
+    }
+
     private static String normalizedCategoryTarget(String categoryTarget, Long categoryId) {
         if (categoryTarget != null && !categoryTarget.isBlank())
             return categoryTarget;
