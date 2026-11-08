@@ -38,6 +38,7 @@ public class DashboardRepository {
     public static final String RECEIVED = """
             NOT(m.labels && ARRAY['SPAM','TRASH','DRAFT'])
             AND (m.label_evidence_known OR cardinality(m.labels)>0)
+            AND (m.provider<>'microsoft' OR NOT(m.labels && ARRAY['SENT','OUTLOOK_EXCLUDED']))
             AND ('INBOX'=ANY(m.labels) OR NOT('SENT'=ANY(m.labels)) OR
             """ + DELIVERY + ")";
     // Read pending state once. A scalar initplan keeps its map out of the row joins
@@ -48,18 +49,34 @@ public class DashboardRepository {
     private static final String REQUESTED_SEMANTIC_MATCH="(requested.label=ANY(sl.labels) AND sl.input_hash="+RecommendationSql.SEMANTIC_HASH+")";
     private static final String LABELING_CATEGORY="COALESCE(m.classification_override,CASE WHEN sl.input_hash="+RecommendationSql.SEMANTIC_HASH
         +" THEN NULLIF(sl.purpose,'UNKNOWN') END,"+CATEGORY+")";
+    private static final String LOCAL_CURRENT = "(saved.local_rules_version='"
+            +com.tidymail.service.LocalMailLabels.VERSION+"' AND saved.metadata_revision=COALESCE(v.revision,0))";
+    private static final String LOCAL_LABEL = "(" + LOCAL_CURRENT + " AND jsonb_exists(saved.local_label_reasons,requested.label))";
     private static final String LABEL_MATCH = """
             CASE requested.label
                       WHEN 'CONTACT' THEN COALESCE(h.sent_count,0)>0
                       WHEN 'LARGE_MESSAGE' THEN m.size_estimate>1000000
                       WHEN 'SENT' THEN 'SENT'=ANY(m.labels)
                       WHEN 'HAS_ATTACHMENTS' THEN m.attachment_state='PRESENT'
-                      WHEN 'CALENDAR_INVITE' THEN """+REQUESTED_SEMANTIC_MATCH+"""
+                      WHEN 'GMAIL_PROMOTIONS' THEN m.provider='google' AND m.label_evidence_known
+                        AND 'CATEGORY_PROMOTIONS'=ANY(m.labels)
+                      WHEN 'OLDER_DOCUMENT_COMMENT' THEN """+LOCAL_CURRENT+"""
+                        AND jsonb_exists(saved.local_label_reasons,'DOCUMENT_COMMENT')
+                        AND m.received_at<CAST(:asOf AS timestamptz)-interval '720 hours'
+                      WHEN 'PAST_EVENT' THEN """+LOCAL_CURRENT+"""
+                        AND saved.local_calendar_end<=:asOf
+                      WHEN 'CALENDAR_INVITE' THEN """+LOCAL_LABEL+" OR "+REQUESTED_SEMANTIC_MATCH+"""
                         OR COALESCE(jsonb_path_exists(e.facts,'$.parts[*] ? (@.calendar == true)'),false)
                         OR COALESCE(jsonb_array_length(e.facts->'calendars'),0)>0
                         OR ("""+RecommendationSql.CURRENT+"""
                           AND saved.result->>'purpose'='CALENDAR_INVITE')
-                      ELSE (requested.include_category AND ("""+LABELING_CATEGORY+"""
+                      WHEN 'UNCLASSIFIED' THEN requested.include_category AND ("""+LABELING_CATEGORY+"""
+                        )='UNCLASSIFIED' AND NOT COALESCE(("""+LOCAL_CURRENT+"""
+                        AND saved.local_label_reasons<>'{}'::jsonb),false)
+                      ELSE (m.provider='google' AND m.label_evidence_known
+                          AND ('Label_'||substring(requested.label from '^GMAIL_LABEL_([0-9]+)$'))=ANY(m.labels))
+                        OR """+LOCAL_LABEL+"""
+                        OR (requested.include_category AND ("""+LABELING_CATEGORY+"""
                         ) = CASE requested.label WHEN 'HUMAN_CORRESPONDENCE' THEN 'PERSONAL' ELSE requested.label END)
                         OR ("""+RecommendationSql.CURRENT+"""
                         AND (jsonb_exists(saved.result->'facets',requested.label) OR saved.result->>'purpose'=
@@ -81,6 +98,11 @@ public class DashboardRepository {
                       FROM (SELECT
                       """+LABEL_MATCH+"""
                         AS matches FROM (SELECT label,true AS include_category FROM unnest(string_to_array(:labels, ',')) label) requested) matching))
+                    AND (NOT :excludeProtectedShopping OR NOT ('SHOPPING'=ANY(string_to_array(:labels, ','))) OR NOT EXISTS (
+                      SELECT FROM (VALUES ('RECEIPT',true),('SECURITY',true)) requested(label,include_category)
+                      WHERE
+                      """+LABEL_MATCH+"""
+                    ))
         """;
     private static final String ADDRESS_MEMBERSHIP = """
                     LEFT JOIN sender_address_units split ON split.account_id=link.account_id
@@ -123,8 +145,8 @@ public class DashboardRepository {
                     JOIN message_sender_units link ON link.account_id=m.account_id AND link.metadata_id=m.id
                     """+ADDRESS_MEMBERSHIP+GROUPING_LOOKUP+"""
                     WHERE m.account_id=:account AND
-                    """ + "(:scope='indexed' OR " + RECEIVED + """
-                    OR (:suggestion='large' AND 'SENT'=ANY(m.labels)
+                    """ + "((:scope='indexed' AND m.provider='google') OR " + RECEIVED + """
+                    OR (:suggestion='large' AND m.provider='google' AND 'SENT'=ANY(m.labels)
                         AND NOT(m.labels && ARRAY['SPAM','TRASH','DRAFT'])))
                     AND (:category='' OR
                     """ + LABELING_CATEGORY + """
@@ -179,6 +201,7 @@ public class DashboardRepository {
                 .addValue("suggestion", filter.suggestion()).addValue("category", filter.category())
                 .addValue("recommendation",filter.recommendation()).addValue("importance",filter.importance()).addValue("label",filter.label())
                 .addValue("labels",filter.labels()).addValue("match",filter.match())
+                .addValue("excludeProtectedShopping",filter.excludeProtectedShopping())
                 .addValue("composition",filter.composition())
                 .addValue("asOf",timestamp(Instant.now()))
                 .addValue("q", filter.q())
@@ -245,7 +268,7 @@ public class DashboardRepository {
                 p);
         Map<String, Object> state = jdbc.queryForMap(
                 """
-                        SELECT a.email,a.oauth_status,s.lifecycle,s.backfill_status,s.initial_batch_completed_at,
+                        SELECT a.email,a.provider,a.oauth_status,s.lifecycle,s.backfill_status,s.initial_batch_completed_at,
                           s.incremental_last_success_at,s.error_code FROM user_accounts a LEFT JOIN mailbox_sync_state s ON s.account_id=a.id
                         WHERE a.id=:account
                         """,
@@ -355,6 +378,8 @@ public class DashboardRepository {
         List<Message> messages = jdbc.query(
                 filtered(filter) + """
                 SELECT filtered.*,
+                (SELECT folder_path FROM outlook_folders o WHERE o.account_id=filtered.account_id
+                    AND o.folder_id=filtered.outlook_folder_id) outlook_folder,
                 EXISTS(SELECT 1 FROM correspondent_summary h WHERE h.account_id=filtered.account_id
                   AND h.address=filtered.dashboard_from_address AND h.sent_count>0) contact,
                 EXISTS(SELECT 1 FROM message_evidence e WHERE e.account_id=filtered.account_id
@@ -446,7 +471,9 @@ public class DashboardRepository {
         return new Message(uuid(r, "dashboard_message_id"), r.getString("subject_header"), r.getString("address"),
                 instant(r, "received_at"), r.getBoolean("unread"), uuid(r, "group_public_id"),
                 r.getString("pending_state"), r.getString("category"),r.getString("from_display_name"),r.getString("classification_override")!=null?"MANUAL":r.getString("category").equals("UNCLASSIFIED")?"NONE":"JEV",
-                r.getObject("size_estimate",Long.class),r.getString("attachment_state"),r.getString("snippet_text"),r.getString("snippet_state"),pattern,java.util.Arrays.asList((String[])r.getArray("labels").getArray()).contains("SENT"),r.getBoolean("contact"),r.getBoolean("calendar_invite"));
+                r.getObject("size_estimate",Long.class),r.getString("attachment_state"),r.getString("snippet_text"),r.getString("snippet_state"),pattern,java.util.Arrays.asList((String[])r.getArray("labels").getArray()).contains("SENT"),r.getBoolean("contact"),r.getBoolean("calendar_invite"),
+                r.getString("outlook_folder"),r.getArray("outlook_categories")==null?List.of():
+                    List.of((String[])r.getArray("outlook_categories").getArray()),r.getString("outlook_web_link"));
     }
 
     public static UUID uuid(ResultSet r, String column) throws SQLException {
@@ -491,7 +518,8 @@ public class DashboardRepository {
 
     public record Message(UUID id, String subject, String address, Instant receivedAt, boolean unread, UUID groupId,
             String pendingState, String category,String displayName,String categorySource,
-            Long sizeEstimate,String attachmentState,String snippet,String snippetState,String reviewedPattern,boolean sent,boolean contact,boolean calendarInvite) {
+            Long sizeEstimate,String attachmentState,String snippet,String snippetState,String reviewedPattern,boolean sent,boolean contact,boolean calendarInvite,
+            String outlookFolder,List<String> outlookCategories,String outlookWebLink) {
     }
 
     public record Address(String address, long messages, long unread,String displayName) {

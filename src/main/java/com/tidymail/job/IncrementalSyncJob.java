@@ -48,6 +48,9 @@ public class IncrementalSyncJob {
     private final String instanceOwner = UUID.randomUUID().toString();
     private final Map<LeaseKey, String> activeLeases = new ConcurrentHashMap<>();
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.tidymail.mail.outlook.OutlookSyncService outlookSync;
+
     private record LeaseKey(long accountId, Lane lane) {}
 
     public IncrementalSyncJob(
@@ -80,7 +83,7 @@ public class IncrementalSyncJob {
         accounts.findAll().stream()
             .filter(account -> account.getEncryptedAccessToken() != null)
             .filter(account -> account.getOauthStatus() == UserAccount.OAuthStatus.ACTIVE)
-            .filter(account -> "google".equals(account.getProvider()))
+            .filter(account -> "google".equals(account.getProvider()) || "microsoft".equals(account.getProvider()))
             .forEach(account -> requestSync(account.getId()));
     }
 
@@ -94,6 +97,7 @@ public class IncrementalSyncJob {
         states.ensureState(accountId, account.getProvider());
         StateSnapshot state = states.findByAccountId(accountId)
             .orElseThrow(() -> new IllegalStateException("Mailbox sync state disappeared"));
+        if ("microsoft".equals(account.getProvider())) return requestLane(accountId, Lane.BACKFILL);
         Lane lane = state.incrementalCursorValue() == null
                 || state.initialBatchCompletedAt() == null
             ? Lane.BACKFILL
@@ -192,9 +196,9 @@ public class IncrementalSyncJob {
             if (account.getOauthStatus() != UserAccount.OAuthStatus.ACTIVE) {
                 throw new IllegalStateException("Account requires reauthentication");
             }
-            MailboxSyncProvider provider = resolveProvider(account);
-            SyncOutcome outcome =
-                synchronization.synchronize(account, provider, leaseOwner, lane);
+            SyncOutcome outcome = "microsoft".equals(account.getProvider())
+                ? outlookSync.synchronize(account, leaseOwner)
+                : synchronization.synchronize(account, resolveProvider(account), leaseOwner, lane);
             row = progress.findById(progressId).orElseThrow();
             row.setStatus("COMPLETE");
             row.setPhase("COMMIT");

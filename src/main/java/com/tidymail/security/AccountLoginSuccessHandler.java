@@ -52,7 +52,7 @@ public class AccountLoginSuccessHandler
         boolean pendingBootstrap = mailboxStates.findByAccountId(account.activeAccountId())
             .map(state -> state.initialBatchCompletedAt() == null)
             .orElse(false);
-        if (pendingBootstrap) {
+        if (pendingBootstrap && "google".equals(oauth.getAuthorizedClientRegistrationId())) {
             getRedirectStrategy().sendRedirect(request, response, "/activity");
             return;
         }

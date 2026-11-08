@@ -72,7 +72,7 @@ public class OAuthLoginSuccessListener {
             .ifPresent(account -> {
                 account.setLastLoginAt(Instant.now());
                 userAccountRepository.save(account);
-                if ("google".equals(registrationId)) {
+                if ("google".equals(registrationId) || "microsoft".equals(registrationId)) {
                     if (newAccount) {
                         incrementalSyncJob.requestBootstrap(account.getId());
                     } else {

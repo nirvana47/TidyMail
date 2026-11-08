@@ -35,15 +35,28 @@ public class AccountSessionService {
     }
 
     /** Completes a login, attaching any pending owner key and activating the account. */
+    @org.springframework.transaction.annotation.Transactional
     public AccountSession initializeLogin(
             HttpServletRequest request, OAuth2AuthenticationToken authentication) {
         UserAccount authenticated = authenticatedAccount(authentication);
         HttpSession session = request.getSession();
         Object pending = session.getAttribute(PENDING_ADD_OWNER_KEY);
-        if (pending instanceof String ownerKey && !ownerKey.isBlank()) {
-            authenticated.setOwnerKey(ownerKey);
-            authenticated = accounts.saveAndFlush(authenticated);
-            session.removeAttribute(PENDING_ADD_OWNER_KEY);
+        session.removeAttribute(PENDING_ADD_OWNER_KEY);
+        if (pending instanceof PendingLink link && link.provider().equals(authentication.getAuthorizedClientRegistrationId())
+                && link.expires().isAfter(java.time.Instant.now()) && !link.owner().equals(authenticated.getOwnerKey())) {
+            var ids = java.util.stream.Stream.of(authenticated.getId(), link.sourceAccount()).distinct().toList();
+            var locked = accounts.findAllForUpdateByIdInOrderByIdAsc(ids);
+            var target = locked.stream().filter(a -> a.getId().equals(ids.getFirst())).findFirst().orElseThrow();
+            boolean sourceStillOwned = locked.stream().anyMatch(a -> a.getId().equals(link.sourceAccount())
+                && a.getOwnerKey().equals(link.owner()));
+            String standalone = "microsoft".equals(target.getProvider())
+                ? "microsoft:" + target.getProviderAccountId()
+                : target.getEmail().strip().toLowerCase(java.util.Locale.ROOT) + ":" + target.getProvider();
+            if (sourceStillOwned && standalone.equals(target.getOwnerKey())
+                    && accounts.findAllByOwnerKeyOrderByIdAsc(standalone).size() == 1) {
+                target.setOwnerKey(link.owner());
+                authenticated = accounts.saveAndFlush(target);
+            }
         }
         session.setAttribute(OWNER_KEY, authenticated.getOwnerKey());
         session.setAttribute(ACTIVE_ACCOUNT_ID, authenticated.getId());
@@ -51,12 +64,13 @@ public class AccountSessionService {
     }
 
     /** Begins adding a new account by recording the owner key as pending. */
-    public String beginAddAccount(
-            HttpServletRequest request, OAuth2AuthenticationToken authentication) {
-        String ownerKey = ownerKey(request.getSession(), authentication);
-        request.getSession().setAttribute(PENDING_ADD_OWNER_KEY, ownerKey);
-        return ownerKey;
+    public void beginAddAccount(HttpServletRequest request, OAuth2AuthenticationToken authentication, String provider) {
+        UserAccount source = authenticatedAccount(authentication);
+        request.getSession().setAttribute(PENDING_ADD_OWNER_KEY,
+            new PendingLink(source.getId(), source.getOwnerKey(), provider, java.time.Instant.now().plusSeconds(600)));
     }
+
+    private record PendingLink(Long sourceAccount, String owner, String provider, java.time.Instant expires) {}
 
     /** Resolves the active account for a request, honoring the requested selection. */
     public AccountSession resolve(
@@ -107,12 +121,6 @@ public class AccountSessionService {
     /** Returns the owner key for the session, falling back to the authenticated account. */
     public String ownerKey(
             HttpSession session, OAuth2AuthenticationToken authentication) {
-        if (session != null) {
-            Object stored = session.getAttribute(OWNER_KEY);
-            if (stored instanceof String ownerKey && !ownerKey.isBlank()) {
-                return ownerKey;
-            }
-        }
         UserAccount authenticated = authenticatedAccount(authentication);
         if (session != null) {
             session.setAttribute(OWNER_KEY, authenticated.getOwnerKey());
@@ -125,6 +133,7 @@ public class AccountSessionService {
         String provider = authentication.getAuthorizedClientRegistrationId();
         return accounts.findByProviderAndProviderAccountId(provider, authentication.getName())
             .or(() -> {
+                if (!"google".equals(provider)) return java.util.Optional.empty();
                 String email = authentication.getPrincipal().getAttribute("email");
                 return email == null ? java.util.Optional.empty()
                     : accounts.findByEmailAndProviderIgnoreCase(email, provider);

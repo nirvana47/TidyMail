@@ -27,7 +27,10 @@ import org.springframework.security.oauth2.client.web.DefaultOAuth2Authorization
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.util.StringUtils;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestCustomizers;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
+import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 
 import static org.springframework.security.config.Customizer.withDefaults;
 
@@ -201,6 +204,9 @@ public class SecurityConfig {
                 params.put("access_type", "offline");
                 params.put("prompt", "consent");
             });
+        } else if ("microsoft".equals(built.getAttribute(OAuth2ParameterNames.REGISTRATION_ID))) {
+            OAuth2AuthorizationRequestCustomizers.withPkce().accept(requestBuilder);
+            requestBuilder.additionalParameters(params -> params.put("prompt", "select_account"));
         }
     }
 
@@ -239,26 +245,22 @@ public class SecurityConfig {
         }
 
         if (props.isMicrosoftConfigured()) {
-            try {
-                String issuerUri = "https://login.microsoftonline.com/"
-                    + (StringUtils.hasText(props.getMicrosoftTenantId()) ? props.getMicrosoftTenantId() : "common")
-                    + "/v2.0";
-                ClientRegistration microsoft = ClientRegistrations.fromOidcIssuerLocation(issuerUri)
-                    .registrationId("microsoft")
-                    .clientId(props.getMicrosoftClientId())
-                    .clientSecret(props.getMicrosoftClientSecret())
-                    .scope("openid", "email", "profile", "offline_access", "https://graph.microsoft.com/Mail.ReadWrite")
-                    .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
-                    .clientName("Microsoft (Outlook)")
-                    .build();
-                registrations.add(microsoft);
-            } catch (RuntimeException ex) {
-                throw new IllegalStateException("Failed to configure Microsoft OAuth via OIDC discovery. "
-                    + "NOTE: In production with internet access, fromOidcIssuerLocation fetches the OIDC discovery document "
-                    + "and populates authorization/token/jwk-set URIs. If offline during testing, fallback to manual "
-                    + "ClientRegistration.withRegistrationId(...) builder with known URIs hardcoded — but we prefer the "
-                    + "discovery flow because it future-proofs against endpoint URL changes.", ex);
-            }
+            String authority = "https://login.microsoftonline.com/consumers";
+            // Consumer discovery advertises the fixed personal-account tenant as the token issuer.
+            registrations.add(ClientRegistration.withRegistrationId("microsoft")
+                .clientId(props.getMicrosoftClientId())
+                .clientSecret(props.getMicrosoftClientSecret())
+                .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_POST)
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .authorizationUri(authority + "/oauth2/v2.0/authorize")
+                .tokenUri(authority + "/oauth2/v2.0/token")
+                .jwkSetUri(authority + "/discovery/v2.0/keys")
+                .issuerUri("https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0")
+                .userNameAttributeName("sub")
+                .scope("openid", "email", "profile", "offline_access", "https://graph.microsoft.com/Mail.ReadWrite")
+                .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+                .clientName("Personal Microsoft Outlook")
+                .build());
         }
 
         if (registrations.isEmpty()) {

@@ -85,16 +85,13 @@ class RecommendationDashboardJourneyTest extends PostgresJourneyTest {
         verifyNoInteractions(classifier,reader,gmailProvider,outlookProvider);
     }
 
-    @Test void browsingIsReadOnlyAndOptInProcessingSupportsPagedFilteredReviewAndExactBytes() throws Exception {
+    @Test void browsingIsReadOnlyAndAutomaticProcessingSupportsPagedFilteredReviewAndExactBytes() throws Exception {
         for(int i=0;i<13;i++)mail("personal-"+i,"{INBOX}",1000,"PERSONAL");
         mail("unknown","{INBOX}",500,null);
         var before=jdbc.queryForObject("SELECT jsonb_agg(to_jsonb(m) ORDER BY id)::text FROM message_metadata m",String.class);
         mockMvc.perform(get("/dashboard/api/recommendations").with(authenticatedAs(OWNER)))
-            .andExpect(status().isOk()).andExpect(jsonPath("$.enabled").value(false)).andExpect(jsonPath("$.assessed").value(0));
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM recommendation_processing",Long.class)).isZero();
+            .andExpect(status().isOk()).andExpect(jsonPath("$.enabled").value(true)).andExpect(jsonPath("$.assessed").value(0));
         assertThat(count(filter("PENDING","",""))).isEqualTo(14);
-        mockMvc.perform(post("/dashboard/api/recommendations/processing").with(authenticatedAs(OWNER)).with(csrfToken())
-            .contentType("application/json").content("{\"enabled\":true}")).andExpect(status().isOk());
         drain();
         assertThat(count(filter("KEEP_IN_INBOX","UNKNOWN","HUMAN_CORRESPONDENCE"))).isEqualTo(13);
         var f=filter("KEEP_IN_INBOX","","");var page=dashboard.page(account,f);var group=page.groups().getFirst().id();

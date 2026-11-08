@@ -65,8 +65,21 @@ public class AccountController {
             throw new ResponseStatusException(
                 HttpStatus.NOT_FOUND, "Connection provider is unavailable");
         }
-        accountSessions.beginAddAccount(request, authentication);
+        accountSessions.beginAddAccount(request, authentication, provider);
         return "redirect:/oauth2/authorization/" + provider;
+    }
+
+    @PostMapping("/dashboard/accounts/connect/{provider}")
+    public String dashboardConnect(@PathVariable String provider, HttpServletRequest request,
+            OAuth2AuthenticationToken authentication) {
+        return connect(provider, request, authentication);
+    }
+
+    @PostMapping("/dashboard/accounts/switch")
+    public String switchAccount(@RequestParam String account, HttpServletRequest request,
+            OAuth2AuthenticationToken authentication) {
+        accountSessions.resolve(request.getSession(), authentication, account);
+        return "redirect:/dashboard";
     }
 
     /**

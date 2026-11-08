@@ -34,20 +34,15 @@ public class OAuthProviderAvailability implements InitializingBean {
     @Value("${MICROSOFT_SECRET:}")
     private String microsoftSecretAlias;
 
-    @Value("${MICROSOFT_TENANT_ID:common}")
-    private String microsoftTenantId;
-
     public OAuthProviderAvailability() {
     }
 
     public OAuthProviderAvailability(String googleClientId, String googleClientSecret,
-                                     String microsoftClientId, String microsoftClientSecret,
-                                     String microsoftTenantId) {
+                                     String microsoftClientId, String microsoftClientSecret) {
         this.googleClientId = googleClientId;
         this.googleClientSecret = googleClientSecret;
         this.microsoftClientId = microsoftClientId;
         this.microsoftClientSecret = microsoftClientSecret;
-        this.microsoftTenantId = microsoftTenantId != null ? microsoftTenantId : "common";
     }
 
     @Override
@@ -96,7 +91,4 @@ public class OAuthProviderAvailability implements InitializingBean {
         return microsoftClientSecret;
     }
 
-    public String getMicrosoftTenantId() {
-        return microsoftTenantId != null ? microsoftTenantId : "common";
-    }
 }

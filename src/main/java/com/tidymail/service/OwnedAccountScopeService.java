@@ -29,6 +29,12 @@ public class OwnedAccountScopeService {
     public List<Long> resolve(OAuth2AuthenticationToken authentication, String selection) {
         AccountSession session = accountSessions.resolve(
             currentSession(), authentication, selection);
+        if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes request) {
+            String expected = request.getRequest().getHeader("X-TidyMail-Account");
+            if (expected != null && !expected.equals(session.activeAccountId().toString()))
+                throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.CONFLICT, "Mailbox changed. Reload the dashboard.");
+        }
         return List.of(session.activeAccountId());
     }
 

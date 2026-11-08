@@ -27,12 +27,23 @@ public class DashboardController {
     private final DashboardPreviewService previews;
     private final DashboardRepository repository;
     private final DashboardClassificationService classification;
+    private final com.tidymail.repository.UserAccountRepository accountRepository;
+    private final com.tidymail.mail.MailProvider gmail;
+    private final com.tidymail.config.OAuthProviderAvailability availability;
+    private record GmailLabels(java.time.Instant expiresAt, Map<String,String> names) {}
+    private final Map<Long,GmailLabels> gmailLabels = new java.util.concurrent.ConcurrentHashMap<>();
 
     public DashboardController(OwnedAccountScopeService accounts, DashboardService dashboard,
             DashboardGroupingService grouping, DashboardPreviewService previews, DashboardRepository repository,
             DashboardClassificationService classification, MessageEvidenceService evidence, ReviewedPatternService patterns,
             RecommendationService recommendations, RecommendationProcessingService processing, LabelingPipeline labeling,
-            LabelingReviewService labelingReview,com.tidymail.job.LabelingWorker labelingWorker) {
+            LabelingReviewService labelingReview,com.tidymail.job.LabelingWorker labelingWorker,
+            com.tidymail.repository.UserAccountRepository accountRepository,
+            @org.springframework.beans.factory.annotation.Qualifier("gmailMailService") com.tidymail.mail.MailProvider gmail,
+            com.tidymail.config.OAuthProviderAvailability availability) {
+        this.accountRepository=accountRepository;
+        this.gmail=gmail;
+        this.availability=availability;
         this.labelingReview=labelingReview;this.labelingWorker=labelingWorker;
         this.recommendations=recommendations; this.processing=processing;this.labeling=labeling;
         this.patterns = patterns;
@@ -57,8 +68,12 @@ public class DashboardController {
     }
 
     @GetMapping
-    public String dashboard(OAuth2AuthenticationToken auth) {
-        account(auth);
+    public String dashboard(OAuth2AuthenticationToken auth, org.springframework.ui.Model model) {
+        var active = accountRepository.findById(account(auth)).orElseThrow();
+        model.addAttribute("mailboxAccounts", accountRepository.findAllByOwnerKeyOrderByIdAsc(active.getOwnerKey()));
+        model.addAttribute("activeAccount", active.getId());
+        model.addAttribute("outlook", "microsoft".equals(active.getProvider()));
+        model.addAttribute("outlookAvailable", availability.isMicrosoftConfigured());
         return "dashboard";
     }
 
@@ -66,6 +81,25 @@ public class DashboardController {
     @ResponseBody
     public DashboardRepository.Page page(@RequestParam Map<String, String> parameters, OAuth2AuthenticationToken auth) {
         return dashboard.page(account(auth), DashboardFilter.from(parameters));
+    }
+
+    @GetMapping("/api/gmail-labels") @ResponseBody
+    public Map<String,String> gmailLabels(OAuth2AuthenticationToken auth) {
+        long account = account(auth);
+        var now = java.time.Instant.now();
+        return gmailLabels.compute(account,(id,cached) -> {
+            if(cached!=null && cached.expiresAt().isAfter(now)) return cached;
+            var owner=accountRepository.findById(id).orElseThrow();
+            if(!"google".equals(owner.getProvider())) return new GmailLabels(now.plusSeconds(600),Map.of());
+            try {
+                var names=new TreeMap<String,String>();
+                for(var label:gmail.listFoldersOrLabels(owner))
+                    if("user-label".equals(label.type())) names.put(label.id(),label.name());
+                return new GmailLabels(now.plusSeconds(600),names);
+            } catch(RuntimeException unavailable) {
+                return new GmailLabels(now.plusSeconds(60),cached==null ? Map.of() : cached.names());
+            }
+        }).names();
     }
 
     @GetMapping("/api/inbox-composition")

@@ -98,8 +98,7 @@ class SecurityConfigIntegrationTest {
         OAuthProviderAvailability props = new OAuthProviderAvailability(
             "", "",
             "ms-test-id",
-            "ms-test-secret",
-            "9188040d-6c67-4c5b-b112-36a304b66dad"
+            "ms-test-secret"
         );
         String[] expectedMicrosoftScopes = {
             "openid", "email", "profile", "offline_access",
@@ -108,10 +107,13 @@ class SecurityConfigIntegrationTest {
         String expectedIssuerPrefix = "https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0";
         assertThat(props.isMicrosoftConfigured()).isTrue();
         assertThat(props.isGoogleConfigured()).isFalse();
-        assertThat(props.getMicrosoftTenantId()).isEqualTo("9188040d-6c67-4c5b-b112-36a304b66dad");
+        var registration = new com.tidymail.security.SecurityConfig().clientRegistrationRepository(props)
+            .findByRegistrationId("microsoft");
+        assertThat(registration.getProviderDetails().getIssuerUri()).isEqualTo(expectedIssuerPrefix);
+        assertThat(registration.getScopes()).containsExactlyInAnyOrder(expectedMicrosoftScopes);
 
         OAuthProviderAvailability gProps = new OAuthProviderAvailability(
-            "google-id", "google-secret", "", "", "common"
+            "google-id", "google-secret", "", ""
         );
         assertThat(gProps.isGoogleConfigured()).isTrue();
         assertThat(gProps.isMicrosoftConfigured()).isFalse();

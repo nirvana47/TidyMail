@@ -40,7 +40,8 @@ public class DashboardPreviewService {
         var targets=jdbc.queryForList(repository.filtered(request.filter().cleanupScope())+"""
           SELECT m.provider_message_id,m.dashboard_message_id,m.subject_header,m.size_estimate,
             COALESCE(m.dashboard_from_address,m.from_address,'Unknown sender') address,m.received_at,
-            f.id IS NOT NULL AS eligible,'INBOX'=ANY(m.labels) inbox,m.unread,
+            f.id IS NOT NULL AS eligible,m.provider,
+            CASE WHEN m.provider='microsoft' THEN NOT('OUTLOOK_ARCHIVE'=ANY(m.labels)) ELSE 'INBOX'=ANY(m.labels) END can_archive,m.unread,
             EXISTS(SELECT 1 FROM protected_senders protected WHERE protected.account_id=m.account_id
               AND protected.sender_address=lower(COALESCE(m.dashboard_from_address,m.from_address,''))) protected
           FROM message_metadata m LEFT JOIN filtered f ON f.id=m.id
@@ -50,12 +51,13 @@ public class DashboardPreviewService {
         int effective=0,protectedCount=0,unknownSizes=0; long knownBytes=0,effectiveBytes=0;
         for(var target:targets) {
             boolean protectedTarget=Boolean.TRUE.equals(target.get("protected"));if(protectedTarget) protectedCount++;
+            String archiveState="microsoft".equals(target.get("provider")) ? "in Archive" : "outside Inbox";
             String reason=!Boolean.TRUE.equals(target.get("eligible")) ? "No longer matches these filters or received-mail eligibility"
                 : protectedTarget ? "Protected sender"
-                : request.action().equals("ARCHIVE") && !Boolean.TRUE.equals(target.get("inbox")) ? "Already outside Inbox"
+                : request.action().equals("ARCHIVE") && !Boolean.TRUE.equals(target.get("can_archive")) ? "Already " + archiveState
                 : request.action().equals("MARK_READ") && !Boolean.TRUE.equals(target.get("unread")) ? "Already read"
                 : request.action().equals("MARK_READ_ARCHIVE") && !Boolean.TRUE.equals(target.get("unread"))
-                    && !Boolean.TRUE.equals(target.get("inbox")) ? "Already read and outside Inbox" : "Eligible";
+                    && !Boolean.TRUE.equals(target.get("can_archive")) ? "Already read and " + archiveState : "Eligible";
             boolean applies=reason.equals("Eligible");if(applies) effective++;
             if (target.get("size_estimate") instanceof Number size) { knownBytes+=size.longValue(); if(applies)effectiveBytes+=size.longValue(); } else unknownSizes++;
             target.put("effective",applies);target.put("reason",reason);

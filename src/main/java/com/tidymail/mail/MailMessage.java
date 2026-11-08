@@ -25,7 +25,17 @@ public record MailMessage(
         BigInteger providerRevision,
         AttachmentState attachmentState,
         Instant observationStartedAt,
-        EmailSnippet snippet) {
+        EmailSnippet snippet,
+        Outlook outlook) {
+    public record Outlook(String folderId, List<String> categories, String webLink) {}
+
+    public MailMessage(String id, String threadId, String provider, Instant receivedAt,
+            Map<String, List<String>> headers, Set<String> labelIds, Long sizeEstimate,
+            BigInteger providerRevision, AttachmentState attachmentState, Instant observationStartedAt,
+            EmailSnippet snippet) {
+        this(id, threadId, provider, receivedAt, headers, labelIds, sizeEstimate, providerRevision,
+            attachmentState, observationStartedAt, snippet, null);
+    }
     public MailMessage(String id, String threadId, String provider, Instant receivedAt,
             Map<String, List<String>> headers, Set<String> labelIds, Long sizeEstimate,
             BigInteger providerRevision, AttachmentState attachmentState, Instant observationStartedAt) {
@@ -42,7 +52,7 @@ public record MailMessage(
 
     public MailMessage observedSince(Instant startedAt) {
         return new MailMessage(id, threadId, provider, receivedAt, headers, labelIds, sizeEstimate, providerRevision,
-                attachmentState, startedAt, snippet);
+                attachmentState, startedAt, snippet, outlook);
     }
 
     public MailMessage(

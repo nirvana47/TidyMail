@@ -113,3 +113,6 @@ tidymail-ux-rehaul-draft/
 
 # Local recoverable database snapshots and classification validation reports
 .local-backups/
+
+# Private account-specific relay recipients
+/config/gmail-relays/application.properties

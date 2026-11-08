@@ -11,7 +11,7 @@
     <script defer th:src="@{/static/js/dashboard.js}"></script>
 </head>
 
-<body>
+<body th:attr="data-provider=${outlook ? 'microsoft' : 'google'},data-account=${activeAccount}">
     <a href="#senderTable" class="skip-link">Skip to senders</a>
     <main class="app">
         <header class="row spread">
@@ -24,14 +24,30 @@
                         account…</span>
                     <form th:action="@{/logout}" method="post"><button>Sign out</button></form>
                 </div>
+                <div class="row">
+                    <form th:if="${#lists.size(mailboxAccounts)>1}" th:action="@{/dashboard/accounts/switch}" method="post">
+                        <select name="account" aria-label="Mailbox account">
+                            <option th:each="mailbox : ${mailboxAccounts}" th:value="${mailbox.id}"
+                                th:selected="${mailbox.id == activeAccount}"
+                                th:text="${mailbox.email + (mailbox.provider == 'microsoft' ? ' · Outlook' : ' · Gmail')}"></option>
+                        </select>
+                        <button>Switch</button>
+                    </form>
+                    <form th:if="${outlookAvailable}" th:action="@{/dashboard/accounts/connect/microsoft}" method="post">
+                        <button>Connect Outlook</button>
+                    </form>
+                    <form th:if="${outlook}" th:action="@{/api/metadata-sync}" method="post">
+                        <input name="returnTo" type="hidden" value="/dashboard"><button>Refresh mail</button>
+                    </form>
+                </div>
                 <div class="row" style="margin-top:10px"><span id="syncStatus" class="sync-line" role="status">Checking
                         sync…</span><button id="activityOpen">Activity</button></div>
             </div>
         </header>
-        <nav class="row" aria-label="Mailbox views"><button id="sendersView" aria-pressed="true">Senders</button><button id="suggestionsView" aria-pressed="false">Suggestions</button></nav>
+        <nav class="row" aria-label="Mailbox views"><button id="sendersView" aria-pressed="true">Senders</button><button id="suggestionsView" th:hidden="${outlook}" aria-pressed="false">Suggestions</button></nav>
         <section id="suggestionsPanel" class="surface evidence" hidden><h2>Suggestions</h2><button id="largeEmails">Large emails (&gt;1 MB)</button><button id="patternsOpen">Review Amazon / Quora patterns</button><p>Find large messages, including archived and Sent mail. Review and select emails before taking action.</p></section>
         <details class="surface evidence" aria-label="Email recommendations"><summary>Label and recommendation status</summary>
-            <div class="row"><strong>Labels</strong><span id="labelingCoverage" role="status">Checking label coverage…</span><button id="labelingOpen" type="button">Label / reclassify emails</button></div>
+            <div class="row"><strong>Labels</strong><span id="labelingCoverage" role="status">Checking label coverage…</span><button id="labelingOpen" th:hidden="${outlook}" type="button">Label / reclassify emails</button></div>
             <div class="row"><strong>Recommendations</strong><span id="recommendationStatus" role="status">Checking…</span>
                 <button id="recommendationProcessing" type="button">Build recommendations</button></div>
             <p class="muted">Labels and suggestions use information already saved locally. Review and select emails before taking any cleanup action.</p>
@@ -54,7 +70,7 @@
             <details class="evidence"><summary>More filters and label tools</summary>
               <div class="row">
                 <label>From <input type="date" id="start"></label><label>Through <input type="date" id="end"></label>
-                <button id="classificationOpen">Legacy category tools</button>
+                <button id="classificationOpen" th:hidden="${outlook}">Legacy category tools</button>
                 <span id="classificationSummary" class="muted" role="status"></span>
                 <label>Recommendation <select id="recommendation" aria-label="Filter by recommendation">
                     <option value="">All (including unassessed)</option><option value="KEEP_IN_INBOX">Keep in inbox</option>
@@ -94,11 +110,20 @@
                     <label><input type="checkbox" name="labelFilter" value="SECURITY">Security</label>
                     <label><input type="checkbox" name="labelFilter" value="BILL">Bill</label>
                     <label><input type="checkbox" name="labelFilter" value="STATEMENT">Statement</label>
+                    <label><input type="checkbox" name="labelFilter" value="BANKING">Banking</label>
+                    <label><input type="checkbox" name="labelFilter" value="INVESTING">Investing</label>
+                    <label><input type="checkbox" name="labelFilter" value="SHOPPING">Shopping</label>
+                    <label><input type="checkbox" name="labelFilter" value="DOCUMENT_COMMENT">Document comment</label>
+                    <label><input type="checkbox" name="labelFilter" value="OLDER_DOCUMENT_COMMENT">Document comment older than 30 days</label>
+                    <label><input type="checkbox" name="labelFilter" value="PAST_EVENT">Past event</label>
+                    <label th:hidden="${outlook}"><input type="checkbox" name="labelFilter" value="GMAIL_PROMOTIONS">Gmail: Promotions</label>
                     <label hidden><input type="checkbox" name="labelFilter" value="SENT">Sent</label>
                     <label><input type="checkbox" name="labelFilter" value="OTHER">Other</label>
                     <label><input type="checkbox" name="labelFilter" value="UNCLASSIFIED">Unclassified</label>
                 </div>
-                <p class="muted">Messages with labels still pending may not appear in filtered results.</p>
+                <div class="label-choices" id="gmailLabelChoices"></div>
+                <label id="shoppingExclusions" hidden><input type="checkbox" id="excludeProtectedShopping">Exclude Receipt and Security</label>
+                <p class="muted" id="localLabelProgress">Messages with labels still pending may not appear in filtered results.</p>
             </details>
             <div class="metrics">
                 <div class="metric"><b id="matching">—</b><span class="muted">Matching messages</span></div>
@@ -276,7 +301,7 @@
         <details>
             <summary>Delete local account data</summary>
             <p>This removes your locally indexed data and connection credentials for linked accounts. It does not delete
-                Gmail messages.</p>
+                messages in Gmail or Outlook.</p>
             <form th:action="@{/logout/delete-data}" method="post"><label>Type DELETE <input name="confirmation"
                         pattern="DELETE" required autocomplete="off"></label><button>Delete local data and sign
                     out</button></form>

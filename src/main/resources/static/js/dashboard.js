@@ -1,5 +1,6 @@
 'use strict';
 (() => {
+  const outlook = document.body.dataset.provider === 'microsoft';
   const $ = id => document.getElementById(id);
   const state = { scope: 'inbox', suggestion: '', page: 0, messagePage: 0, address: null, tab: 'messages', data: null, focused: null, details: null, action: 'MARK_READ', preview: null, targetPage: 0, revision: 0 };
   const selected = new Map(), expanded = new Map(), groupingSelection = new Map();
@@ -7,7 +8,7 @@
   let allMatchingSelected = false, composition = null;
   let jobs = [], confirming = false, jobsRequest = 0, historyPage = 0, historyTotal = 0, historyLoading = false;
   const history = new Map();
-  const pendingText = state => ({ QUEUED: 'Cleanup queued', DISPATCH_INTENT: 'Cleanup in progress', AWAITING_VERIFICATION: 'Outcome unresolved — checking labels' }[state] || '');
+  const pendingText = state => ({ QUEUED: 'Cleanup queued', DISPATCH_INTENT: 'Cleanup in progress', AWAITING_VERIFICATION: 'Outcome unresolved — checking provider state' }[state] || '');
   const jobLabel = j => j.cancelRequested ? (j.remaining ? 'Cancellation pending — claimed requests may finish' : j.unresolved ? 'Cancelled — unresolved outcomes retained' : 'Cancelled — completed changes stay') : j.remaining ? 'Processing' : j.verificationPending ? 'Verifying' : j.unresolved ? 'Finished — unresolved outcomes retained' : j.failed ? 'Completed with failures' : 'Completed';
   function rememberFocus(container) {
     const current = document.activeElement;
@@ -27,7 +28,7 @@
   }
   const actionName = action => ({ MARK_READ: 'Mark as Read', ARCHIVE: 'Archive', MARK_READ_ARCHIVE: 'Mark as Read + Archive', TRASH: 'Move to Trash' }[action] || action);
   const activeJob = j => j.remaining > 0 || j.verificationPending;
-  const jobCounts = j => `${fmt(j.changed)} ${j.executionMode === 'RESPONSE' ? 'accepted by Gmail' : 'changed'} · ${fmt(j.failed)} failed · ${fmt(j.skipped)} skipped · ${fmt(j.unresolved)} unresolved · ${fmt(j.cancelled)} cancelled before dispatch · ${fmt(j.remaining)} remaining of ${fmt(j.total)}`;
+  const jobCounts = j => `${fmt(j.changed)} ${j.executionMode === 'RESPONSE' ? 'accepted by Gmail' : 'changed'} · ${fmt(j.failed)} failed · ${fmt(j.skipped)} skipped · ${fmt(j.unresolved)} unresolved${j.partialRead ? ' · '+fmt(j.partialRead)+' read, archive incomplete' : ''} · ${fmt(j.cancelled)} cancelled before dispatch · ${fmt(j.remaining)} remaining of ${fmt(j.total)}`;
   function renderJobs() {
     const focused = document.activeElement?.dataset?.cancelJob;
     $('jobProgress').replaceChildren();
@@ -49,7 +50,7 @@
     $('historyMore').hidden = historyTotal <= all.size;
     $('historySummary').textContent = historyTotal ? `${fmt(all.size)} of ${fmt(Math.max(historyTotal, all.size))} saved jobs` : 'Saved cleanup history';
     if (focused && $('activity').open) { const next = [...$('activityContent').querySelectorAll('button')].find(b => b.dataset.cancelJob === focused); (next || $('activity').querySelector('[data-close]')).focus(); }
-    const sync = state.data?.sync || {}; if (jobs.some(j => j.retryReason?.startsWith('Reconnect')) || sync.oauth_status === 'REAUTH_REQUIRED' || sync.lifecycle === 'REAUTH_REQUIRED') { const link = node('a', 'Reconnect Gmail'); link.dataset.focusKey = 'reconnect'; link.href = '/oauth2/authorization/google'; $('activityContent').append(link); }
+    const sync = state.data?.sync || {}; if (jobs.some(j => j.retryReason?.startsWith('Reconnect')) || sync.oauth_status === 'REAUTH_REQUIRED' || sync.lifecycle === 'REAUTH_REQUIRED') { const link = node('a', outlook ? 'Reconnect Outlook' : 'Reconnect Gmail'); link.dataset.focusKey = 'reconnect'; link.href = '/oauth2/authorization/' + (outlook ? 'microsoft' : 'google'); $('activityContent').append(link); }
     restore();
   }
   async function cancelJob(id, button) { const hadFocus = document.activeElement === button; button.disabled = true; try { await api(`jobs/${id}/cancel`, {}); notice('Cancellation requested. Remaining unclaimed work stops; claimed requests may finish. Completed changes are not reversed.'); await pollJobs(); if (hadFocus && document.activeElement === document.body) ($('activity').open ? $('activity').querySelector('[data-close]') : $('activityOpen')).focus(); } catch (error) { notice(error.message); button.disabled = false; if (hadFocus) button.focus(); } }
@@ -77,7 +78,7 @@
     if (dialog) { let feedback = dialog.querySelector('.dialog-notice'); if (!feedback) { feedback = node('p', undefined, 'notice dialog-notice'); feedback.setAttribute('role', 'status'); dialog.querySelector('h2').parentElement.after(feedback); } feedback.textContent = text; }
   }
   async function api(path, body, signal) {
-    const headers = { 'Accept': 'application/json' };
+    const headers = { 'Accept': 'application/json', 'X-TidyMail-Account': document.body.dataset.account };
     if (body !== undefined) { headers['Content-Type'] = 'application/json'; headers[document.querySelector('meta[name=_csrf_header]').content] = document.querySelector('meta[name=_csrf]').content; }
     const response = await fetch('/dashboard/api/' + path, { method: body === undefined ? 'GET' : 'POST', headers, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store', signal });
     if (response.redirected || response.status === 401) throw new Error('Your session ended. Sign in again to continue.');
@@ -87,12 +88,39 @@
   function dateTimeText(raw) { return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short', timeZone: zone }).format(new Date(raw)); }
   function dateText(raw) { return raw ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeZone: zone }).format(new Date(raw)) : 'Undated'; }
   const labelChoices = [...document.querySelectorAll('[name=labelFilter]')];
+  let gmailLabelNames = {}, gmailLabelsRequestedAt = 0;
+  function loadGmailLabels() {
+    if (outlook || Date.now() - gmailLabelsRequestedAt < 600000) return;
+    gmailLabelsRequestedAt = Date.now();
+    api('gmail-labels').then(names => {
+      gmailLabelNames = names;
+      const selectedLabels = new Set(labelChoices.filter(input => input.checked).map(input => input.value));
+      const custom = $('gmailLabelChoices');
+      for (let index = labelChoices.length - 1; index >= 0; index--)
+        if (custom.contains(labelChoices[index])) labelChoices.splice(index, 1);
+      custom.replaceChildren();
+      for (const [id, name] of Object.entries(names).sort((a,b) => a[1].localeCompare(b[1]))) {
+        if (!/^Label_[0-9]{1,30}$/.test(id)) continue;
+        const label = node('label'), input = node('input');
+        input.type = 'checkbox';
+        input.name = 'labelFilter';
+        input.value = 'GMAIL_' + id.toUpperCase();
+        input.checked = selectedLabels.delete(input.value);
+        input.addEventListener('change', labelFilterChanged);
+        label.append(input, document.createTextNode('Gmail label: ' + name));
+        custom.append(label);
+        labelChoices.push(input);
+      }
+      if ([...selectedLabels].some(label => label.startsWith('GMAIL_LABEL_'))) labelFilterChanged();
+      else if (state.details && state.tab === 'messages') renderDetail();
+    }).catch(() => { gmailLabelsRequestedAt = Date.now() - 540000; });
+  }
   function filter() {
     return { scope: state.scope, q: $('search').value, start: $('start').value, end: $('end').value,
       zone, page: state.page, sort: $('sort').value, suggestion: state.suggestion,
       recommendation: $('recommendation').value, importance: $('importance').value,
       labels: labelChoices.filter(input => input.checked).map(input => input.value).join(','), match: $('labelMatch').value,
-      composition: composition?.key || '' };
+      composition: composition?.key || '', excludeProtectedShopping: $('excludeProtectedShopping').checked };
   }
   const query = (value = filter()) => new URLSearchParams(Object.entries(value)).toString();
   function checkbox(label, count, match, onChange) {
@@ -164,6 +192,8 @@
         ? 'Reconnect required' : sync.error_code || sync.lifecycle === 'ERROR' ? 'Sync needs attention'
         : !sync.initial_batch_completed_at ? 'Importing mail…' : sync.backfill_status === 'RUNNING'
         ? 'Importing older mail…' : `Last refreshed ${refreshAge(sync.incremental_last_success_at || sync.initial_batch_completed_at)}`;
+      if (outlook && sync.backfill_status !== 'COMPLETE' && !sync.error_code && sync.oauth_status !== 'REAUTH_REQUIRED')
+        $('syncStatus').textContent = `Importing mail · ${fmt(data.coverage.indexed)} indexed`;
       if (background && !forceDetails && JSON.stringify(data) === JSON.stringify(state.data)) return;
       // Status text is not message evidence. Keep mailbox freshness timestamps and
       // all existing row/count/revision signals; these are not a complete row version.
@@ -179,7 +209,7 @@
       $('matching').textContent = fmt(data.summary.messages); $('unreadCount').textContent = fmt(data.summary.unread); $('groupCount').textContent = fmt(data.summary.groups);
       const c = data.coverage;
       $('coverage').textContent = Number(c.indexed) ? `${fmt(c.indexed)} indexed emails · Indexed dates: ${dateText(c.oldest)}–${dateText(c.newest)} · Results include indexed messages only · As of ${dateText(c.as_of)} · ${filter().zone}` : 'Coverage unavailable — no messages indexed yet.';
-      const gaps = []; if (c.unknown_labels) gaps.push(`${fmt(c.unknown_labels)} messages have unknown labels${state.scope === 'indexed' ? '' : ' and are excluded from received mail'}`); if (c.ambiguous_sent) gaps.push(`${fmt(c.ambiguous_sent)} Sent messages lack independent delivery evidence`); if (c.unknown_identity) gaps.push(`${fmt(c.unknown_identity)} identities are kept separate pending fresh metadata`); if (data.summary.undated) gaps.push(`${fmt(data.summary.undated)} matching messages are undated`);
+      const gaps = []; if (c.unknown_labels) gaps.push(`${fmt(c.unknown_labels)} messages have unknown labels${state.scope === 'indexed' ? '' : ' and are excluded from received mail'}`); if (!outlook && c.ambiguous_sent) gaps.push(`${fmt(c.ambiguous_sent)} Sent messages lack independent delivery evidence`); if (c.unknown_identity) gaps.push(`${fmt(c.unknown_identity)} identities are kept separate pending fresh metadata`); if (data.summary.undated) gaps.push(`${fmt(data.summary.undated)} matching messages are undated`);
       $('coverage').textContent += ` · ${bytesText(data.summary.known_bytes)} estimated${Number(data.summary.unknown_sizes) ? ' · '+fmt(data.summary.unknown_sizes)+' sizes unknown' : ''}`;
       if (gaps.length) $('coverage').textContent += ' · ' + gaps.join(' · ');
       if (state.scope === 'indexed') $('coverage').textContent += ' · Includes Sent, Spam, Trash, Drafts and unknown labels. Cleanup still requires received-mail eligibility or a Sent storage suggestion.';
@@ -307,6 +337,7 @@
         let details;
         if (tab === 'messages') {
           details = await api(`groups/${group}?${parameters}`, undefined, controller.signal);
+          if (details.recommendations?.some(view => view.providerLabelIds?.some(id => id.startsWith('Label_')))) loadGmailLabels();
         } else {
           const addresses = await api(`groups/${group}/addresses?${query()}`, undefined, controller.signal);
           const rows = addresses.addresses.filter(a => !state.address || a.address === state.address);
@@ -330,7 +361,9 @@
     $('detailTitle').textContent = state.focused.label; $('detailBadge').textContent = state.focused.label.slice(0, 1).toUpperCase();
     $('detailCounts').textContent = state.details ? `${fmt(state.details.total)} matching ${$('detailUnreadOnly').checked ? 'unread messages' : 'messages'}` : `${fmt(state.focused.messages)} matching messages · ${fmt(state.focused.unread)} unread`;
     $('detailUnreadOnly').disabled = state.tab !== 'messages' || selectionBusy > 0;
-    const content = $('detailContent'), restore = rememberFocus(content); content.replaceChildren(); const detail = state.details;
+    const content = $('detailContent'), restore = rememberFocus(content);
+    const expandedLabels = new Set([...content.querySelectorAll('details[data-message-labels][open]')].map(el => el.dataset.messageLabels));
+    content.replaceChildren(); const detail = state.details;
     if (!detail) { content.append(node('p', 'Loading indexed details…', 'evidence')); return; }
     if (state.address) { const back=node('button','All messages in this group'); back.onclick=()=>{if (!allMatchingSelected) clearSelection();state.address=null;state.messagePage=0;state.details=null;renderDetail();loadDetails();}; content.append(node('p',state.address,'evidence'),back); }
     if (state.tab === 'messages') {
@@ -344,8 +377,16 @@
         visible.append(all);
       }
       content.append(visible);
-      for (const m of detail.messages) { const row = node('div', undefined, 'message-row'), text = node('div', undefined, 'message-text'); text.append(node('span', m.subject || '(No subject)', 'message-subject'), node('small', `${m.displayName ? m.displayName+' · ' : ''}${m.address}`, 'muted'), node('small', `${dateText(m.receivedAt)} · ${m.unread ? 'Unread' : 'Read'}`, 'muted')); if (m.reviewedPattern) text.append(node('small',`Reviewed pattern: ${categoryName(m.reviewedPattern)} · Importance is not determined by this pattern`, 'muted')); if (m.pendingState) text.append(node('small', pendingText(m.pendingState), 'pending')); const recommendation = (detail.recommendations || []).find(r => r.message === m.id);
-        appendMessageLabels(text, m, recommendation); appendEvidence(text,m); appendRecommendation(text,m,recommendation); row.append(checkbox(`Select message ${m.subject || '(No subject)'}`, 1, selected.has(m.id) ? 1 : 0, checked => { if (checked) selected.set(m.id, m); else selected.delete(m.id); invalidatePreview(); renderSelectionControls(); }), text); content.append(row); }
+      for (const m of detail.messages) {
+        const row = node('div', undefined, 'message-row'), text = node('div', undefined, 'message-text');
+        const recommendation = (detail.recommendations || []).find(r => r.message === m.id);
+        const senderName = m.displayName || recommendation?.shoppingBrand;
+        text.append(node('span', m.subject || '(No subject)', 'message-subject'),
+          node('small', senderName ? `${senderName} · ${m.address}` : m.address, 'muted'),
+          node('small', `${dateText(m.receivedAt)} · ${m.unread ? 'Unread' : 'Read'}`, 'muted'));
+        if (m.reviewedPattern) text.append(node('small',`Reviewed pattern: ${categoryName(m.reviewedPattern)} · Importance is not determined by this pattern`, 'muted'));
+        if (m.pendingState) text.append(node('small', pendingText(m.pendingState), 'pending'));
+        appendMessageLabels(text, m, recommendation, expandedLabels.has(m.id)); appendEvidence(text,m); appendRecommendation(text,m,recommendation); row.append(checkbox(`Select message ${m.subject || '(No subject)'}`, 1, selected.has(m.id) ? 1 : 0, checked => { if (checked) selected.set(m.id, m); else selected.delete(m.id); invalidatePreview(); renderSelectionControls(); }), text); content.append(row); }
       if (!detail.total) content.append(node('p', 'No matching messages in this group.', 'evidence'));
       const paging = node('div', undefined, 'paging'), prev = node('button', '‹'), next = node('button', '›'); prev.setAttribute('aria-label', 'Previous message page'); next.setAttribute('aria-label', 'Next message page'); prev.disabled = state.messagePage === 0; next.disabled = (state.messagePage + 1) * 10 >= detail.total;
       prev.dataset.focusKey = 'message-prev'; next.dataset.focusKey = 'message-next'; prev.onclick = () => pageMessages(-1, prev); next.onclick = () => pageMessages(1, next); paging.append(prev, node('span', detail.messages.length ? `${state.messagePage * 10 + 1}–${state.messagePage * 10 + detail.messages.length} of ${fmt(detail.total)}` : '0 messages'), next); content.append(paging);
@@ -382,7 +423,7 @@
       $('confirmScope').textContent = `${preview.filter.scope === 'inbox' ? 'Inbox' : preview.filter.scope === 'indexed' ? 'All indexed mail' : preview.filter.suggestion === 'large' ? 'Received and Sent mail' : 'All Mailbox'} · ${preview.filter.start || 'All indexed dates'}${preview.filter.end ? ' through ' + preview.filter.end : ''} · ${preview.filter.zone}${preview.filter.q ? ' · Search: ' + preview.filter.q : ''}`;
       $('confirmCounts').textContent = `${fmt(preview.selected)} fixed targets · ${fmt(preview.effective)} eligible changes · ${fmt(preview.skipped)} will be skipped (${fmt(preview.protectedCount)} protected) · ${bytesText(preview.knownBytes)} selected${preview.unknownSizes ? ' · '+fmt(preview.unknownSizes)+' sizes unknown' : ''}`;
       $('confirmCoverage').textContent = `Indexed messages only · ${dateText(preview.coverage.oldest)}–${dateText(preview.coverage.newest)} · As of ${dateText(preview.coverage.as_of)}`;
-      $('actionExplanation').textContent = preview.action === 'ARCHIVE' ? 'Archive removes mail from Inbox but does not free storage.' : preview.action === 'TRASH' ? `Move to Trash may reclaim approximately ${bytesText(preview.effectiveBytes)} after Gmail permanently deletes the emails, normally after 30 days.` : preview.action === 'MARK_READ_ARCHIVE' ? 'Gmail removes the Unread and Inbox labels in one request. Messages already read and outside Inbox are skipped.' : 'Already-read messages will be skipped.';
+      $('actionExplanation').textContent = preview.action === 'ARCHIVE' ? (outlook ? 'Move selected emails to Archive.' : 'Archive removes mail from Inbox but does not free storage.') : preview.action === 'TRASH' ? outlook ? 'Move selected emails to Deleted Items.' : `Move to Trash may reclaim approximately ${bytesText(preview.effectiveBytes)} after Gmail permanently deletes the emails, normally after 30 days.` : preview.action === 'MARK_READ_ARCHIVE' ? (outlook ? 'Mark selected emails as read, then move them to Archive.' : 'Gmail removes the Unread and Inbox labels in one request. Messages already read and outside Inbox are skipped.') : 'Already-read messages will be skipped.';
       $('confirm').querySelector('.dialog-notice')?.remove(); $('confirm').showModal(); await loadTargets();
     } catch (error) { notice(error.message); } finally { updateSelection(); }
   }
@@ -493,16 +534,36 @@
     READ_OR_OLD_BILL:'Read or older financial mail under your retention preference.', BILL_RECORD_POLICY:'Your preference keeps bills.',
     PRIOR_SENT_CORRESPONDENCE:'You have previously emailed this exact address.', OBSERVED_CALENDAR:'A calendar invite was observed.'
   };
-  const recommendationLabelNames = { CONTACT:'Contact',CALENDAR_INVITE:'Calendar invite',LARGE_MESSAGE:'Large email',HAS_ATTACHMENTS:'Has attachments',HUMAN_CORRESPONDENCE:'Personal',SENT:'Sent' };
+  const recommendationLabelNames = { CONTACT:'Contact',CALENDAR_INVITE:'Calendar invite',LARGE_MESSAGE:'Large email',HAS_ATTACHMENTS:'Has attachments',HUMAN_CORRESPONDENCE:'Personal',PERSONAL:'Personal',SENT:'Sent',GMAIL_PROMOTIONS:'Gmail: Promotions',
+    OLDER_DOCUMENT_COMMENT:'Document comment older than 30 days' };
   function recommendationLabel(value) { return recommendationLabelNames[value] || value.toLowerCase().replaceAll('_',' ').replace(/^./,c=>c.toUpperCase()); }
   const recommendationDrafts=new Map(), openRecommendationEditors=new Set();
-  function appendMessageLabels(text, message, recommendation) {
+  function appendMessageLabels(text, message, recommendation, expanded) {
     const labels = new Set((recommendation?.labels || []).filter(label => !['UNKNOWN','SENT'].includes(label)).map(recommendationLabel));
     if (message.category !== 'UNCLASSIFIED') labels.add(recommendationLabel(message.category));
     if (message.contact) labels.add('Contact');
     if (message.calendarInvite) labels.add('Calendar invite');
     if (message.attachmentState === 'PRESENT') labels.add('Has attachments');
-    text.append(node('small', labels.size ? `Labels: ${[...labels].join(' · ')}` : 'Labels pending', 'muted'));
+    const reasons = new Map(Object.entries(recommendation?.labelReasons || {}).map(([key,value]) => [recommendationLabel(key),value]));
+    for (const id of recommendation?.providerLabelIds || []) {
+      if (!Object.hasOwn(gmailLabelNames,id)) continue;
+      const label = 'Gmail label: ' + gmailLabelNames[id];
+      labels.add(label);
+      reasons.set(label,'Gmail reports this custom label on the email.');
+    }
+    if (recommendation?.relayRecipients?.length)
+      text.append(node('small', `Relay recipient: ${recommendation.relayRecipients.join(', ')}`, 'muted'));
+    if (!labels.size) {
+      text.append(node('small', 'No labels shown', 'muted'));
+      return;
+    }
+    const detail = node('details', undefined, 'evidence');
+    detail.dataset.messageLabels = message.id;
+    detail.open = expanded;
+    detail.append(node('summary', `Labels: ${[...labels].join(' · ')}`));
+    for (const label of labels)
+      detail.append(node('small', label + ' — ' + (reasons.get(label) || 'From existing saved classification or message evidence.'), 'muted'));
+    text.append(detail);
   }
   function appendRecommendation(text,m,view) {
     const result=view?.freshness === 'CURRENT' ? view.result : null;
@@ -541,8 +602,12 @@
   let recommendationStatus=null,recommendationStatusBusy=false;
   function renderRecommendationStatus(status) {
     recommendationStatus=status;
+    $('localLabelProgress').textContent = status.error ? 'Local label processing needs a retry.' :
+      status.localChecked < status.indexed ? `${fmt(status.localChecked)} of ${fmt(status.indexed)} indexed emails checked for local labels.` :
+      'Local rules have checked all indexed emails. Some messages may have no matching label.';
     $('recommendationStatus').textContent=`${fmt(status.assessed)} of ${fmt(status.indexed)} emails have saved local recommendations${status.queued ? ' · updates queued' : ''}${status.error ? ' · refresh stopped; retry to continue' : !status.workerAvailable ? ' · automatic local refresh is disabled in this session' : status.enabled ? ' · refreshing locally' : ' · paused'}`;
-    if(status.labeling) {
+    if(outlook) $('labelingCoverage').textContent = 'Automatic local labels';
+    else if(status.labeling) {
       const c=status.labeling;
       const coverage=`${fmt(c.semanticCurrent)} of ${fmt(c.indexed)} received emails have current new-label results · ${fmt(Math.max(0,c.indexed-c.semanticCurrent))} still need labeling · ${fmt(c.mimeObserved)} inspected for calendar evidence`;
       $('labelingCoverage').textContent=coverage;
@@ -569,11 +634,13 @@
   };
   function updateLabelSummary() {
     const count = labelChoices.filter(input => input.checked).length;
+    $('shoppingExclusions').hidden = !labelChoices.some(input => input.value === 'SHOPPING' && input.checked);
     $('labelSummary').textContent = count ? `Labels (${count}, ${$('labelMatch').value === 'all' ? 'match all' : 'match any'})` : 'Labels';
   }
   function labelFilterChanged() { updateLabelSummary(); filtersChanged(); }
-  for (const input of [...labelChoices, $('labelMatch')]) input.addEventListener('change', labelFilterChanged);
-  $('clearLabels').onclick = () => { labelChoices.forEach(input => { input.checked = false; }); labelFilterChanged(); };
+  for (const input of [...labelChoices, $('labelMatch'), $('excludeProtectedShopping')]) input.addEventListener('change', labelFilterChanged);
+  $('labelFilter').addEventListener('toggle', () => { if ($('labelFilter').open) loadGmailLabels(); });
+  $('clearLabels').onclick = () => { labelChoices.forEach(input => { input.checked = false; }); $('excludeProtectedShopping').checked = false; labelFilterChanged(); };
   for (const id of ['recommendation', 'importance']) $(id).addEventListener('change', filtersChanged);
   function appendEvidence(text,m) {
     if (state.suggestion === 'large' && m.sent) text.append(node('small', 'Sent', 'evidence'));
@@ -585,6 +652,15 @@
     text.append(node('small', `${bytesText(m.sizeEstimate)} · ${m.attachmentState === 'PRESENT' ? 'Attachment found' : m.attachmentState === 'ABSENT' ? 'No attachments observed' : 'Attachments not checked'}`, 'muted'));
     if (m.snippet) text.append(node('p', m.snippet + (m.snippetState === 'TRUNCATED' ? '…' : ''), 'message-snippet'));
     else text.append(node('small', m.snippetState === 'ABSENT' ? 'No preview text available' : 'Preview text not checked', 'muted'));
+    if (outlook) {
+      if (m.outlookFolder) text.append(node('small', 'Folder · ' + m.outlookFolder, 'muted'));
+      if (m.outlookCategories?.length) text.append(node('small', 'Outlook categories · ' + m.outlookCategories.join(', '), 'muted'));
+      if (m.outlookWebLink) {
+        const link = node('a', 'Open in Outlook'); link.href = m.outlookWebLink;
+        link.target = '_blank'; link.rel = 'noopener noreferrer'; text.append(link);
+      }
+      return;
+    }
     const details=node('details'), summary=node('summary','Email details'), output=node('div'), check=node('button','Check details');
     details.open=openEvidence.has(m.id);
     details.addEventListener('toggle',()=>{if(details.isConnected){if(details.open)openEvidence.add(m.id);else openEvidence.delete(m.id);}});

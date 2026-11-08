@@ -66,7 +66,7 @@ public class JpaOAuth2AuthorizedClientService implements OAuth2AuthorizedClientS
 
         Optional<UserAccount> accountOpt = userAccountRepository
             .findByProviderAndProviderAccountId(provider, providerAccountId);
-        if (accountOpt.isEmpty()) {
+        if (accountOpt.isEmpty() || accountOpt.get().getEncryptedAccessToken() == null) {
             return null;
         }
 
@@ -75,7 +75,8 @@ public class JpaOAuth2AuthorizedClientService implements OAuth2AuthorizedClientS
         byte[] accessTokenBytes = cryptoUtil.decrypt(account.getEncryptedAccessToken());
         String accessTokenValue = new String(accessTokenBytes, StandardCharsets.UTF_8);
 
-        byte[] refreshTokenBytes = cryptoUtil.decrypt(account.getEncryptedRefreshToken());
+        byte[] refreshTokenBytes = account.getEncryptedRefreshToken() == null
+            ? new byte[0] : cryptoUtil.decrypt(account.getEncryptedRefreshToken());
         String refreshTokenValue = new String(refreshTokenBytes, StandardCharsets.UTF_8);
 
         Set<String> scopeSet = new HashSet<>();
@@ -159,6 +160,11 @@ public class JpaOAuth2AuthorizedClientService implements OAuth2AuthorizedClientS
             if (emailObj instanceof String s) {
                 email = s;
             }
+            if (email == null && "microsoft".equals(provider)
+                    && userInfoClaims.get("preferred_username") instanceof String username
+                    && username.contains("@")) {
+                email = username;
+            }
             Object nameObj = userInfoClaims.get("name");
             if (nameObj instanceof String s) {
                 displayName = s;
@@ -220,8 +226,8 @@ public class JpaOAuth2AuthorizedClientService implements OAuth2AuthorizedClientS
             account.setProvider(provider);
             account.setProviderAccountId(providerAccountId);
             account.setEmail(email != null ? email : providerAccountId);
-            account.setOwnerKey(account.getEmail().strip().toLowerCase(java.util.Locale.ROOT)
-                + ":" + provider);
+            account.setOwnerKey("microsoft".equals(provider) ? "microsoft:" + providerAccountId
+                : account.getEmail().strip().toLowerCase(java.util.Locale.ROOT) + ":" + provider);
             account.setDisplayName(displayName);
             account.setAvatarUrl(avatarUrl);
             account.setEncryptedAccessToken(encryptedAccessToken);

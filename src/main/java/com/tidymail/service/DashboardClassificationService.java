@@ -43,7 +43,7 @@ public class DashboardClassificationService {
             jdbc.update("""
               INSERT INTO dashboard_classification_targets(job_id,account_id,message_id)
               SELECT ?,m.account_id,m.dashboard_message_id FROM message_metadata m JOIN user_accounts a ON a.id=m.account_id
-              WHERE m.account_id=? AND m.dashboard_from_address IS NOT NULL AND m.dashboard_unit_kind IN ('ADDRESS','LIST') AND
+              WHERE m.account_id=? AND m.provider='google' AND m.dashboard_from_address IS NOT NULL AND m.dashboard_unit_kind IN ('ADDRESS','LIST') AND
               """+DashboardRepository.RECEIVED+"""
               AND m.classification_override IS NULL AND (m.classification_hash IS DISTINCT FROM m.classification_evidence_hash OR m.classification_version IS DISTINCT FROM ?)
               ON CONFLICT(job_id,message_id) DO NOTHING
@@ -75,7 +75,7 @@ public class DashboardClassificationService {
             jdbc.update("""
                 INSERT INTO dashboard_classification_targets(job_id,account_id,message_id)
                 SELECT ?,m.account_id,m.dashboard_message_id FROM message_metadata m JOIN user_accounts a ON a.id=m.account_id
-                WHERE m.account_id=? AND m.classification_override IS NULL AND m.dashboard_from_address IS NOT NULL
+                WHERE m.account_id=? AND m.provider='google' AND m.classification_override IS NULL AND m.dashboard_from_address IS NOT NULL
                   AND m.dashboard_unit_kind IN ('ADDRESS','LIST') AND
                 """+DashboardRepository.RECEIVED+"""
                 AND (m.classification_hash IS DISTINCT FROM m.classification_evidence_hash OR m.classification_version IS DISTINCT FROM ?)

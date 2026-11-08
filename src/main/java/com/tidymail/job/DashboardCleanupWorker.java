@@ -3,6 +3,7 @@ package com.tidymail.job;
 import com.tidymail.entity.UserAccount;
 import com.tidymail.mail.*;
 import com.tidymail.mail.sync.MailboxSyncProvider;
+import com.tidymail.mail.outlook.OutlookMailService;
 import com.tidymail.repository.UserAccountRepository;
 import com.tidymail.service.DashboardJobService;
 import com.tidymail.service.DashboardJobService.*;
@@ -23,10 +24,11 @@ public class DashboardCleanupWorker {
     private final DashboardJobService jobs;
     private final UserAccountRepository accounts;
     private final Map<String,MailProvider> providers;
+    private final OutlookMailService outlook;
     private final ScheduledExecutorService executor=Executors.newSingleThreadScheduledExecutor(r->{var t=new Thread(r,"dashboard-cleanup");t.setDaemon(true);return t;});
     private final AtomicBoolean running=new AtomicBoolean();
-    public DashboardCleanupWorker(DashboardJobService jobs,UserAccountRepository accounts,Map<String,MailProvider> providers) {
-        this.jobs=jobs;this.accounts=accounts;this.providers=providers;
+    public DashboardCleanupWorker(DashboardJobService jobs,UserAccountRepository accounts,Map<String,MailProvider> providers,OutlookMailService outlook) {
+        this.jobs=jobs;this.accounts=accounts;this.providers=providers;this.outlook=outlook;
     }
     @Value("${app.cleanup.worker.enabled:${spring.task.scheduling.enabled:true}}") private boolean enabled;
     @Value("${app.cleanup.poll-ms:1000}") private long pollMs;
@@ -48,27 +50,34 @@ public class DashboardCleanupWorker {
     public void runOnce() {
         if(TransactionSynchronizationManager.isActualTransactionActive())throw new IllegalStateException("Provider I/O cannot run inside a database transaction");
         var claim=jobs.claim();if(claim==null)return;
-        UserAccount account;MailProvider provider;MailboxSyncProvider reader;
+        UserAccount account;
+        MailProvider gmail = providers.get("gmailMailService");
+        java.util.function.Function<List<String>,List<MailMessage>> reader;
         try {
             account=accounts.findById(claim.account()).orElseThrow();
-            provider=providers.get("gmailMailService");
-            if(!account.getProvider().equals("google")||!(provider instanceof MailboxSyncProvider))throw new IllegalStateException("Gmail metadata provider unavailable");
-            reader=(MailboxSyncProvider)provider;
+            if (!(claim.outlook() ? "microsoft" : "google").equals(account.getProvider()))
+                throw new IllegalStateException("Cleanup provider unavailable");
+            reader=claim.outlook() ? ids -> outlook.getCurrentMetadata(account, ids)
+                : ids -> ((MailboxSyncProvider)gmail).getCleanupMetadata(account, ids);
         } catch(RuntimeException error){jobs.defer(claim,error);return;}
         if(claim.verification()) {
             Map<String,MailMessage> observations;RuntimeException failure=null;
-            try{observations=read(reader,account,claim.targets());}
+            try{observations=read(reader,claim.targets());}
             catch(RuntimeException error){observations=Map.of();failure=error;}
             jobs.complete(claim,null,claim.targets(),observations,failure);return;
         }
         Map<String,MailMessage> before=Map.of();
-        if(!claim.responseBased())try{before=read(reader,account,claim.targets());}catch(RuntimeException error){jobs.defer(claim,error);return;}
+        if(!claim.responseBased())try{before=read(reader,claim.targets());}catch(RuntimeException error){jobs.defer(claim,error);return;}
         var dispatch=jobs.dispatch(claim,before);if(dispatch==null)return;
         long started=System.nanoTime();
         RuntimeException failure=null;
         try{
-            if(claim.action().equals("MARK_READ"))provider.markReadOnce(account,dispatch.targets().stream().map(Target::providerId).toList());
-            else provider.cleanupOnce(account,dispatch.targets().stream().map(Target::providerId).toList(),BulkActionType.valueOf(claim.action()));
+            if (claim.outlook()) {
+                var target = dispatch.targets().getFirst();
+                outlook.apply(account, before.get(target.providerId()), BulkActionType.valueOf(claim.action()),
+                    () -> jobs.recordOutlookRead(dispatch));
+            } else if(claim.action().equals("MARK_READ"))gmail.markReadOnce(account,dispatch.targets().stream().map(Target::providerId).toList());
+            else gmail.cleanupOnce(account,dispatch.targets().stream().map(Target::providerId).toList(),BulkActionType.valueOf(claim.action()));
         } catch(RuntimeException error){failure=error;}
         if(claim.responseBased()){
             jobs.completeAcknowledged(dispatch,failure);
@@ -78,12 +87,12 @@ public class DashboardCleanupWorker {
             return;
         }
         Map<String,MailMessage> after;RuntimeException readFailure=null;
-        try{after=read(reader,account,dispatch.targets());}catch(RuntimeException error){after=Map.of();readFailure=error;}
+        try{after=read(reader,dispatch.targets());}catch(RuntimeException error){after=Map.of();readFailure=error;}
         jobs.complete(claim,dispatch.batch(),dispatch.targets(),after,failure,readFailure);
     }
-    private Map<String,MailMessage> read(MailboxSyncProvider reader,UserAccount account,List<Target> targets) {
+    private Map<String,MailMessage> read(java.util.function.Function<List<String>,List<MailMessage>> reader,List<Target> targets) {
         var ids=targets.stream().map(Target::providerId).toList();
-        var messages=reader.getCleanupMetadata(account,ids);
+        var messages=reader.apply(ids);
         if(messages==null)throw new IllegalStateException("Missing metadata response");
         Map<String,MailMessage> result=new HashMap<>();
         for(var message:messages) {
