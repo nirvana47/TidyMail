@@ -66,6 +66,10 @@
                         <option value="latest">Latest message</option>
                         <option value="size">Total estimated size</option>
                     </select></label>
+                <label>Group by <select id="groupBy" autocomplete="off">
+                        <option value="current">Domain, lists, and saved groups</option>
+                        <option value="address">Sender address</option>
+                    </select></label>
             </div>
             <details class="evidence"><summary>More filters and label tools</summary>
               <div class="row">
@@ -150,7 +154,7 @@
                     <table id="senderTable" tabindex="-1">
                         <thead>
                             <tr>
-                                <th aria-label="Select sender groups for organizing"></th>
+                                <th id="organizeColumn" aria-label="Select sender groups for organizing"></th>
                                 <th>Sender</th>
                                 <th aria-sort="descending"><button id="sortMessages" class="column-sort" aria-label="Sort by message count, highest first">Total ↓</button></th>
                                 <th aria-sort="none"><button id="sortUnread" class="column-sort" aria-label="Sort by unread count, highest first">Unread ↕</button></th>

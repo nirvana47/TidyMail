@@ -208,7 +208,8 @@ public class DashboardJobService {
                 AND (:action<>'MARK_READ' OR unread)
                 AND (:action NOT IN ('ARCHIVE','MARK_READ_ARCHIVE') OR (:action='MARK_READ_ARCHIVE' AND unread)
                   OR CASE WHEN provider='microsoft' THEN NOT('OUTLOOK_ARCHIVE'=ANY(labels)) ELSE 'INBOX'=ANY(labels) END)
-                AND NOT EXISTS(SELECT 1 FROM protected_senders s WHERE s.account_id=f.account_id AND s.sender_address=lower(f.address))
+                AND NOT EXISTS(SELECT 1 FROM protected_senders s WHERE s.account_id=f.account_id
+                  AND s.sender_address=lower(COALESCE(f.dashboard_from_address,f.from_address,'')))
                 """,p,UUID.class));
             Set<String> recipients=new HashSet<>(jdbc.queryForList("""
                 SELECT lower(email) FROM user_accounts WHERE id=:account

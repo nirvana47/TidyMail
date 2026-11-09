@@ -19,6 +19,9 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
+import org.springframework.security.oauth2.core.user.DefaultOAuth2User;
 
 class DashboardJourneyTest extends PostgresJourneyTest {
     static final String OWNER = "dashboard@example.test";
@@ -31,6 +34,8 @@ class DashboardJourneyTest extends PostgresJourneyTest {
     DashboardGroupingService grouping;
     @Autowired
     DashboardPreviewService previews;
+    @Autowired
+    DashboardJobService jobs;
     @Autowired
     ActionScopeService scopes;
     @Autowired
@@ -115,6 +120,100 @@ class DashboardJourneyTest extends PostgresJourneyTest {
         grouping.correct(account, new DashboardGroupingService.Correction("MERGE",units,"My accounts",null,revision),true);
         assertThat(dashboard.page(account, filter("all", "")).groups()).extracting(DashboardRepository.Group::label)
             .containsExactly("My accounts");
+        verifyNoInteractions(gmailProvider, outlookProvider);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"google", "microsoft"})
+    void senderAddressViewDrillsDownAndPreviewsExactMessagesWithoutChangingManualGroups(String provider) throws Exception {
+        this.provider = provider;
+        var auth = authenticatedAs(OWNER);
+        if (provider.equals("microsoft")) {
+            account = userAccounts.createAccount(OWNER, provider);
+            var authorities = List.of(new SimpleGrantedAuthority("ROLE_USER"));
+            var user = new DefaultOAuth2User(authorities,
+                    Map.of("sub", "synthetic-microsoft-" + OWNER, "email", OWNER), "sub");
+            auth = org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors
+                    .authentication(new OAuth2AuthenticationToken(user, authorities, provider));
+        }
+        String brian = "Brian@clickup.example", ryan = "Ryan@clickup.example";
+        String list = "ClickUp <notifications.clickup.example>";
+        listMessage("brian-list", brian, list);
+        listMessage("ryan-list", ryan, list);
+        var brianDirect = message("brian-direct", brian, List.of("INBOX"), true, List.of(), true, NOW);
+        message("brian-archived", brian, List.of(), true, List.of(), false, NOW);
+        jdbc.update("""
+                UPDATE message_metadata SET from_display_name=CASE WHEN provider_message_id='brian-archived'
+                    THEN 'Brian Shen' ELSE lower(dashboard_from_address) END WHERE dashboard_from_address=?
+                """, brian);
+        jdbc.update("UPDATE message_metadata SET from_display_name='Ryan Howe' WHERE dashboard_from_address=?", ryan);
+        for (String id : List.of("missing", "ambiguous")) {
+            var headers = id.equals("missing") ? List.<String>of() : List.of(brian, ryan);
+            insert(id, brian, DashboardIdentity.parse(headers, List.of(), id), List.of("INBOX"), true, List.of(), true, NOW);
+        }
+        for (int index = 0; index < 7; index++)
+            message("other-" + index, "other" + index + "@example.test", List.of("INBOX"), true, List.of(), false, NOW);
+
+        var currentFilter = DashboardFilter.from(Map.of("sort", "unread"));
+        var listGroup = dashboard.page(account, currentFilter).groups().getFirst();
+        grouping.correct(account, new DashboardGroupingService.Correction("SPLIT", List.of(), "Brian list", null,
+                0, "Ryan list", listGroup.id(), List.of(brian)), true);
+        var current = dashboard.page(account, currentFilter);
+        assertThat(current.groups()).extracting(DashboardRepository.Group::label).contains("Brian list", "Ryan list");
+        assertThat(current.groups()).filteredOn(row -> brian.equals(row.address())).singleElement()
+                .satisfies(row -> assertThat(row.label()).isEqualTo("Brian Shen"));
+        assertThat(dashboard.inboxComposition(account, filter("inbox", "brian-direct")))
+                .extracting(DashboardRepository.Composition::label).containsExactly("Brian Shen");
+        var chart = dashboard.inboxComposition(account, currentFilter);
+
+        var addressFilter = DashboardFilter.from(Map.of("groupBy", "address", "sort", "unread"));
+        var addressPage = dashboard.page(account, addressFilter);
+        var brianGroup = addressPage.groups().getFirst();
+        assertThat(brianGroup.label()).isEqualTo("Brian Shen");
+        assertThat(brianGroup.address()).isEqualTo(brian);
+        assertThat(brianGroup.messages()).isEqualTo(2);
+        assertThat(dashboard.page(account, DashboardFilter.from(Map.of("groupBy", "address", "scope", "all", "q", brian)))
+                .groups()).filteredOn(row -> brian.equals(row.address())).singleElement().satisfies(row -> {
+                    assertThat(row.label()).isEqualTo("Brian Shen");
+                    assertThat(row.messages()).isEqualTo(3);
+                });
+        assertThat(addressPage.groups()).filteredOn(row -> row.address() == null)
+                .hasSize(2).allSatisfy(row -> {
+                    assertThat(row.messages()).isOne();
+                    assertThat(row.addresses()).isZero();
+                });
+        mockMvc.perform(get("/dashboard/api/page").with(auth).param("groupBy", "address")
+                .param("sort", "unread").param("page", "1"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.groups.length()").value(1));
+        mockMvc.perform(get("/dashboard/api/page").with(auth).param("groupBy", "address").param("q", "Ryan Howe"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.groups.length()").value(1))
+                .andExpect(jsonPath("$.groups[0].address").value(ryan));
+
+        String chartKey = "group:" + brianGroup.id();
+        assertThat(dashboard.inboxComposition(account, addressFilter)).contains(
+                new DashboardRepository.Composition(chartKey, "Brian Shen · " + brian, 2));
+        var drilldown = DashboardFilter.from(Map.of("groupBy", "address", "composition", chartKey));
+        assertThat(dashboard.page(account, drilldown).groups()).containsExactly(brianGroup);
+        mockMvc.perform(get("/dashboard/api/groups/" + brianGroup.id()).with(auth).param("groupBy", "address")
+                .param("composition", chartKey))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.messages.length()").value(2));
+        var ids = dashboard.selection(account, drilldown, List.of(brianGroup.id()), null, current.revision())
+                .stream().map(DashboardRepository.Selected::id).toList();
+        assertThat(ids).hasSize(2).contains(brianDirect);
+        var preview = mockMvc.perform(post("/dashboard/api/previews").with(auth).with(csrfToken())
+                .contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(
+                        new DashboardPreviewService.Request(drilldown, ids, "MARK_READ", current.revision()))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.selected").value(2))
+                .andExpect(jsonPath("$.effective").value(2)).andReturn().getResponse().getContentAsString();
+        var previewId = UUID.fromString(json.readTree(preview).get("id").asText());
+        assertThat(previews.targets(account, previewId, 0).rows()).extracting(row -> (UUID) row.get("message_id"))
+                .containsExactlyInAnyOrderElementsOf(ids);
+        assertThat(dashboard.page(account, currentFilter).groups()).isEqualTo(current.groups());
+        assertThat(dashboard.inboxComposition(account, currentFilter)).isEqualTo(chart);
+        var job = jobs.confirm(account, previewId);
+        assertThat(dashboard.page(account, currentFilter).summary()).isEqualTo(current.summary());
+        assertThat(jdbc.queryForList("SELECT message_id FROM cleanup_job_targets WHERE job_id=?", UUID.class, job.id()))
+                .containsExactlyInAnyOrderElementsOf(ids);
         verifyNoInteractions(gmailProvider, outlookProvider);
     }
 

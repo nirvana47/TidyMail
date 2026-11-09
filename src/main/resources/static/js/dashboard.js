@@ -117,7 +117,7 @@
   }
   function filter() {
     return { scope: state.scope, q: $('search').value, start: $('start').value, end: $('end').value,
-      zone, page: state.page, sort: $('sort').value, suggestion: state.suggestion,
+      zone, page: state.page, sort: $('sort').value, groupBy: $('groupBy').value, suggestion: state.suggestion,
       recommendation: $('recommendation').value, importance: $('importance').value,
       labels: labelChoices.filter(input => input.checked).map(input => input.value).join(','), match: $('labelMatch').value,
       composition: composition?.key || '', excludeProtectedShopping: $('excludeProtectedShopping').checked };
@@ -299,10 +299,13 @@
     const body = $('senders'); body.replaceChildren();
     (state.data?.groups || []).forEach(g => {
       const row = node('tr'); if (state.focused?.id === g.id) row.classList.add('focused');
-      const cell = node('td'); cell.append(checkbox(`Select sender group ${g.label} for organizing`, 1, Number(groupingSelection.has(g.id)), checked => {
+      const cell = node('td');
+      cell.hidden = $('groupBy').value === 'address';
+      if (!cell.hidden) cell.append(checkbox(`Select sender group ${g.label} for organizing`, 1, Number(groupingSelection.has(g.id)), checked => {
         if (checked) groupingSelection.set(g.id, g); else groupingSelection.delete(g.id);
         updateSelection();
-      })); row.append(cell);
+      }));
+      row.append(cell);
       const sender = node('td'), focus = node('button', undefined, 'sender-focus'), badge = node('span', g.label.slice(0, 1).toUpperCase(), 'brand'), text = node('span', undefined, 'sender-label');
       text.append(node('strong', g.label), node('small', `${g.address ? g.address + " · " : ""}${g.addresses} sender ${g.addresses === 1 ? 'address' : 'addresses'}`, 'muted')); text.append(node('small',`${bytesText(g.knownBytes)} estimated${g.unknownSizes ? ' · '+fmt(g.unknownSizes)+' sizes unknown' : ''}`,'muted')); if (g.pending) text.append(node('small', `${fmt(g.pending)} cleanup pending / unresolved`, 'pending')); focus.dataset.focusKey = 'sender-' + g.id; focus.append(badge, text); focus.onclick = () => focusGroup(g); sender.append(focus); row.append(sender, node('td', fmt(g.messages)), node('td', fmt(g.unread)), node('td', fmt(g.inbox)), node('td', dateText(g.latest)));
       const expandCell = node('td'); if (g.addresses > 1) { const expand = node('button', expanded.has(g.id) ? '⌃' : '⌄'); expand.setAttribute('aria-label', `Show sender addresses for ${g.label}`); expand.setAttribute('aria-expanded', String(expanded.has(g.id))); expand.onclick = () => expandGroup(g); expandCell.append(expand); } row.append(expandCell); body.append(row);
@@ -395,10 +398,12 @@
     } else {
       for (const a of detail.addresses) { const row = node('div', undefined, 'message-row'); row.append(addressLink(state.focused,a)); content.append(row); }
       content.append(node('p', state.focused.evidence, 'evidence'));
-      const controls = node('div', undefined, 'corrections'), organize = node('button', 'Organize sender group');
-      organize.dataset.focusKey = 'organize';
-      organize.onclick = () => openCorrections([state.focused], 'SPLIT');
-      controls.append(organize); content.append(controls);
+      if ($('groupBy').value === 'current') {
+        const controls = node('div', undefined, 'corrections'), organize = node('button', 'Organize sender group');
+        organize.dataset.focusKey = 'organize';
+        organize.onclick = () => openCorrections([state.focused], 'SPLIT');
+        controls.append(organize); content.append(controls);
+      }
     }
     restore();
   }
@@ -918,6 +923,12 @@
     filtersChanged();
   }
   $('sort').addEventListener('change', sortChanged);
+  $('groupBy').addEventListener('change', () => {
+    composition = null;
+    state.data = null;
+    $('organizeColumn').hidden = $('groupBy').value === 'address';
+    filtersChanged();
+  });
   $('sortMessages').onclick = () => { $('sort').value = 'messages'; sortChanged(); };
   $('sortUnread').onclick = () => { $('sort').value = 'unread'; sortChanged(); };
   $('detailUnreadOnly').onchange = () => { state.messagePage = 0; state.details = null; clearSelection('Message view changed. Draft selection was cleared.'); renderDetail(); loadDetails(); };

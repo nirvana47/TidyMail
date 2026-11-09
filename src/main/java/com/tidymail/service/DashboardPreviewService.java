@@ -36,10 +36,12 @@ public class DashboardPreviewService {
         if(request.revision()!=repository.revision(account)) throw conflict("Grouping changed. Create a new preview.");
         if((!request.filter().category().isEmpty() || !request.filter().labels().isEmpty()) && request.classificationRevision()!=null && request.classificationRevision()!=repository.classificationRevision(account))throw conflict("Categories changed. Create a new preview.");
         var ids=request.ids().stream().distinct().toList();
-        var p=repository.parameters(account,request.filter().cleanupScope()).addValue("ids",new org.springframework.jdbc.support.SqlArrayValue("uuid",ids.toArray()));
+        var p=repository.parameters(account,request.filter().cleanupScope())
+            .addValue("ids",new org.springframework.jdbc.support.SqlArrayValue("uuid",ids.toArray()))
+            .addValue("bySenderAddress", request.filter().bySenderAddress());
         var targets=jdbc.queryForList(repository.filtered(account, request.filter().cleanupScope())+"""
           SELECT m.provider_message_id,m.dashboard_message_id,m.subject_header,m.size_estimate,
-            COALESCE(m.dashboard_from_address,m.from_address,'Unknown sender') address,m.received_at,
+            COALESCE(m.dashboard_from_address,CASE WHEN NOT :bySenderAddress THEN m.from_address END,'Unknown sender') address,m.received_at,
             f.id IS NOT NULL AS eligible,m.provider,
             CASE WHEN m.provider='microsoft' THEN NOT('OUTLOOK_ARCHIVE'=ANY(m.labels)) ELSE 'INBOX'=ANY(m.labels) END can_archive,m.unread,
             EXISTS(SELECT 1 FROM protected_senders protected WHERE protected.account_id=m.account_id
