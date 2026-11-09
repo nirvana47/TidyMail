@@ -167,23 +167,8 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-testcontainers</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.testcontainers</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.testcontainers</groupId>
-            <artifactId>postgresql</artifactId>
             <scope>test</scope>
         </dependency>
 
@@ -234,7 +219,12 @@
                 <version>3.5.1</version>
                 <configuration>
                     <useModulePath>false</useModulePath>
+                    <!-- Native integration and migration databases are shared across the suite. -->
+                    <forkCount>1</forkCount>
+                    <reuseForks>true</reuseForks>
                     <systemPropertyVariables>
+                        <springdotenv.enabled>false</springdotenv.enabled>
+                        <junit.jupiter.execution.parallel.enabled>false</junit.jupiter.execution.parallel.enabled>
                         <app.sync.initial-page-size>200</app.sync.initial-page-size>
                         <!-- Historical feature tests retain their explicit legacy contract. -->
                         <app.mvp.enabled>false</app.mvp.enabled>

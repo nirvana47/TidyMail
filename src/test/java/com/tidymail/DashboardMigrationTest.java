@@ -1,19 +1,15 @@
 package com.tidymail;
 
 import static org.assertj.core.api.Assertions.*;
+import com.tidymail.support.NativeTestPostgres;
 import com.tidymail.support.UserAccountFixtures;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
-@Testcontainers(disabledWithoutDocker = false)
 class DashboardMigrationTest {
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+    static final NativeTestPostgres POSTGRES = NativeTestPostgres.cleanMigrationDatabase();
 
     Flyway flyway(String version) {
         var config = Flyway.configure()

@@ -32,7 +32,6 @@ import com.tidymail.service.MailboxBackfillService;
 import com.tidymail.service.MailboxSyncCommitService;
 import com.tidymail.service.MailboxFreshnessService;
 import com.tidymail.service.MailboxRescanService;
-import com.tidymail.service.DecisionRowKey;
 import com.tidymail.support.PostgresJourneyTest;
 import java.math.BigInteger;
 import java.time.Duration;
@@ -357,22 +356,22 @@ class MailboxFreshnessJourneyTest extends PostgresJourneyTest {
                 org.assertj.core.groups.Tuple.tuple(
                     "metadata-present", true, 4096L, "PRESENT"));
 
-        String rowKey = DecisionRowKey.sender(accountId, "metadata@example.test");
-        String body = mockMvc.perform(get(
-                "/unsubscribe/senders/{senderRowKey}/stats", rowKey)
-                .param("account", Long.toString(accountId))
-                .param("from", "2026-08-14")
-                .param("to", "2026-08-14")
+        String group = mockMvc.perform(get("/dashboard/api/page")
+                .param("q", "metadata@example.test")
                 .with(authenticatedAs(email)))
             .andExpect(status().isOk())
             .andReturn().getResponse().getContentAsString();
-        String visible = body.replaceAll("(?s)<[^>]*>", " ")
-            .replaceAll("\\s+", " ").trim();
+        var json = new com.fasterxml.jackson.databind.ObjectMapper();
+        String groupId = json.readTree(group).path("groups").get(0).path("id").asText();
+        String body = mockMvc.perform(get("/dashboard/api/groups/{group}", groupId)
+                .with(authenticatedAs(email)))
+            .andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
 
-        assertThat(visible).contains(
-            "Attachment", "Present", "None", "Checking",
-            "Attachment coverage is still being checked; Present and None apply only to reconciled messages.");
-        assertThat(visible).doesNotContain("body-derived", "snippet");
+        assertThat(json.readTree(body).path("messages"))
+            .extracting(row -> row.path("attachmentState").asText())
+            .containsExactlyInAnyOrder("PRESENT", "ABSENT", "UNKNOWN");
+        assertThat(body).doesNotContain("body-derived");
 
         jdbc.update("""
             UPDATE message_metadata
@@ -382,17 +381,13 @@ class MailboxFreshnessJourneyTest extends PostgresJourneyTest {
                    attachment_source = 'GMAIL_SEARCH'
              WHERE account_id = ? AND provider_message_id = 'metadata-checking'
             """, accountId);
-        String reconciledBody = mockMvc.perform(get(
-                "/unsubscribe/senders/{senderRowKey}/stats", rowKey)
-                .param("account", Long.toString(accountId))
-                .param("from", "2026-08-14")
-                .param("to", "2026-08-14")
+        String reconciledBody = mockMvc.perform(get("/dashboard/api/groups/{group}", groupId)
                 .with(authenticatedAs(email)))
             .andExpect(status().isOk())
             .andReturn().getResponse().getContentAsString();
-        assertThat(reconciledBody)
-            .doesNotContain(
-                "Attachment coverage is still being checked; Present and None apply only to reconciled messages.");
+        assertThat(json.readTree(reconciledBody).path("messages"))
+            .extracting(row -> row.path("attachmentState").asText())
+            .containsExactlyInAnyOrder("PRESENT", "ABSENT", "ABSENT");
     }
 
     private void readyForFreshness(long accountId, String cursor) {

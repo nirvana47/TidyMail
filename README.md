@@ -28,7 +28,7 @@ upgrade, regression and user-selected live-action checks, with their limits.
 | [MVP plan](docs/MVP-PLAN.md) | Agreed dashboard scope, progress requirements, and data-preservation plan |
 | [Codebase map](docs/CODEBASE.md) | Where features live and how data moves |
 | [Status](docs/STATUS.md) | Implemented capabilities and verification gaps |
-| [Testing](docs/TESTING.md) | PostgreSQL harness and test commands |
+| [Testing](TESTING.md) | Native PostgreSQL harness and test commands |
 | [History](docs/HISTORY.md) | Archived planning documents and recovery |
 
 Gmail is the implemented mailbox backend. Microsoft sign-in wiring exists, but Outlook cleanup is incomplete. Ordinary logout retains indexed data; explicit confirmed deletion removes it.

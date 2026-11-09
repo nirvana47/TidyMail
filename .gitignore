@@ -116,3 +116,6 @@ tidymail-ux-rehaul-draft/
 
 # Private account-specific relay recipients
 /config/gmail-relays/application.properties
+
+# Local runtime observations and temporary recorders
+.local-observations/

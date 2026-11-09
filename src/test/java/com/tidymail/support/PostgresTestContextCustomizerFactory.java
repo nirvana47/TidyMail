@@ -10,8 +10,8 @@ import org.springframework.test.context.ContextCustomizerFactory;
 import org.springframework.test.context.MergedContextConfiguration;
 
 /**
- * Routes every Spring integration-test context through the shared production-like
- * Postgres container. Registered through test-only spring.factories.
+ * Routes every Spring integration-test context through the dedicated native
+ * PostgreSQL test database. Registered through test-only spring.factories.
  */
 public final class PostgresTestContextCustomizerFactory implements ContextCustomizerFactory {
 
@@ -28,11 +28,8 @@ public final class PostgresTestContextCustomizerFactory implements ContextCustom
         public void customizeContext(
                 ConfigurableApplicationContext context,
                 MergedContextConfiguration mergedConfig) {
+            NativeTestPostgres.integrationDatabase().pinDataSources(context);
             Map<String, Object> properties = Map.of(
-                "spring.datasource.url", PostgresJourneyTest.POSTGRES.getJdbcUrl(),
-                "spring.datasource.username", PostgresJourneyTest.POSTGRES.getUsername(),
-                "spring.datasource.password", PostgresJourneyTest.POSTGRES.getPassword(),
-                "spring.datasource.driver-class-name", "org.postgresql.Driver",
                 "spring.datasource.hikari.maximum-pool-size", "2",
                 "spring.datasource.hikari.minimum-idle", "0",
                 "spring.flyway.enabled", "true",
@@ -41,7 +38,7 @@ public final class PostgresTestContextCustomizerFactory implements ContextCustom
                 "spring.task.scheduling.enabled", "false"
             );
             context.getEnvironment().getPropertySources().addFirst(
-                new MapPropertySource("sharedPostgresTestcontainer", properties));
+                new MapPropertySource("nativeTestDefaults", properties));
         }
 
         @Override

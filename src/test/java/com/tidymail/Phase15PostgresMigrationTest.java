@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.tidymail.dto.UnreadQuery;
 import com.tidymail.repository.DecisionSurfaceQueryRepository;
+import com.tidymail.support.NativeTestPostgres;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
@@ -20,19 +21,11 @@ import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
-@Testcontainers(disabledWithoutDocker = false)
 class Phase15PostgresMigrationTest {
     private static final String MIGRATIONS = "filesystem:src/main/resources/db/migration";
 
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine")
-            .withDatabaseName("tidymail")
-            .withUsername("tidymail")
-            .withPassword("tidymail");
+    static final NativeTestPostgres POSTGRES = NativeTestPostgres.cleanMigrationDatabase();
 
     @Test
     void postgresV13ToV14PreservesCategoriesAndEnforcesOwnedOverrides()
@@ -74,7 +67,11 @@ class Phase15PostgresMigrationTest {
                     """.formatted(first, category));
         }
 
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(17);
+        var full = flyway(null);
+        var pending = full.info().pending();
+        assertThat(pending).isNotEmpty();
+        assertThat(pending[0].getVersion().getVersion()).isEqualTo("14");
+        assertThat(full.migrate().migrationsExecuted).isEqualTo(pending.length);
         try (Connection connection = connection(); Statement statement = connection.createStatement()) {
             assertThat(queryLong(connection, """
                     SELECT COUNT(*) FROM sender_category_assignments
@@ -209,11 +206,9 @@ class Phase15PostgresMigrationTest {
 
     private static void assertHibernateValidation() {
         try (ConfigurableApplicationContext context = new SpringApplicationBuilder(InboxCleanerApplication.class)
+                .initializers(POSTGRES::pinDataSources)
                 .web(WebApplicationType.NONE)
                 .run(
-                        "--spring.datasource.url=" + POSTGRES.getJdbcUrl(),
-                        "--spring.datasource.username=" + POSTGRES.getUsername(),
-                        "--spring.datasource.password=" + POSTGRES.getPassword(),
                         "--spring.flyway.enabled=false",
                         "--spring.jpa.hibernate.ddl-auto=validate",
                         "--spring.task.scheduling.enabled=false",

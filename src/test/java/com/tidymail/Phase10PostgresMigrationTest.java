@@ -8,6 +8,7 @@ import com.tidymail.dto.SenderQuery;
 import com.tidymail.dto.UnreadQuery;
 import com.tidymail.service.SenderDecisionQueryService;
 import com.tidymail.service.UnreadDecisionQueryService;
+import com.tidymail.support.NativeTestPostgres;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -26,21 +27,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
-@Testcontainers(disabledWithoutDocker = false)
 class Phase10PostgresMigrationTest {
     private static final String PRODUCTION_MIGRATIONS =
         "filesystem:src/main/resources/db/migration";
 
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES =
-        new PostgreSQLContainer<>("postgres:16-alpine")
-            .withDatabaseName("tidymail")
-            .withUsername("tidymail")
-            .withPassword("tidymail");
+    static final NativeTestPostgres POSTGRES = NativeTestPostgres.cleanMigrationDatabase();
 
     @Test
     void productionV7UpgradeQueriesAndHibernateValidationRemainCompatible() throws Exception {
@@ -186,11 +178,9 @@ class Phase10PostgresMigrationTest {
 
     private static ConfigurableApplicationContext application() {
         return new SpringApplicationBuilder(InboxCleanerApplication.class)
+            .initializers(POSTGRES::pinDataSources)
             .web(WebApplicationType.NONE)
             .run(
-                "--spring.datasource.url=" + POSTGRES.getJdbcUrl(),
-                "--spring.datasource.username=" + POSTGRES.getUsername(),
-                "--spring.datasource.password=" + POSTGRES.getPassword(),
                 "--spring.flyway.enabled=false",
                 "--spring.jpa.hibernate.ddl-auto=validate",
                 "--spring.task.scheduling.enabled=false",

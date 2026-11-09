@@ -1,6 +1,7 @@
 package com.tidymail.support;
 
 import org.springframework.core.Ordered;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestContext;
 import org.springframework.test.context.support.AbstractTestExecutionListener;
@@ -23,12 +24,16 @@ public final class PostgresDatabaseCleanupTestExecutionListener
             return;
         }
         JdbcTemplate jdbc = context.getBean(JdbcTemplate.class);
+        jdbc.execute((ConnectionCallback<Void>) connection -> {
+            NativeTestPostgres.integrationDatabase().verify(connection);
+            return null;
+        });
         Boolean schemaReady = jdbc.queryForObject(
             "SELECT to_regclass('public.user_accounts') IS NOT NULL",
             Boolean.class);
         if (Boolean.TRUE.equals(schemaReady)) {
             jdbc.execute("TRUNCATE TABLE user_accounts RESTART IDENTITY CASCADE");
-        jdbc.update("INSERT INTO classification_budget(id) VALUES(1) ON CONFLICT DO NOTHING");
+            jdbc.update("INSERT INTO classification_budget(id) VALUES(1) ON CONFLICT DO NOTHING");
         }
     }
 }

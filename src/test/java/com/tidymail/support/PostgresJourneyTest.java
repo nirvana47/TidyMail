@@ -15,7 +15,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -24,16 +23,8 @@ import org.springframework.security.oauth2.core.user.DefaultOAuth2User;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
 
-/**
- * Shared real-Postgres base for HTTP-to-database user journeys.
- *
- * <p>Local Colima runs require
- * {@code DOCKER_HOST=unix://$HOME/.colima/default/docker.sock} and
- * {@code TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock}.
- */
+/** Shared native PostgreSQL base for HTTP-to-database user journeys. */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @AutoConfigureMockMvc
 @TestPropertySource(properties = {
@@ -51,18 +42,6 @@ import org.testcontainers.junit.jupiter.Container;
     "MICROSOFT_TENANT_ID=common"
 })
 public abstract class PostgresJourneyTest {
-
-    @Container
-    @ServiceConnection
-    protected static final PostgreSQLContainer<?> POSTGRES =
-        new PostgreSQLContainer<>("postgres:16-alpine")
-            .withDatabaseName("tidymail")
-            .withUsername("tidymail")
-            .withPassword("tidymail");
-
-    static {
-        POSTGRES.start();
-    }
 
     @Autowired
     protected MockMvc mockMvc;

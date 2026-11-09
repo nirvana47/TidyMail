@@ -2,6 +2,7 @@ package com.tidymail;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.tidymail.support.NativeTestPostgres;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -21,11 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
-@Testcontainers(disabledWithoutDocker = false)
 class Phase13PostgresMigrationTest {
     private static final String MIGRATIONS =
         "filesystem:src/main/resources/db/migration";
@@ -40,12 +37,7 @@ class Phase13PostgresMigrationTest {
         "190c0d9cf10ca687bafc0604325aaa47380ae91593b1dbc2d669e9ba27256461",
         "c092433908b88c3d6f7df912e09abd53348874b26af0c9d5163b35eb98ece379",
         "97323832aaa62a5bcabee502d99f97eb532c1287537eb942d0f739eb10776322");
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES =
-        new PostgreSQLContainer<>("postgres:16-alpine")
-            .withDatabaseName("tidymail")
-            .withUsername("tidymail")
-            .withPassword("tidymail");
+    static final NativeTestPostgres POSTGRES = NativeTestPostgres.cleanMigrationDatabase();
 
     @Test
     void productionCleanV1ToV13FreezesHistoryValidatesHibernateAndCatalog()
@@ -267,11 +259,9 @@ class Phase13PostgresMigrationTest {
     private static void assertHibernateValidation() {
         try (ConfigurableApplicationContext context =
                 new SpringApplicationBuilder(InboxCleanerApplication.class)
+                    .initializers(POSTGRES::pinDataSources)
                     .web(WebApplicationType.NONE)
                     .run(
-                        "--spring.datasource.url=" + POSTGRES.getJdbcUrl(),
-                        "--spring.datasource.username=" + POSTGRES.getUsername(),
-                        "--spring.datasource.password=" + POSTGRES.getPassword(),
                         "--spring.flyway.enabled=false",
                         "--spring.jpa.hibernate.ddl-auto=validate",
                         "--spring.task.scheduling.enabled=false",

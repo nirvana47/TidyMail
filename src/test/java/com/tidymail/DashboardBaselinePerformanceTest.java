@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.tidymail.dto.SenderQuery;
 import com.tidymail.repository.DecisionSurfaceQueryRepository;
+import com.tidymail.support.NativeTestPostgres;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
@@ -17,15 +18,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 /** Phase 2 measurements of current queries, not acceptance of the future dashboard. */
-@Testcontainers(disabledWithoutDocker = false)
 class DashboardBaselinePerformanceTest {
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+    static final NativeTestPostgres POSTGRES = NativeTestPostgres.cleanMigrationDatabase();
 
     @Test
     void measureIndexedBrowsingWithAndWithoutConcurrentMetadataWrites() throws Exception {

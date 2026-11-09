@@ -3,6 +3,7 @@ package com.tidymail;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.tidymail.support.NativeTestPostgres;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -18,20 +19,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
-@Testcontainers(disabledWithoutDocker = false)
 class Phase11PostgresMigrationTest {
     private static final String MIGRATIONS = "filesystem:src/main/resources/db/migration";
 
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES =
-        new PostgreSQLContainer<>("postgres:16-alpine")
-            .withDatabaseName("tidymail")
-            .withUsername("tidymail")
-            .withPassword("tidymail");
+    static final NativeTestPostgres POSTGRES = NativeTestPostgres.cleanMigrationDatabase();
 
     @Test
     void productionV1ToV8AndV7ToV8UpgradeValidateSchemaHibernateAndPreserveHeaders()
@@ -305,11 +297,9 @@ class Phase11PostgresMigrationTest {
 
     private static ConfigurableApplicationContext application() {
         return new SpringApplicationBuilder(InboxCleanerApplication.class)
+            .initializers(POSTGRES::pinDataSources)
             .web(WebApplicationType.NONE)
             .run(
-                "--spring.datasource.url=" + POSTGRES.getJdbcUrl(),
-                "--spring.datasource.username=" + POSTGRES.getUsername(),
-                "--spring.datasource.password=" + POSTGRES.getPassword(),
                 "--spring.flyway.enabled=false",
                 "--spring.jpa.hibernate.ddl-auto=validate",
                 "--spring.task.scheduling.enabled=false",

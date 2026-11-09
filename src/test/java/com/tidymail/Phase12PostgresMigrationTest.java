@@ -5,13 +5,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.tidymail.dto.ActionHistoryModel;
 import com.tidymail.dto.HistoryQuery;
+import com.tidymail.dto.UnreadScopeCounts;
 import com.tidymail.dto.WorkspacePageModel;
 import com.tidymail.dto.WorkspaceRoute;
 import com.tidymail.dto.WorkspaceState;
-import com.tidymail.dto.UnreadScopeCounts;
 import com.tidymail.entity.UserAccount;
 import com.tidymail.repository.UserAccountRepository;
 import com.tidymail.service.ActionHistoryService;
+import com.tidymail.support.NativeTestPostgres;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -36,11 +37,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
-@Testcontainers(disabledWithoutDocker = false)
 class Phase12PostgresMigrationTest {
     private static final String MIGRATIONS =
         "filesystem:src/main/resources/db/migration";
@@ -49,12 +46,7 @@ class Phase12PostgresMigrationTest {
     private static final String PRODUCTION_V9 =
         "c092433908b88c3d6f7df912e09abd53348874b26af0c9d5163b35eb98ece379";
 
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES =
-        new PostgreSQLContainer<>("postgres:16-alpine")
-            .withDatabaseName("tidymail")
-            .withUsername("tidymail")
-            .withPassword("tidymail");
+    static final NativeTestPostgres POSTGRES = NativeTestPostgres.cleanMigrationDatabase();
 
     @Test
     void ACTN_07_productionV1ToV9AndV8UpgradePreserveTruthAndEnforceLedger()
@@ -421,11 +413,9 @@ class Phase12PostgresMigrationTest {
 
     private static ConfigurableApplicationContext application() {
         return new SpringApplicationBuilder(InboxCleanerApplication.class)
+            .initializers(POSTGRES::pinDataSources)
             .web(WebApplicationType.NONE)
             .run(
-                "--spring.datasource.url=" + POSTGRES.getJdbcUrl(),
-                "--spring.datasource.username=" + POSTGRES.getUsername(),
-                "--spring.datasource.password=" + POSTGRES.getPassword(),
                 "--spring.flyway.enabled=false",
                 "--spring.jpa.hibernate.ddl-auto=validate",
                 "--spring.task.scheduling.enabled=false",

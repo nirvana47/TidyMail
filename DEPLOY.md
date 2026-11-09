@@ -1,15 +1,12 @@
 # Setup and deployment
 
-Mapped from source configuration on 2026-10-14. These instructions do not establish that this checkout is running or deployed.
-
 ## Local setup
 
-Use Java 21, Maven and a running Docker-compatible engine. There is no Maven wrapper in this checkout. Confirm the tools:
+Use Java 21, Maven and native PostgreSQL 16. There is no Maven wrapper in this checkout. Confirm Java and Maven:
 
 ```sh
 java -version
 mvn -version
-docker info
 ```
 
 On a Homebrew Mac, if necessary:
@@ -19,31 +16,65 @@ export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
 export PATH="$JAVA_HOME/bin:$PATH"
 ```
 
-From the repository root, copy `.env.example` to `.env` only if you do not already have one. Supply Google credentials and independent encryption values: run `openssl rand -hex 32` for `TOKEN_ENCRYPT_SECRET` and `openssl rand -hex 16` for `TOKEN_ENCRYPT_SALT`. Keep these values stable: changing them prevents decrypting existing tokens. `.env` is ignored by Git.
+From the repository root, copy `.env.example` to `.env` only if you do not already have one. Supply the OAuth credentials for the providers you use and independent encryption values: run `openssl rand -hex 32` for `TOKEN_ENCRYPT_SECRET` and `openssl rand -hex 16` for `TOKEN_ENCRYPT_SALT`. Keep these values stable: changing them prevents decrypting existing tokens. `.env` is ignored by Git.
 
-Enable Gmail API for the Google OAuth application and register `http://localhost:8080/login/oauth2/code/google` as the local redirect URI. `SecurityConfig` requests `openid`, `email`, `profile` and `gmail.modify`; offline refresh uses `access_type=offline`, not a Google `offline_access` scope. Configured providers require network access for OIDC discovery at startup. Without usable credentials, sign-in is unavailable.
+Enable Gmail API for the Google OAuth application and register `http://localhost:8080/login/oauth2/code/google` as its local redirect URI. For personal Outlook, register `http://localhost:8080/login/oauth2/code/microsoft` in the existing Microsoft app and use its configured tenant. `SecurityConfig` requests `openid`, `email`, `profile` and `gmail.modify`; offline refresh uses `access_type=offline`, not a Google `offline_access` scope. Configured providers require network access for OIDC discovery at startup. Without usable credentials, sign-in is unavailable.
 
-Start the database, wait for readiness, then build and run:
+For a fresh local cluster on macOS, install PostgreSQL and find its configuration:
 
 ```sh
-docker compose up -d db
-docker compose exec db pg_isready -U tidymail -d tidymail
-mvn package -DskipTests
-java -Xms512m -Xmx1g -jar target/tidymail-0.1.0.jar
+brew install postgresql@16
+export PG16_BIN="$(brew --prefix postgresql@16)/bin"
+export PG16_DATA="$(brew --prefix)/var/postgresql@16"
 ```
 
-Open `http://localhost:8080/login`. Skipping tests builds the JAR without validating behavior; see [Testing](docs/TESTING.md) before accepting a release.
+In `$PG16_DATA/postgresql.conf`, set `listen_addresses = 'localhost'`, `port = 5433`, and
+`password_encryption = 'scram-sha-256'`. On a fresh cluster dedicated to TidyMail,
+replace Homebrew's initial trust rules in `$PG16_DATA/pg_hba.conf` with:
 
-Compose supplies PostgreSQL 16 on port 5432, database/user `tidymail`, development password `tidymaildev`, and persistent volume `tidymail-db-data`. Stopping the database does not remove data. Flyway runs by default; Hibernate validates the schema. Do not replace migrations with Hibernate `update`.
+```text
+local all all peer
+host tidymail tidymail 127.0.0.1/32 scram-sha-256
+host tidymail tidymail ::1/128 scram-sha-256
+host tidymail_test,tidymail_test_migrations tidymail_test 127.0.0.1/32 scram-sha-256
+host tidymail_test,tidymail_test_migrations tidymail_test ::1/128 scram-sha-256
+```
+
+Start the login service and provision the databases once. Use separate random
+values for the app and test passwords:
+
+```sh
+brew services start postgresql@16
+"$PG16_BIN/pg_isready" -h 127.0.0.1 -p 5433
+export TIDYMAIL_DB_PASSWORD="$(openssl rand -hex 24)"
+export TIDYMAIL_TEST_DB_PASSWORD="$(openssl rand -hex 24)"
+"$PG16_BIN/psql" -X -p 5433 -d postgres -f tools/setup-local-postgres.sql
+```
+
+In `.env` set `DATABASE_URL=jdbc:postgresql://127.0.0.1:5433/tidymail`,
+`DATABASE_USER=tidymail` and `DATABASE_PASSWORD` to the generated app password.
+Keep existing OAuth and encryption settings. Use only one set of datasource keys.
+Save the test password separately as described in [Testing](TESTING.md), then
+unset the setup password variables when done.
+
+```sh
+mvn package -DskipTests
+./tools/run-local.sh
+```
+
+Open [the local sign-in page](http://localhost:8080/login). Flyway applies the
+packaged migrations and Hibernate validates the schema. A package build with
+tests skipped is only a build; see [Testing](TESTING.md) for verification.
 
 ## Effective configuration
 
-Defaults are in `src/main/resources/application.properties`. `.env.example` has legacy comments and extra values that may not be consumed. Prefer the explicit keys below; avoid conflicting `DATABASE_*` and `SPRING_DATASOURCE_*` values.
+Defaults are in `src/main/resources/application.properties`. `.env.example` documents the local settings. Avoid conflicting `DATABASE_*` and `SPRING_DATASOURCE_*` values.
 
 | Environment variable | Default / purpose |
 |---|---|
-| `DATABASE_URL`, `DATABASE_USER`, `DATABASE_PASSWORD` | JDBC PostgreSQL URL, user and password; local Compose defaults |
+| `DATABASE_URL`, `DATABASE_USER`, `DATABASE_PASSWORD` | JDBC PostgreSQL URL, user and password; native local defaults for URL and role; supply the password |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google sign-in |
+| `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_TENANT_ID` | Microsoft sign-in |
 | `TOKEN_ENCRYPT_SECRET`, `TOKEN_ENCRYPT_SALT` | OAuth token encryption material |
 | `SERVER_PORT` | `8080` |
 | `SPRING_FLYWAY_ENABLED` | `true` |
@@ -65,13 +96,13 @@ Datasource properties can also be supplied directly through Spring configuration
 
 ## Hosting and troubleshooting
 
-Run the JAR on a persistent Java host with PostgreSQL. This repository supplies local database Compose configuration, not an application container or deployment pipeline. Cloudflare Tunnel can proxy the host when configured separately. Register the HTTPS Google callback URI and verify forwarded host/protocol handling so Spring constructs that callback correctly. No public deployment was performed during this refresh.
+Run the JAR on a persistent Java host with PostgreSQL. Use the local setup above for development and provide separate PostgreSQL credentials for deployment. Cloudflare Tunnel can proxy the host when configured separately. Register the HTTPS Google callback URI and verify forwarded host/protocol handling so Spring constructs that callback correctly. No public deployment was performed during this refresh.
 
 Microsoft registration keys exist, but enabling that button does not provide Outlook cleanup.
 
 | Symptom | Check |
 |---|---|
-| Database connection failure | Docker, readiness, port 5432 and effective datasource values |
+| Database connection failure | `brew services list`, `pg_isready -h 127.0.0.1 -p 5433`, and the effective datasource values |
 | Missing table/column | Flyway enabled, migration permissions, correct database |
 | Encryption startup failure | Secret decodes to 32 bytes, salt to at least 8; generated 16-byte salt recommended |
 | Missing Google button | Both credentials supplied and not placeholders; `OAuthProviderAvailability` |

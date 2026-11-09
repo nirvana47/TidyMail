@@ -87,7 +87,8 @@ class LabelingScaleJourneyTest extends PostgresJourneyTest {
             named.queryForList("EXPLAIN (ANALYZE,BUFFERS,TIMING OFF) "+dashboard.filtered(account, filter)+" SELECT count(*) FROM filtered",dashboard.parameters(account,filter),String.class).forEach(System.out::println);
         }
         if(Boolean.getBoolean("labeling.scale.hold")) {
-            System.out.println("LABELING_FIXTURE_READY "+POSTGRES.getJdbcUrl());
+            System.out.println("LABELING_FIXTURE_READY "+jdbc.execute((org.springframework.jdbc.core.ConnectionCallback<String>)
+                connection -> connection.getMetaData().getURL()));
             Thread.sleep(60000); // Explicit diagnostic mode only; keeps this temporary fixture available for read-only profiling.
         }
         assertThat(recommendations.read(account,List.of(id)).getFirst().freshness()).isEqualTo(RecommendationService.Freshness.CURRENT);
