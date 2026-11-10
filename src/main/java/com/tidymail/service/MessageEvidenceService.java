@@ -57,7 +57,11 @@ public class MessageEvidenceService {
     private JsonNode inspect(long account, UUID message, boolean presenceOnly,
             java.util.function.BooleanSupplier beforeRead) {
         String provider = jdbc.query(
-                "SELECT provider_message_id FROM message_metadata WHERE account_id=? AND dashboard_message_id=? AND provider='google'",
+                """
+                SELECT provider_message_id FROM message_metadata
+                WHERE account_id=? AND dashboard_message_id=? AND provider='google'
+                  AND NOT(labels && ARRAY['SPAM','TRASH'])
+                """,
                 (r, n) -> r.getString(1), account, message).stream().findFirst().orElseThrow(
                         () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Email unavailable for this account"));
         var saved = jdbc.query(

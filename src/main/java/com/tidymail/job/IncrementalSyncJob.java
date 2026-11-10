@@ -98,6 +98,10 @@ public class IncrementalSyncJob {
         StateSnapshot state = states.findByAccountId(accountId)
             .orElseThrow(() -> new IllegalStateException("Mailbox sync state disappeared"));
         if ("microsoft".equals(account.getProvider())) return requestLane(accountId, Lane.BACKFILL);
+        if ("RUNNING".equals(state.rescanStatus())) requestLane(accountId, Lane.FRESHNESS);
+        if ("REQUIRED".equals(state.rescanStatus()) || "RUNNING".equals(state.rescanStatus())) {
+            return requestLane(accountId, Lane.RESCAN);
+        }
         Lane lane = state.incrementalCursorValue() == null
                 || state.initialBatchCompletedAt() == null
             ? Lane.BACKFILL
@@ -212,6 +216,10 @@ public class IncrementalSyncJob {
             }
             if (outcome.queueFreshness()) {
                 requestLane(accountId, Lane.FRESHNESS);
+                if (lane == Lane.RESCAN && !"COMPLETE".equals(
+                        states.findByAccountId(accountId).orElseThrow().backfillStatus())) {
+                    requestLane(accountId, Lane.BACKFILL);
+                }
             }
             if (outcome.queueRescan()) {
                 requestLane(accountId, Lane.RESCAN);

@@ -38,6 +38,7 @@ public final class DecisionSurfaceSql {
               FROM user_accounts a
               LEFT JOIN mailbox_sync_state state ON state.account_id = a.id
               LEFT JOIN message_metadata m ON m.account_id = a.id
+                AND (m.provider<>'google' OR NOT(m.labels && ARRAY['SPAM','TRASH']))
              WHERE a.id IN (:account_ids)
             """;
     }
@@ -89,6 +90,7 @@ public final class DecisionSurfaceSql {
                   FROM message_metadata
                  WHERE account_id IN (:account_ids)
                    AND provider_thread_id IS NOT NULL
+                   AND (provider<>'google' OR NOT(labels && ARRAY['SPAM','TRASH']))
                  GROUP BY account_id, provider_thread_id
             ),
             base_rows AS (
@@ -130,7 +132,8 @@ public final class DecisionSurfaceSql {
                 LEFT JOIN thread_counts tc
                   ON tc.account_id = m.account_id
                  AND tc.provider_thread_id = m.provider_thread_id
-                WHERE m.account_id IN (:account_ids)%s%s
+                WHERE m.account_id IN (:account_ids)
+                  AND (m.provider<>'google' OR NOT(m.labels && ARRAY['SPAM','TRASH']))%s%s
             ),
             sender_facts AS (
                 SELECT account_id, account_email, sender_key,
@@ -250,6 +253,7 @@ public final class DecisionSurfaceSql {
                            SELECT COUNT(*) FROM message_metadata mt
                            WHERE mt.account_id = m.account_id
                              AND mt.provider_thread_id = m.provider_thread_id
+                             AND (mt.provider<>'google' OR NOT(mt.labels && ARRAY['SPAM','TRASH']))
                        ) END AS authorized_thread_count,
                        CASE WHEN m.from_address IS NOT NULL AND EXISTS (
                            SELECT 1 FROM protected_senders ps
@@ -264,6 +268,7 @@ public final class DecisionSurfaceSql {
                      COALESCE(NULLIF(lower(trim(m.from_address)), ''), '__missing__')
                 WHERE m.account_id IN (:account_ids)
                   AND m.unread = true
+                  AND (m.provider<>'google' OR NOT(m.labels && ARRAY['SPAM','TRASH']))
                   AND %s
             ),
             categorized_facts AS (

@@ -4,6 +4,8 @@ import com.tidymail.entity.MessageMetadata;
 import com.tidymail.mail.AttachmentState;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -58,7 +60,7 @@ public class MessageMetadataSyncRepository {
                 unsubscribe_dkim_covers_list_unsubscribe,
                 unsubscribe_dkim_covers_list_unsubscribe_post,
                 unsubscribe_auth_reason
-            ) VALUES (
+            ) SELECT
                 :snippet_text, :snippet_state, :raw_from_values, :label_evidence_known, :dashboard_from_address, :dashboard_unit_kind, :dashboard_unit_key, :dashboard_identity_reason,
                 :account_id, :provider, :provider_message_id, :provider_thread_id,
                 :from_address, :from_display_name, :from_domain, :subject_header,
@@ -74,6 +76,9 @@ public class MessageMetadataSyncRepository {
                 :unsubscribe_dkim_covers_list_unsubscribe,
                 :unsubscribe_dkim_covers_list_unsubscribe_post,
                 :unsubscribe_auth_reason
+            WHERE :provider <> 'google' OR NOT(:labels && ARRAY['SPAM','TRASH']) OR EXISTS (
+                SELECT 1 FROM message_metadata
+                WHERE account_id=:account_id AND provider_message_id=:provider_message_id
             )
             ON CONFLICT (account_id, provider_message_id) DO UPDATE
                SET raw_from_values=EXCLUDED.raw_from_values,
@@ -196,6 +201,98 @@ public class MessageMetadataSyncRepository {
             """, new MapSqlParameterSource()
                 .addValue("account_id", accountId)
                 .addValue("provider_message_id", providerMessageId));
+    }
+
+    public List<String> gmailIdsToHydrate(long accountId, List<String> ids) {
+        if (ids.isEmpty()) return List.of();
+        return jdbc.queryForList("""
+            SELECT listed.id FROM unnest(:ids) WITH ORDINALITY AS listed(id, position)
+            WHERE NOT EXISTS (
+                SELECT 1 FROM gmail_backfill_seen seen
+                WHERE seen.account_id=:account AND seen.provider_message_id=listed.id
+            ) AND NOT EXISTS (
+                SELECT 1 FROM message_metadata m
+                WHERE m.account_id=:account AND m.provider_message_id=listed.id
+                  AND NOT(m.labels && ARRAY['SPAM','TRASH'])
+            )
+            ORDER BY listed.position
+            """, new MapSqlParameterSource("account", accountId).addValue("ids", array(ids)), String.class);
+    }
+
+    public void recordGmailIds(long accountId, List<String> ids) {
+        if (ids.isEmpty()) return;
+        jdbc.update("""
+            INSERT INTO gmail_backfill_seen(account_id, provider_message_id)
+            SELECT :account, unnest(:ids) ON CONFLICT DO NOTHING
+            """, new MapSqlParameterSource("account", accountId).addValue("ids", array(ids)));
+    }
+
+    /** Fence any older page hydration that is still in flight when History deletes a message. */
+    public void recordGmailScanDeletions(long accountId, Set<String> ids) {
+        if (ids.isEmpty()) return;
+        jdbc.update("""
+            INSERT INTO gmail_backfill_seen(account_id, provider_message_id, deleted_by_history)
+            SELECT :account, unnest(:ids), true
+            ON CONFLICT (account_id, provider_message_id) DO UPDATE SET deleted_by_history=true
+            """, new MapSqlParameterSource("account", accountId).addValue("ids", array(List.copyOf(ids))));
+    }
+
+    public Set<String> gmailScanDeletions(long accountId, List<String> ids) {
+        if (ids.isEmpty()) return Set.of();
+        return Set.copyOf(jdbc.queryForList("""
+            SELECT provider_message_id FROM gmail_backfill_seen
+            WHERE account_id=:account AND provider_message_id IN (:ids) AND deleted_by_history
+            """, new MapSqlParameterSource("account", accountId).addValue("ids", ids), String.class));
+    }
+
+    public long finishGmailListing(long accountId) {
+        var parameters = new MapSqlParameterSource("account", accountId);
+        long total = jdbc.queryForObject("""
+            SELECT count(*) FROM gmail_backfill_seen seen
+            JOIN message_metadata m ON m.account_id=seen.account_id
+                AND m.provider_message_id=seen.provider_message_id
+            WHERE seen.account_id=:account AND NOT(m.labels && ARRAY['SPAM','TRASH'])
+            """, parameters, Long.class);
+        clearGmailScanIds(accountId);
+        return total;
+    }
+
+    public void clearGmailScanIds(long accountId) {
+        jdbc.update("DELETE FROM gmail_backfill_seen WHERE account_id=:account",
+            new MapSqlParameterSource("account", accountId));
+    }
+
+    public List<String> unverifiedRescanIds(long accountId, UUID generation, Instant startedAt, int limit) {
+        return jdbc.queryForList("""
+            SELECT provider_message_id FROM message_metadata
+            WHERE account_id=:account AND full_scan_generation IS DISTINCT FROM :generation
+                AND last_synced_at < :started
+            ORDER BY provider_message_id LIMIT :limit
+            """, rescanParameters(accountId, generation, startedAt).addValue("limit", limit), String.class);
+    }
+
+    public int deleteVerifiedMissing(long accountId, String id, UUID generation, Instant startedAt) {
+        return jdbc.update("""
+            DELETE FROM message_metadata
+            WHERE account_id=:account AND provider_message_id=:id
+                AND full_scan_generation IS DISTINCT FROM :generation AND last_synced_at < :started
+            """, rescanParameters(accountId, generation, startedAt).addValue("id", id));
+    }
+
+    /** A newer local revision can win the upsert while the targeted read still proves existence. */
+    public void markRescanVerified(long accountId, List<String> ids, UUID generation) {
+        if (ids.isEmpty()) return;
+        jdbc.update("""
+            UPDATE message_metadata SET full_scan_generation=:generation
+            WHERE account_id=:account AND provider_message_id IN (:ids)
+              AND full_scan_generation IS DISTINCT FROM :generation
+            """, new MapSqlParameterSource("account", accountId).addValue("ids", ids)
+                .addValue("generation", generation));
+    }
+
+    private static MapSqlParameterSource rescanParameters(long accountId, UUID generation, Instant startedAt) {
+        return new MapSqlParameterSource("account", accountId).addValue("generation", generation)
+            .addValue("started", Timestamp.from(startedAt));
     }
 
     public int sweepStaleGeneration(

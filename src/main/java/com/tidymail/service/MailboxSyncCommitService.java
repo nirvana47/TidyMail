@@ -54,6 +54,24 @@ public class MailboxSyncCommitService {
         return commit(unit, Lane.BACKFILL);
     }
 
+    /** Commits metadata, deduplication and the Gmail listing cursor together. */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void commitGmailBackfillPage(long accountId, String owner, String phase, String token,
+            Long estimate, String bootstrapHistoryId, List<String> ids,
+            List<MailMessage> messages, int fetched) {
+        StateSnapshot state = states.lockForCommit(accountId);
+        Instant now = Instant.now();
+        validateLease(state, Lane.BACKFILL, owner, state.version(), now);
+        Set<String> deleted = metadata.gmailScanDeletions(accountId, messages.stream().map(MailMessage::id).toList());
+        var current = messages.stream().filter(message -> !deleted.contains(message.id())).toList();
+        int indexed = upsertMessages(accountId, current, null, now);
+        metadata.recordGmailIds(accountId, ids);
+        Long total = estimate != null && estimate > 0 ? estimate : state.gmailScopeTotal();
+        if ("COMPLETE".equals(phase)) total = metadata.finishGmailListing(accountId);
+        states.checkpointGmailBackfill(accountId, phase, token, total, bootstrapHistoryId, now);
+        states.recordActivity(accountId, Lane.BACKFILL, fetched, indexed, 0, indexed, total, now);
+    }
+
     /** Commits a rescan sync unit. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public CommitResult commitRescanUnit(SyncUnit unit) {
@@ -132,6 +150,10 @@ public class MailboxSyncCommitService {
         StateSnapshot state = states.lockForCommit(unit.accountId());
         validateLease(
             state, lane, unit.leaseOwner(), unit.expectedVersion(), unit.completedAt());
+        if (lane == Lane.RESCAN && (!"RUNNING".equals(state.rescanStatus())
+                || !unit.fullScanGeneration().equals(state.rescanGeneration()))) {
+            throw new IllegalStateException("Mailbox rescan generation changed before commit");
+        }
 
         Map<String, MailMessage> uniqueMessages = new LinkedHashMap<>();
         for (MailMessage message : unit.messages()) {
@@ -140,9 +162,18 @@ public class MailboxSyncCommitService {
             }
             uniqueMessages.merge(message.id(), message, MailboxSyncCommitService::newer);
         }
+        if (lane == Lane.RESCAN && "google".equals(state.provider())) {
+            uniqueMessages.keySet().removeAll(metadata.gmailScanDeletions(
+                unit.accountId(), List.copyOf(uniqueMessages.keySet())));
+        }
         Set<String> uniqueDeletes = new LinkedHashSet<>(unit.deletedProviderMessageIds());
         uniqueDeletes.removeAll(uniqueMessages.keySet());
         uniqueDeletes.removeAll(unit.labelChanges().keySet());
+
+        if (lane == Lane.FRESHNESS && "google".equals(state.provider())
+                && (!"COMPLETE".equals(state.backfillStatus()) || "RUNNING".equals(state.rescanStatus()))) {
+            metadata.recordGmailScanDeletions(unit.accountId(), uniqueDeletes);
+        }
 
         Set<String> touched = new LinkedHashSet<>(uniqueMessages.keySet());
         touched.addAll(uniqueDeletes);
@@ -158,8 +189,18 @@ public class MailboxSyncCommitService {
             unit.accountId(),entry.getKey(),entry.getValue(),unit.historyObservedAt(),unit.completedAt());
         int deleted = 0;
         for (String providerMessageId : uniqueDeletes) {
-            deleted += metadata.deleteByProviderMessageId(
-                unit.accountId(), providerMessageId);
+            deleted += lane == Lane.RESCAN
+                ? metadata.deleteVerifiedMissing(unit.accountId(), providerMessageId,
+                    unit.fullScanGeneration(), unit.rescanStartedAt())
+                : metadata.deleteByProviderMessageId(unit.accountId(), providerMessageId);
+        }
+        if (lane == Lane.RESCAN) {
+            metadata.markRescanVerified(unit.accountId(), List.copyOf(uniqueMessages.keySet()),
+                unit.fullScanGeneration());
+            if (unit.cursorValue() == null && "COMPLETE".equals(state.backfillStatus())
+                    && "google".equals(state.provider())) {
+                metadata.clearGmailScanIds(unit.accountId());
+            }
         }
         if (lane == Lane.RESCAN && unit.sweepCompletedGeneration()) {
             deleted += metadata.sweepStaleGeneration(

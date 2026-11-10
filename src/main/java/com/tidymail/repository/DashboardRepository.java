@@ -160,7 +160,9 @@ public class DashboardRepository {
                     FROM message_metadata m JOIN account_context a ON a.id=m.account_id
                     """+RecommendationSql.JOINS+"""
                     """+GROUPING_JOINS+"""
-                    WHERE m.account_id=:account AND
+                    WHERE m.account_id=:account
+                      AND (m.provider<>'google' OR NOT(m.labels && ARRAY['SPAM','TRASH']))
+                      AND
                     """ + "((:scope='indexed' AND m.provider='google') OR " + RECEIVED + """
                     OR (:suggestion='large' AND m.provider='google' AND 'SENT'=ANY(m.labels)
                         AND NOT(m.labels && ARRAY['SPAM','TRASH','DRAFT'])))
@@ -311,6 +313,7 @@ public class DashboardRepository {
                         """ + DELIVERY
                         + """
                                   )) ambiguous_sent FROM message_metadata m JOIN user_accounts a ON a.id=m.account_id WHERE m.account_id=:account
+                                  AND (m.provider<>'google' OR NOT(m.labels && ARRAY['SPAM','TRASH']))
                                 """,
                 p);
         Map<String, Object> state = jdbc.queryForMap(
@@ -566,22 +569,17 @@ public class DashboardRepository {
         return selection(account, filter, groups, address, false);
     }
     public List<Selected> selection(long account, DashboardFilter filter, List<UUID> groups, String address, boolean unreadOnly) {
-        return selection(account,filter,groups,address,unreadOnly,false);
-    }
-
-    public List<Selected> selection(long account, DashboardFilter filter, List<UUID> groups, String address,
-            boolean unreadOnly, boolean allMatching) {
-        if (!allMatching && (groups == null || groups.isEmpty()))
+        if (groups == null || groups.isEmpty())
             return List.of();
         var p = parameters(account, filter).addValue("groups", groups).addValue("address", address);
-        if (!filter.bySenderAddress() && !allMatching && jdbc.queryForObject(
+        if (!filter.bySenderAddress() && jdbc.queryForObject(
                 "SELECT count(*) FROM sender_groups WHERE account_id=:account AND public_id IN (:groups)", p,
                 Long.class) != groups.stream().distinct().count())
             throw new org.springframework.web.server.ResponseStatusException(
                     org.springframework.http.HttpStatus.NOT_FOUND, "Sender group unavailable for this account");
         return jdbc.query(filtered(account, filter)
-                + "SELECT dashboard_message_id,group_public_id,address FROM filtered WHERE (CAST(:address AS text) IS NULL OR address=:address)"
-                + (allMatching ? "" : " AND group_public_id IN (:groups)")
+                + "SELECT dashboard_message_id,group_public_id,address FROM filtered WHERE group_public_id IN (:groups)"
+                + " AND (CAST(:address AS text) IS NULL OR address=:address)"
                 + (unreadOnly ? " AND unread" : "") + " ORDER BY provider_message_id",
                 p,
                 (r, n) -> new Selected(uuid(r, "dashboard_message_id"), uuid(r, "group_public_id"),

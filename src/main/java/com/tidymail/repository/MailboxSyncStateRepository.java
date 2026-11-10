@@ -26,7 +26,7 @@ public class MailboxSyncStateRepository {
         return jdbc.query("""
             SELECT account_id, provider, lifecycle, incremental_cursor_kind,
                    incremental_cursor_value, incremental_last_success_at,
-                   backfill_page_token, backfill_status,
+                   backfill_page_token, backfill_status, gmail_backfill_phase, gmail_scope_total,
                    initial_batch_completed_at, provider_total,
                    rescan_status, rescan_generation, rescan_started_at, rescan_anchor,
                    freshness_lease_owner, freshness_lease_expires_at,
@@ -43,7 +43,7 @@ public class MailboxSyncStateRepository {
         return jdbc.query("""
             SELECT account_id, provider, lifecycle, incremental_cursor_kind,
                    incremental_cursor_value, incremental_last_success_at,
-                   backfill_page_token, backfill_status,
+                   backfill_page_token, backfill_status, gmail_backfill_phase, gmail_scope_total,
                    initial_batch_completed_at, provider_total,
                    rescan_status, rescan_generation, rescan_started_at, rescan_anchor,
                    freshness_lease_owner, freshness_lease_expires_at,
@@ -324,6 +324,31 @@ public class MailboxSyncStateRepository {
                 .addValue("completed_at", Timestamp.from(completedAt))) == 1;
     }
 
+    /** Called under the account state lock with a validated backfill lease. */
+    public void checkpointGmailBackfill(long accountId, String phase, String token,
+            Long scopeTotal, String bootstrapHistoryId, Instant completedAt) {
+        jdbc.update("""
+            UPDATE mailbox_sync_state
+               SET gmail_backfill_phase = :phase,
+                   gmail_scope_total = :total,
+                   backfill_page_token = :token,
+                   backfill_status = CASE WHEN :complete THEN 'COMPLETE' ELSE 'RUNNING' END,
+                   backfill_started_at = COALESCE(backfill_started_at, :now),
+                   backfill_completed_at = CASE WHEN :complete THEN CAST(:now AS timestamptz) ELSE NULL END,
+                   initial_batch_completed_at = COALESCE(initial_batch_completed_at, :now),
+                   lifecycle = CASE WHEN lifecycle IN ('NEW', 'BOOTSTRAPPING', 'BACKFILLING', 'ACTIVE')
+                       THEN CASE WHEN :complete THEN 'ACTIVE' ELSE 'BACKFILLING' END ELSE lifecycle END,
+                   incremental_cursor_kind = CASE WHEN :bootstrap THEN 'GMAIL_HISTORY_ID' ELSE incremental_cursor_kind END,
+                   incremental_cursor_value = CASE WHEN :bootstrap THEN :history ELSE incremental_cursor_value END,
+                   version = version + 1
+             WHERE account_id = :account_id
+            """, account(accountId).addValue("phase", phase)
+                .addValue("total", scopeTotal).addValue("token", token)
+                .addValue("complete", "COMPLETE".equals(phase))
+                .addValue("bootstrap", bootstrapHistoryId != null).addValue("history", bootstrapHistoryId)
+                .addValue("now", Timestamp.from(completedAt)));
+    }
+
     public boolean updateRescanCursor(
             long accountId,
             String owner,
@@ -418,6 +443,8 @@ public class MailboxSyncStateRepository {
             instant(result.getTimestamp("incremental_last_success_at")),
             result.getString("backfill_page_token"),
             result.getString("backfill_status"),
+            result.getString("gmail_backfill_phase"),
+            result.getObject("gmail_scope_total", Long.class),
             instant(result.getTimestamp("initial_batch_completed_at")),
             result.getObject("provider_total", Long.class),
             result.getString("rescan_status"),
@@ -500,6 +527,8 @@ public class MailboxSyncStateRepository {
         Instant incrementalLastSuccessAt,
         String backfillPageToken,
         String backfillStatus,
+        String gmailBackfillPhase,
+        Long gmailScopeTotal,
         Instant initialBatchCompletedAt,
         Long providerTotal,
         String rescanStatus,

@@ -26,11 +26,7 @@ public class DashboardService {
         return selection(account,filter,groups,address,revision,false);
     }
     public List<DashboardRepository.Selected> selection(long account,DashboardFilter filter,List<UUID> groups,String address,long revision,boolean unreadOnly) {
-        return selection(account,filter,groups,address,revision,unreadOnly,false);
-    }
-    public List<DashboardRepository.Selected> selection(long account,DashboardFilter filter,List<UUID> groups,
-            String address,long revision,boolean unreadOnly,boolean allMatching) {
         if(revision!=repository.revision(account)) throw new ResponseStatusException(HttpStatus.CONFLICT,"Grouping changed. Reload the dashboard.");
-        return repository.selection(account,filter,groups,address,unreadOnly,allMatching);
+        return repository.selection(account,filter,groups,address,unreadOnly);
     }
 }

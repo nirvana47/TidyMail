@@ -100,7 +100,8 @@ class GmailSynchronizationContractTest {
             fixture.account, new BackfillRequest("backfill-page", 500));
         assertThat(backfill.items()).extracting(MailMessage::id).containsExactly("old-1");
         assertThat(backfill.nextPageToken()).isEqualTo("backfill-next");
-        verify(fixture.listRequest).setIncludeSpamTrash(true);
+        verify(fixture.listRequest, times(2)).setIncludeSpamTrash(false);
+        verify(fixture.listRequest).setLabelIds(List.of("INBOX"));
         verify(fixture.listRequest).setPageToken("backfill-page");
         assertThat(fixture.metadataFormats).containsOnly("METADATA");
         assertThat(fixture.metadataHeaders)

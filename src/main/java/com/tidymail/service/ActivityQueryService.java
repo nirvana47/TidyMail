@@ -5,11 +5,11 @@ import com.tidymail.dto.ActivityStatusModel;
 import com.tidymail.dto.ActivityStatusModel.Action;
 import com.tidymail.dto.ActivityStatusModel.Event;
 import com.tidymail.dto.ActivityStatusModel.Lane;
+import com.tidymail.dto.ActivityStatusModel.ListingProgress;
 import com.tidymail.dto.WorkspacePageModel;
 import com.tidymail.dto.WorkspaceRoute;
 import com.tidymail.entity.UserAccount;
 import com.tidymail.entity.UserAccount.OAuthStatus;
-import com.tidymail.repository.MessageMetadataRepository;
 import com.tidymail.repository.UserAccountRepository;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -47,7 +47,6 @@ public class ActivityQueryService {
     private final OwnedAccountScopeService accountScope;
     private final WorkspaceModelService workspaceModels;
     private final UserAccountRepository accounts;
-    private final MessageMetadataRepository messages;
     private final JdbcTemplate jdbc;
     private final Clock clock;
 
@@ -56,22 +55,19 @@ public class ActivityQueryService {
             OwnedAccountScopeService accountScope,
             WorkspaceModelService workspaceModels,
             UserAccountRepository accounts,
-            MessageMetadataRepository messages,
             JdbcTemplate jdbc) {
-        this(accountScope, workspaceModels, accounts, messages, jdbc, Clock.systemUTC());
+        this(accountScope, workspaceModels, accounts, jdbc, Clock.systemUTC());
     }
 
     ActivityQueryService(
             OwnedAccountScopeService accountScope,
             WorkspaceModelService workspaceModels,
             UserAccountRepository accounts,
-            MessageMetadataRepository messages,
             JdbcTemplate jdbc,
             Clock clock) {
         this.accountScope = accountScope;
         this.workspaceModels = workspaceModels;
         this.accounts = accounts;
-        this.messages = messages;
         this.jdbc = jdbc;
         this.clock = clock;
     }
@@ -84,7 +80,10 @@ public class ActivityQueryService {
                 WorkspaceRoute.ACTIVITY, accountSelection, accountIds, authentication);
         UserAccount account = accounts.findById(accountIds.getFirst())
                 .orElseThrow(() -> new IllegalArgumentException("Resolved account no longer exists"));
-        long indexed = messages.countByAccountIdIn(accountIds);
+        long indexed = jdbc.queryForObject("""
+                SELECT count(*) FROM message_metadata
+                WHERE account_id = ? AND (provider <> 'google' OR NOT(labels && ARRAY['SPAM','TRASH']))
+                """, Long.class, account.getId());
         Optional<StateRow> state = state(account.getId());
         List<ProgressRow> progress = progress(account.getId());
         return new ActivityPageModel(
@@ -104,8 +103,8 @@ public class ActivityQueryService {
             return model(
                     "unsupported", "Sync activity is unavailable for this provider",
                     "Provider status", "Indexed messages remain available for cleanup.",
-                    indexed, null, null, null, "Unavailable", "Not checked yet", null,
-                    "Not needed", false, List.of(), events(progress, now), null, null,
+                    indexed, null, "Unavailable", "Not checked yet", null,
+                    "Not needed", List.of(), events(progress, now), null, null,
                     false);
         }
 
@@ -117,9 +116,9 @@ public class ActivityQueryService {
                     "Gmail authorization",
                     "Gmail authorization needs attention. Reconnect Gmail to continue syncing; "
                             + "your indexed data will remain available.",
-                    indexed, null, null, null,
+                    indexed, null,
                     initialBatch(state), freshness(freshnessAt, now), freshnessAt,
-                    rescan(state, now), false, lanes(state, progress, now),
+                    rescan(state, now), lanes(state, progress, now),
                     events(progress, now),
                     new Action("Reconnect Gmail", "/accounts/connect/google", false,
                             "Reconnect Gmail for " + account.getEmail()),
@@ -132,26 +131,26 @@ public class ActivityQueryService {
                     "Mailbox sync paused",
                     "Sync paused after a recoverable error. Your indexed data is still available. "
                             + "Retry now or wait for the next automatic attempt.",
-                    indexed, null, null, null,
+                    indexed, null,
                     initialBatch(state), freshness(state.incrementalLastSuccessAt(), now),
-                    state.incrementalLastSuccessAt(), rescan(state, now), false,
+                    state.incrementalLastSuccessAt(), rescan(state, now),
                     lanes(state, progress, now), events(progress, now),
                     new Action("Retry sync", "/api/metadata-sync", true,
                             "Retry Gmail sync for " + account.getEmail()),
                     hasAutomaticRetry(progress) ? 30 : null, true);
         }
 
+        ListingProgress listing = listingProgress(state, indexed);
         if (state == null || state.initialBatchCompletedAt() == null) {
             return model(
                     "preparing", "Preparing your cleanup workspace",
-                    "Initial setup",
-                    "Recent messages are being indexed first. "
+                    "Indexing Inbox",
+                    "Your most recent Inbox messages are being indexed first. "
                             + "Sync continues in the background; you can close this page.",
-                    indexed, reliableTotal(state), observedAt(state),
-                    remaining(state, indexed, false), "Preparing",
+                    indexed, listing, "Preparing",
                     freshness(state == null ? null : state.incrementalLastSuccessAt(), now),
                     state == null ? null : state.incrementalLastSuccessAt(),
-                    rescan(state, now), progressAllowed(state),
+                    rescan(state, now),
                     lanes(state, progress, now), events(progress, now), null, 5, false);
         }
 
@@ -159,38 +158,35 @@ public class ActivityQueryService {
                 || "REQUIRED".equals(state.rescanStatus())) {
             return model(
                     "warning", "A mailbox rescan is required", "Mailbox rescan queued",
-                    "Recent changes are reconciled before full mailbox history is checked. "
-                            + "Sync continues in the background; you can close this page.",
-                    indexed, null, null, null, "Ready",
+                    "Gmail will recheck All Mail and verify messages missing from the listing.",
+                    indexed, null, "Ready",
                     freshness(state.incrementalLastSuccessAt(), now),
-                    state.incrementalLastSuccessAt(), "Required", false,
+                    state.incrementalLastSuccessAt(), "Required",
                     lanes(state, progress, now), events(progress, now), null, 5, false);
         }
 
         if ("RESCANNING".equals(state.lifecycle())
                 || "RUNNING".equals(state.rescanStatus())) {
             return model(
-                    "warning", "Rechecking mailbox history", "Mailbox rescan",
+                    "warning", "Rechecking mailbox history",
+                    "__VERIFY_MISSING__".equals(state.rescanAnchor()) ? "Checking missing messages" : "Rescanning All Mail",
                     "Sync continues in the background; you can close this page.",
-                    indexed, null, null, null, "Ready",
+                    indexed, null, "Ready",
                     freshness(state.incrementalLastSuccessAt(), now),
-                    state.incrementalLastSuccessAt(), "In progress", false,
+                    state.incrementalLastSuccessAt(), "In progress",
                     lanes(state, progress, now), events(progress, now), null, 5, false);
         }
 
         boolean backfillActive = !"COMPLETE".equals(state.backfillStatus());
         boolean freshnessActive = laneActive(progress, "FRESHNESS");
-        Long total = reliableTotal(state);
-        Long remaining = remaining(state, indexed, backfillActive);
         if (backfillActive) {
             return model(
-                    "active", "Cleanup is ready while history continues", "Historical mail",
-                    "Your recent messages are ready to review. Older mail will continue indexing "
-                            + "in the background. Sync continues in the background; you can close this page.",
-                    indexed, total, state.providerTotalObservedAt(), remaining, "Ready",
+                    "active", "Cleanup is ready while indexing continues",
+                    indexingPhase(state),
+                    "Your indexed messages are ready to review. Sync continues in the background.",
+                    indexed, listing, "Ready",
                     freshness(state.incrementalLastSuccessAt(), now),
                     state.incrementalLastSuccessAt(), rescan(state, now),
-                    total != null && total > 0,
                     lanes(state, progress, now), events(progress, now),
                     new Action("Open cleanup",
                             "/senders?account=" + account.getId(), false, "Open cleanup"),
@@ -201,21 +197,21 @@ public class ActivityQueryService {
             return model(
                     "active", "Checking for new mail", "New mail",
                     "Sync continues in the background; you can close this page.",
-                    indexed, total, state.providerTotalObservedAt(), null, "Ready",
+                    indexed, listing, "Ready",
                     freshness(state.incrementalLastSuccessAt(), now),
-                    state.incrementalLastSuccessAt(), rescan(state, now), false,
+                    state.incrementalLastSuccessAt(), rescan(state, now),
                     lanes(state, progress, now), events(progress, now), null, 5, false);
         }
 
-        if (indexed == 0 && Long.valueOf(0).equals(total)
+        if (indexed == 0 && listing != null && Long.valueOf(0).equals(listing.total())
                 && state.incrementalLastSuccessAt() != null) {
             return model(
                     "empty", "No messages were found", "Mailbox checked",
                     "Gmail reported no messages for this account. "
                             + "Sync will continue checking for new mail.",
-                    0, 0L, state.providerTotalObservedAt(), 0L, "Ready",
+                    0, listing, "Ready",
                     freshness(state.incrementalLastSuccessAt(), now),
-                    state.incrementalLastSuccessAt(), rescan(state, now), false,
+                    state.incrementalLastSuccessAt(), rescan(state, now),
                     lanes(state, progress, now), events(progress, now), null, null, false);
         }
 
@@ -225,10 +221,9 @@ public class ActivityQueryService {
         return model(
                 "current", headline, "Mailbox checked",
                 "Indexed cleanup data is available for this account.",
-                indexed, total, state.providerTotalObservedAt(),
-                total == null ? null : Math.max(total - indexed, 0), "Ready",
+                indexed, listing, "Ready",
                 freshness(state.incrementalLastSuccessAt(), now),
-                state.incrementalLastSuccessAt(), rescan(state, now), false,
+                state.incrementalLastSuccessAt(), rescan(state, now),
                 lanes(state, progress, now), events(progress, now), null, null, false);
     }
 
@@ -239,23 +234,19 @@ public class ActivityQueryService {
             String phase,
             String guidance,
             long indexed,
-            Long providerTotal,
-            Instant providerTotalObservedAt,
-            Long remaining,
+            ListingProgress listing,
             String initialBatch,
             String freshness,
             Instant freshnessAt,
             String rescan,
-            boolean showProgress,
             List<Lane> lanes,
             List<Event> events,
             Action action,
             Integer pollingSeconds,
             boolean alert) {
         return new ActivityStatusModel(
-                stateClass, headline, phase, guidance, indexed, providerTotal,
-                providerTotalObservedAt, remaining, initialBatch, freshness, freshnessAt,
-                rescan, showProgress, lanes, events, action, pollingSeconds, alert, headline);
+                stateClass, headline, phase, guidance, indexed, listing, initialBatch, freshness, freshnessAt,
+                rescan, lanes, events, action, pollingSeconds, alert, headline);
     }
 
     /** Loads the account's current sync state row. */
@@ -263,8 +254,8 @@ public class ActivityQueryService {
         List<StateRow> rows = jdbc.query("""
                 SELECT lifecycle, incremental_last_success_at,
                        backfill_status, backfill_started_at, backfill_completed_at,
-                       initial_batch_completed_at, provider_total, provider_total_observed_at,
-                       rescan_status, rescan_started_at, rescan_completed_at,
+                       initial_batch_completed_at, gmail_backfill_phase, gmail_scope_total,
+                       rescan_status, rescan_started_at, rescan_completed_at, rescan_anchor,
                        freshness_lease_expires_at, backfill_lease_expires_at
                   FROM mailbox_sync_state
                  WHERE account_id = ?
@@ -296,9 +287,7 @@ public class ActivityQueryService {
                 || !"NOT_STARTED".equals(state.backfillStatus())
                 || latest.containsKey("BACKFILL")) {
             addLane(result, "BACKFILL",
-                    state == null || state.initialBatchCompletedAt() == null
-                            ? "Initial setup"
-                            : "Historical mail",
+                    state != null && "COMPLETE".equals(state.backfillStatus()) ? "Initial sync" : indexingPhase(state),
                     latest.get("BACKFILL"), now);
         }
         if (state != null && !"NOT_STARTED".equals(state.rescanStatus())) {
@@ -371,28 +360,20 @@ public class ActivityQueryService {
                 .orElse(false);
     }
 
-    /** Returns true if sync progress is currently permitted for the state. */
-    private static boolean progressAllowed(StateRow state) {
-        return state != null && state.providerTotal() != null
-                && state.providerTotalObservedAt() != null && state.providerTotal() > 0;
+    private static String indexingPhase(StateRow state) {
+        return state != null && "ALL_MAIL".equals(state.gmailBackfillPhase())
+            ? "Indexing All Mail" : "Indexing Inbox";
     }
 
-    /** Returns the provider total when it is reliable, else null. */
-    private static Long reliableTotal(StateRow state) {
-        return state != null && state.providerTotalObservedAt() != null
-                ? state.providerTotal()
-                : null;
-    }
-
-    /** Returns when the provider total was observed. */
-    private static Instant observedAt(StateRow state) {
-        return state == null ? null : state.providerTotalObservedAt();
-    }
-
-    /** Computes the remaining messages to index, if known. */
-    private static Long remaining(StateRow state, long indexed, boolean allowed) {
-        Long total = reliableTotal(state);
-        return allowed && total != null ? Math.max(total - indexed, 0) : null;
+    private static ListingProgress listingProgress(StateRow state, long indexed) {
+        if (state == null) return new ListingProgress(indexed, null, false);
+        Long total = state.gmailScopeTotal();
+        if ("COMPLETE".equals(state.backfillStatus())) {
+            // Freeze the completed listing's count. Ongoing History updates the live indexed count.
+            return total == null ? null : new ListingProgress(total, total, true);
+        }
+        // A stale low estimate cannot represent remaining work or a completed bar.
+        return new ListingProgress(indexed, total != null && total > indexed ? total : null, false);
     }
 
     /** Describes the initial-batch completion state. */
@@ -484,11 +465,12 @@ public class ActivityQueryService {
                 instant(result, "backfill_started_at"),
                 instant(result, "backfill_completed_at"),
                 instant(result, "initial_batch_completed_at"),
-                result.getObject("provider_total", Long.class),
-                instant(result, "provider_total_observed_at"),
+                result.getString("gmail_backfill_phase"),
+                result.getObject("gmail_scope_total", Long.class),
                 result.getString("rescan_status"),
                 instant(result, "rescan_started_at"),
                 instant(result, "rescan_completed_at"),
+                result.getString("rescan_anchor"),
                 instant(result, "freshness_lease_expires_at"),
                 instant(result, "backfill_lease_expires_at"));
     }
@@ -522,11 +504,12 @@ public class ActivityQueryService {
             Instant backfillStartedAt,
             Instant backfillCompletedAt,
             Instant initialBatchCompletedAt,
-            Long providerTotal,
-            Instant providerTotalObservedAt,
+            String gmailBackfillPhase,
+            Long gmailScopeTotal,
             String rescanStatus,
             Instant rescanStartedAt,
             Instant rescanCompletedAt,
+            String rescanAnchor,
             Instant freshnessLeaseExpiresAt,
             Instant backfillLeaseExpiresAt) {
     }

@@ -470,8 +470,9 @@ class DashboardJourneyTest extends PostgresJourneyTest {
         assertThat(dashboard.page(account, any).summary()).containsEntry("messages",14L).containsEntry("unread",12L);
         assertThat(dashboard.inboxComposition(account,any)).extracting(DashboardRepository.Composition::messages)
             .containsExactly(12L,1L);
-        assertThat(dashboard.selection(account,any,List.of(),null,0,false,true)).hasSize(14);
-        assertThat(dashboard.selection(account,any,List.of(),null,0,false,false)).isEmpty();
+        var matchingGroups = dashboard.page(account,any).groups().stream().map(DashboardRepository.Group::id).toList();
+        assertThat(dashboard.selection(account,any,matchingGroups,null,0)).hasSize(14);
+        assertThat(dashboard.selection(account,any,List.of(),null,0)).isEmpty();
 
         var units = jdbc.queryForList("SELECT public_id FROM sender_units WHERE account_id=? ORDER BY id", UUID.class,account);
         grouping.correct(account,new DashboardGroupingService.Correction("MERGE",units,"Digest and alerts",null,0),true);
@@ -479,8 +480,9 @@ class DashboardJourneyTest extends PostgresJourneyTest {
             assertThat(group.label()).isEqualTo("Digest and alerts");
             assertThat(group.messages()).isEqualTo(13);
             var drilldown = DashboardFilter.from(Map.of("labels","NEWSLETTER,SECURITY","match","any","composition",group.key()));
-            assertThat(dashboard.page(account,drilldown).summary()).containsEntry("messages",13L);
-            assertThat(dashboard.selection(account,drilldown,List.of(),null,1,false,true)).hasSize(13);
+            var page = dashboard.page(account,drilldown);
+            assertThat(page.summary()).containsEntry("messages",13L);
+            assertThat(dashboard.selection(account,drilldown,List.of(page.groups().getFirst().id()),null,1)).hasSize(13);
         });
         var split = new DashboardGroupingService.Correction("SPLIT",List.of(),"Digests",null,1,"Alerts",
             dashboard.page(account,any).groups().getFirst().id(),List.of("digest@news.example"));
@@ -667,6 +669,11 @@ class DashboardJourneyTest extends PostgresJourneyTest {
                 .param("unreadOnly", "true").param("messagePage", "1"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.messages.length()").value(3));
         assertThat(dashboard.details(account, query, group, 0).total()).isEqualTo(25);
+
+        mockMvc.perform(post("/dashboard/api/selection").with(authenticatedAs(OWNER))
+                .with(csrfToken()).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(Map.of("filter", query, "revision", page.revision(), "allMatching", true))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
 
         var response = mockMvc.perform(post("/dashboard/api/selection").with(authenticatedAs(OWNER))
                 .with(csrfToken()).contentType(MediaType.APPLICATION_JSON)

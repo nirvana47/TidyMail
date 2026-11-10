@@ -140,12 +140,12 @@
     $('splitGroup').disabled = groupingSelection.size !== 1 || listLoading;
   }
   async function selectAllMatching() {
-    if (selectionBusy || listLoading || !state.details) return;
+    if (selectionBusy || listLoading || !state.details || !state.focused) return;
     const epoch = filterEpoch, revision = state.revision, detail = detailRequest;
     selectionBusy++;
     renderSelectionControls();
     try {
-      const rows = await api('selection', { filter: filter(), revision, allMatching: true,
+      const rows = await api('selection', { filter: filter(), revision, groups: [state.focused.id], address: state.address,
         unreadOnly: $('detailUnreadOnly').checked });
       if (epoch !== filterEpoch || detail !== detailRequest || revision !== state.revision) return;
       selected.clear();
@@ -224,7 +224,11 @@
         const preferred = $(pagerFocus), other = $(pagerFocus === 'nextPage' ? 'prevPage' : 'nextPage');
         (preferred.disabled ? (other.disabled ? $('senderTable') : other) : preferred).focus();
       }
-      if (state.focused && !data.groups.some(g => g.id === state.focused.id)) { detailRequest++; detailLoad?.controller.abort(); state.focused = null; state.details = null; $('detail').hidden = true; }
+      if (state.focused && !data.groups.some(g => g.id === state.focused.id)) {
+        detailRequest++; detailLoad?.controller.abort(); state.focused = null; state.details = null; state.address = null;
+        $('detail').hidden = true;
+        clearSelection();
+      }
       if (refreshDetails) refreshExpanded(data, request, epoch);
       if (!state.focused && data.groups.length) return focusGroup(data.groups[0]);
       else if (state.focused) {
@@ -323,12 +327,12 @@
   }
   function addressLink(g,a) {
     const button=node('button',`${a.displayName || a.address}${a.displayName ? ' · '+a.address : ''} · ${fmt(a.messages)} messages`,'sender-focus');
-    button.onclick=()=>{ state.address=a.address; state.tab='messages'; focusGroup(g,true); $('messagesTab').click(); $('messagesTab').focus(); };
+    button.onclick=()=>{ state.tab='messages'; focusGroup(g,a.address); $('messagesTab').click(); $('messagesTab').focus(); };
     return button;
   }
-  function focusGroup(g, retainAddress = false) {
-    if (!allMatchingSelected && (state.focused?.id !== g.id || state.messagePage || state.address || retainAddress)) clearSelection();
-    if(!retainAddress)state.address=null; state.focused = g; state.messagePage = 0; state.details = null; $('detail').hidden = false; renderGroups(); renderDetail(); return loadDetails(); }
+  function focusGroup(g, address = null) {
+    if (state.focused?.id !== g.id || state.address !== address || (!allMatchingSelected && state.messagePage)) clearSelection();
+    state.address = address; state.focused = g; state.messagePage = 0; state.details = null; $('detail').hidden = false; renderGroups(); renderDetail(); return loadDetails(); }
   function loadDetails(refresh = false) {
     if (!state.focused) return Promise.resolve();
     const group = state.focused.id, epoch = filterEpoch, tab = state.tab;
@@ -370,13 +374,13 @@
     const expandedLabels = new Set([...content.querySelectorAll('details[data-message-labels][open]')].map(el => el.dataset.messageLabels));
     content.replaceChildren(); const detail = state.details;
     if (!detail) { content.append(node('p', 'Loading indexed details…', 'evidence')); return; }
-    if (state.address) { const back=node('button','All messages in this group'); back.onclick=()=>{if (!allMatchingSelected) clearSelection();state.address=null;state.messagePage=0;state.details=null;renderDetail();loadDetails();}; content.append(node('p',state.address,'evidence'),back); }
+    if (state.address) { const back=node('button','All messages in this group'); back.onclick=()=>focusGroup(state.focused); content.append(node('p',state.address,'evidence'),back); }
     if (state.tab === 'messages') {
       const visible = node('div', undefined, 'evidence'), count = detail.messages.filter(m => selected.has(m.id)).length;
       visible.append(checkbox(`Select visible messages (${detail.messages.length})`, detail.messages.length, count, checked => { for (const m of detail.messages) { if (checked) selected.set(m.id, m); else selected.delete(m.id); } invalidatePreview(); renderSelectionControls(); }), node('span', ' Select visible messages'));
-      const total = Number(state.data?.summary[$('detailUnreadOnly').checked ? 'unread' : 'messages'] || 0);
+      const total = detail.total;
       if (count && count === detail.messages.length && total > count && !allMatchingSelected) {
-        const all = node('button', `Select all ${fmt(total)} matching ${$('detailUnreadOnly').checked ? 'unread messages' : 'messages'}`);
+        const all = node('button', `Select all ${fmt(total)} matching ${$('detailUnreadOnly').checked ? 'unread messages' : 'messages'} in this view`);
         all.disabled = selectionBusy > 0 || listLoading;
         all.onclick = selectAllMatching;
         visible.append(all);

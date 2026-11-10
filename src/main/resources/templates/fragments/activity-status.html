@@ -60,21 +60,6 @@
                 <th scope="row">Indexed messages</th>
                 <td class="activity-numeric" th:text="${status.indexedMessages}">0</td>
             </tr>
-            <tr th:if="${status.hasProviderTotal()}">
-                <th scope="row">Provider total</th>
-                <td class="activity-numeric">
-                    <span th:text="${status.providerTotal}">0</span>
-                    <span class="visually-hidden" th:if="${status.providerTotalObservedAt != null}">
-                        observed
-                        <time th:datetime="${status.providerTotalObservedAt}"
-                              th:text="${status.providerTotalObservedAt}">recently</time>
-                    </span>
-                </td>
-            </tr>
-            <tr th:if="${status.hasRemainingMessages()}">
-                <th scope="row">Remaining</th>
-                <td class="activity-numeric" th:text="${status.remainingMessages}">0</td>
-            </tr>
             <tr>
                 <th scope="row">Initial batch</th>
                 <td th:text="${status.initialBatch}">Preparing</td>
@@ -97,14 +82,12 @@
         </table>
     </div>
 
-    <div class="activity-progress" th:if="${status.showProgress}">
+    <div class="activity-progress" th:if="${status.listing != null}">
         <p>
-            <span th:text="${status.indexedMessages}">0</span> of
-            <span th:text="${status.providerTotal}">0</span> messages indexed
+            <span th:if="${status.listing.complete}">Initial sync</span>
+            <span id="listing-progress-label" th:text="${status.listing.text()}">Counting messages…</span>
         </p>
-        <progress th:value="${status.indexedMessages}"
-                  th:max="${status.providerTotal}"
-                  th:attr="aria-label=|${status.indexedMessages} of ${status.providerTotal} messages indexed|">
+        <progress max="100" th:value="${status.listing.barValue()}" aria-labelledby="listing-progress-label">
         </progress>
     </div>
 

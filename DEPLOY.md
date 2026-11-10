@@ -82,7 +82,6 @@ Defaults are in `src/main/resources/application.properties`. `.env.example` docu
 | `SERVER_SERVLET_SESSION_TIMEOUT` | `86400s`; does not purge data |
 | `THYMELEAF_CACHE` | `false`; enable for deployed templates |
 | `SYNC_INITIAL_PAGE_SIZE` | `200`; valid range 100–250 |
-| `SYNC_MAX_MESSAGES_PER_ACCOUNT` | `0`, unlimited; positive values bound unique indexed messages |
 | `SYNC_GMAIL_BACKFILL_PAGE_SIZE` | `500` |
 | `SYNC_FRESHNESS_CYCLE_MS` | `300000`, five minutes |
 | `SYNC_STARTUP_DELAY_MS` | `5000`; resume active accounts shortly after startup |

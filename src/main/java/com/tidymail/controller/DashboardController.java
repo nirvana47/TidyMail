@@ -232,7 +232,7 @@ public class DashboardController {
         return dashboard.grouping(account(auth), group);
     }
 
-    public record Selection(DashboardFilter filter, List<UUID> groups, String address, long revision, boolean unreadOnly, boolean allMatching) {
+    public record Selection(DashboardFilter filter, List<UUID> groups, String address, long revision, boolean unreadOnly) {
     }
 
     @PostMapping("/api/selection")
@@ -242,7 +242,7 @@ public class DashboardController {
         if (request.filter() == null)
             throw new IllegalArgumentException("Filters are required");
         return dashboard.selection(account(auth), request.filter(), request.groups(), request.address(),
-                request.revision(), request.unreadOnly(), request.allMatching());
+                request.revision(), request.unreadOnly());
     }
 
     @PostMapping("/api/previews")

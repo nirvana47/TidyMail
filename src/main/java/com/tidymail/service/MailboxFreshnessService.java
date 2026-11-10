@@ -48,7 +48,7 @@ public class MailboxFreshnessService {
             UserAccount account, MailboxSyncProvider provider, String leaseOwner) {
         StateSnapshot state = states.findByAccountId(account.getId())
             .orElseThrow(() -> new IllegalStateException("Mailbox sync state not found"));
-        if (state.incrementalCursorValue() == null) {
+        if (state.incrementalCursorValue() == null || "REQUIRED".equals(state.rescanStatus())) {
             return SyncOutcome.complete();
         }
         SyncCapabilities.ChangeFeedKind cursorKind =

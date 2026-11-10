@@ -181,49 +181,65 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
             throw new IllegalArgumentException(
                 "Recent bootstrap max results must be between 100 and 250");
         }
-        Gmail gmail = clientFactory.buildFor(account);
-        return rateLimiter.supplyWithFreshnessPermit(() -> {
-            try {
-                ListMessagesResponse response = readWithRetry(account.getId(),5,false,() ->
-                    gmail.users().messages().list(USER_ID_ME)
-                        .setMaxResults((long) maxResults).execute());
-                return fetchMetadata(
-                    gmail, ids(response.getMessages()), account.getProvider(), true,true,account.getId(),false);
-            } catch (IOException ex) {
-                throw syncFailure("BOOTSTRAP_FAILED", ex);
-            }
-        });
+        IdPage page = listSyncIds(account, null, maxResults, true, true);
+        return hydrateSyncPage(account, page.ids(), true);
     }
 
-    /**
-     * Backfills a page of messages (including spam/trash) for the account.
-     */
     @Override
-    public PageResult<MailMessage> listBackfill(
-            UserAccount account, BackfillRequest request) {
-        if (request.maxResults() > syncConfig.getBackfillPageSize()
-                || request.maxResults() > 500) {
-            throw new IllegalArgumentException(
-                "Backfill max results exceeds configured Gmail page size");
+    public PageResult<MailMessage> listBackfill(UserAccount account, BackfillRequest request) {
+        IdPage page = listSyncIds(account, request.pageToken(), request.maxResults(), false, false);
+        return PageResult.of(hydrateSyncPage(account, page.ids(), false),
+            page.nextPageToken(), request.maxResults());
+    }
+
+    /** Lists IDs before hydration so the caller can reuse indexed messages. */
+    public IdPage listSyncIds(
+            UserAccount account, String pageToken, int pageSize, boolean inbox, boolean initial) {
+        if (pageSize < 1 || pageSize > (initial ? 250 : syncConfig.getBackfillPageSize())) {
+            throw new IllegalArgumentException("Invalid Gmail sync page size");
         }
         Gmail gmail = clientFactory.buildFor(account);
-        return rateLimiter.supplyWithBackfillRescanPermit(() -> {
+        java.util.function.Supplier<IdPage> read = () -> {
             try {
                 Gmail.Users.Messages.List list = gmail.users().messages().list(USER_ID_ME)
-                    .setIncludeSpamTrash(true)
-                    .setMaxResults((long) request.maxResults());
-                setPageToken(list, request.pageToken());
-                ListMessagesResponse response = readWithRetry(account.getId(),5,true,list::execute);
-                if(response.getNextPageToken()!=null&&response.getNextPageToken().equals(request.pageToken()))throw new IllegalStateException("GMAIL_BACKFILL_PAGE_DID_NOT_ADVANCE");
-                List<MailMessage> messages = fetchMetadata(
-                    gmail, ids(response.getMessages()), account.getProvider(), true,true,account.getId(),true);
-                return PageResult.of(
-                    messages, response.getNextPageToken(), request.maxResults());
+                    .setIncludeSpamTrash(false)
+                    .setMaxResults((long) pageSize);
+                if (inbox) list.setLabelIds(List.of("INBOX"));
+                setPageToken(list, pageToken);
+                ListMessagesResponse response = readWithRetry(account.getId(),5,!initial,list::execute);
+                if (response.getNextPageToken() != null && response.getNextPageToken().equals(pageToken)) {
+                    throw new IllegalStateException("GMAIL_BACKFILL_PAGE_DID_NOT_ADVANCE");
+                }
+                return new IdPage(ids(response.getMessages()), response.getNextPageToken(),
+                    response.getResultSizeEstimate());
+            } catch (GoogleJsonResponseException ex) {
+                if (pageToken != null && ex.getStatusCode() == 400) {
+                    throw syncFailure("GMAIL_LIST_CURSOR_INVALID", ex);
+                }
+                throw syncFailure("BACKFILL_FAILED", ex);
             } catch (IOException ex) {
                 throw syncFailure("BACKFILL_FAILED", ex);
             }
-        });
+        };
+        return initial ? rateLimiter.supplyWithFreshnessPermit(read)
+            : rateLimiter.supplyWithBackfillRescanPermit(read);
     }
+
+    public List<MailMessage> hydrateSyncPage(UserAccount account, List<String> ids, boolean initial) {
+        if (ids.isEmpty()) return List.of();
+        Gmail gmail = clientFactory.buildFor(account);
+        java.util.function.Supplier<List<MailMessage>> read = () -> {
+            try {
+                return fetchMetadata(gmail, ids, account.getProvider(), true, true, account.getId(), !initial);
+            } catch (IOException ex) {
+                throw syncFailure("BACKFILL_FAILED", ex);
+            }
+        };
+        return initial ? rateLimiter.supplyWithFreshnessPermit(read)
+            : rateLimiter.supplyWithBackfillRescanPermit(read);
+    }
+
+    public record IdPage(List<String> ids, String nextPageToken, Long estimate) {}
 
     /**
      * Pulls a page of changes from the Gmail history feed since the given

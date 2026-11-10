@@ -1,6 +1,7 @@
 package com.tidymail.service;
 
 import com.tidymail.entity.UserAccount;
+import com.tidymail.mail.gmail.GmailMailService;
 import com.tidymail.mail.sync.MailboxSyncProvider;
 import com.tidymail.repository.MailboxSyncStateRepository;
 import com.tidymail.repository.MailboxSyncStateRepository.Lane;
@@ -24,18 +25,21 @@ public class MessageMetadataSyncService {
     private final MailboxFreshnessService freshness;
     private final MailboxBackfillService backfill;
     private final MailboxRescanService rescan;
+    private final GmailInitialSyncService gmailInitialSync;
 
     public MessageMetadataSyncService(
             MailboxSyncStateRepository states,
             MailboxBootstrapService bootstrap,
             MailboxFreshnessService freshness,
             MailboxBackfillService backfill,
-            MailboxRescanService rescan) {
+            MailboxRescanService rescan,
+            GmailInitialSyncService gmailInitialSync) {
         this.states = states;
         this.bootstrap = bootstrap;
         this.freshness = freshness;
         this.backfill = backfill;
         this.rescan = rescan;
+        this.gmailInitialSync = gmailInitialSync;
     }
 
     /** Synchronizes the account for the given lane, returning the outcome. */
@@ -56,6 +60,12 @@ public class MessageMetadataSyncService {
             UserAccount account, MailboxSyncProvider provider, String leaseOwner) {
         StateSnapshot state = states.findByAccountId(account.getId())
             .orElseThrow(() -> new IllegalStateException("Mailbox sync state not found"));
+        if (provider instanceof GmailMailService gmail) {
+            if ("REQUIRED".equals(state.rescanStatus()) || "RUNNING".equals(state.rescanStatus())) {
+                return SyncOutcome.complete();
+            }
+            return gmailInitialSync.synchronizePage(account, gmail, leaseOwner, state);
+        }
         return state.initialBatchCompletedAt() == null
             ? bootstrap.bootstrap(account, provider, leaseOwner)
             : backfill.synchronizeBackfillPage(account, provider, leaseOwner);

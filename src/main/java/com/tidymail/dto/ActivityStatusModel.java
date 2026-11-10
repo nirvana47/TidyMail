@@ -2,14 +2,14 @@ package com.tidymail.dto;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * View model for the Activity page's live status panel.
  *
  * <p>Product functionality supported: the <em>Activity</em> workspace tab's
- * status widget, which shows sync progress (indexed vs provider totals,
- * freshness), per-lane work status, recent events, and an optional call-to-
- * action. Exposes helper predicates so the template can conditionally render
+ * status widget, which shows the current indexed count, scoped listing progress,
+ * freshness, per-lane work status, recent events, and an optional action. Exposes helper predicates so the template can conditionally render
  * each section.</p>
  */
 public record ActivityStatusModel(
@@ -18,14 +18,11 @@ public record ActivityStatusModel(
     String phase,
     String guidance,
     long indexedMessages,
-    Long providerTotal,
-    Instant providerTotalObservedAt,
-    Long remainingMessages,
+    ListingProgress listing,
     String initialBatch,
     String freshness,
     Instant freshnessAt,
     String rescan,
-    boolean showProgress,
     List<Lane> lanes,
     List<Event> events,
     Action action,
@@ -38,12 +35,17 @@ public record ActivityStatusModel(
         events = List.copyOf(events);
     }
 
-    public boolean hasProviderTotal() {
-        return providerTotal != null;
-    }
+    public record ListingProgress(long indexed, Long total, boolean complete) {
+        public String text() {
+            if (total == null) return String.format(Locale.US, "Counting messages… %,d indexed", indexed);
+            if (complete) return String.format(Locale.US, "%,d of %,d indexed · 100%%", indexed, total);
+            return String.format(Locale.US, "%,d of ~%,d indexed (estimated total)", indexed, total);
+        }
 
-    public boolean hasRemainingMessages() {
-        return remainingMessages != null;
+        public Double barValue() {
+            if (total == null) return null;
+            return complete ? 100.0 : Math.min(99.99, 100.0 * indexed / total);
+        }
     }
 
     public boolean hasAction() {

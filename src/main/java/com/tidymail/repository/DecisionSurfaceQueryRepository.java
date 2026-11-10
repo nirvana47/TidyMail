@@ -149,6 +149,7 @@ public class DecisionSurfaceQueryRepository {
             SELECT COUNT(*)
               FROM message_metadata metadata
              WHERE metadata.account_id=:account_id
+               AND (metadata.provider<>'google' OR NOT(metadata.labels && ARRAY['SPAM','TRASH']))
                AND COALESCE(NULLIF(lower(trim(metadata.from_address)), ''), '__missing__')
                    =:sender
                AND metadata.received_at>=:start
