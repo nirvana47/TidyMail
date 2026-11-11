@@ -198,6 +198,27 @@ class PersonalOutlookJourneyTest extends PostgresJourneyTest {
             .containsKey("SECURITY").doesNotContainKey("DOCUMENT_COMMENT");
     }
 
+    @Test void calendarFilterMatchesNativeMeetingsAndGoogleInvites() {
+        fixture.put("meeting","in","organizer@example.test","Quarterly planning")
+            .put("@odata.type","#microsoft.graph.eventMessageRequest");
+        fixture.put("cancel","in","organizer@example.test","Canceled: Quarterly planning")
+            .put("@odata.type","#microsoft.graph.eventMessage");
+        fixture.put("google-invite","in","organizer@example.test",
+            "Updated invitation: Planning @ Mon Nov 9, 2026 (organizer@example.test)");
+        fixture.put("accepted","in","guest@example.test","Accepted: Quarterly planning")
+            .put("@odata.type","#microsoft.graph.eventMessageResponse").put("meetingMessageType","meetingAccepted");
+        importMailbox();
+        assertThat(labels.runOnce()).isTrue();
+
+        var filter = DashboardFilter.from(Map.of("scope","all","labels","CALENDAR_INVITE"));
+        assertThat(count(filter)).isEqualTo(3);
+        assertThat(recommendations.read(accountId, List.of(id("meeting"), id("cancel"), id("google-invite"))))
+            .allSatisfy(view -> assertThat(view.labelReasons()).containsKey("CALENDAR_INVITE").doesNotContainKey("PAST_EVENT"));
+        assertThat(recommendations.read(accountId, List.of(id("accepted"))).getFirst().labelReasons())
+            .doesNotContainKey("CALENDAR_INVITE");
+        assertThat(fixture.writes).isEmpty();
+    }
+
     @Test void partialAndAmbiguousCombinedActionsReconcileWithoutRepeatingTheMove() {
         importMailbox();
         fixture.rejectMove = true;

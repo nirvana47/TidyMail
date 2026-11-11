@@ -3,10 +3,11 @@
   const outlook = document.body.dataset.provider === 'microsoft';
   const $ = id => document.getElementById(id);
   const state = { scope: 'inbox', suggestion: '', page: 0, messagePage: 0, address: null, tab: 'messages', data: null, focused: null, details: null, action: 'MARK_READ', preview: null, targetPage: 0, revision: 0 };
-  const selected = new Map(), expanded = new Map(), groupingSelection = new Map();
+  const selected = new Map(), expanded = new Map(), senderSelection = new Map();
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
   let allMatchingSelected = false, composition = null;
-  let jobs = [], confirming = false, jobsRequest = 0, historyPage = 0, historyTotal = 0, historyLoading = false;
+  let jobs = [], confirming = false, previewLoading = false, previewFromSenders = false;
+  let jobsRequest = 0, historyPage = 0, historyTotal = 0, historyLoading = false;
   const history = new Map();
   const pendingText = state => ({ QUEUED: 'Cleanup queued', DISPATCH_INTENT: 'Cleanup in progress', AWAITING_VERIFICATION: 'Outcome unresolved — checking provider state' }[state] || '');
   const jobLabel = j => j.cancelRequested ? (j.remaining ? 'Cancellation pending — claimed requests may finish' : j.unresolved ? 'Cancelled — unresolved outcomes retained' : 'Cancelled — completed changes stay') : j.remaining ? 'Processing' : j.verificationPending ? 'Verifying' : j.unresolved ? 'Finished — unresolved outcomes retained' : j.failed ? 'Completed with failures' : 'Completed';
@@ -59,8 +60,22 @@
   }
   async function confirmJob() {
     if (confirming || !state.preview) return;
-    confirming = true; $('confirmAction').disabled = true; const preview = state.preview;
-    try { const job = await api('jobs', { preview: preview.id }); state.preview = null; selected.clear(); allMatchingSelected = false; $('confirm').close(); renderSelectionControls(); notice(actionName(preview.action) + ' saved. You can close this page; work continues.'); await pollJobs(); if (!jobs.some(j => j.id === job.id)) { jobs.unshift(job); renderJobs(); } } catch (error) { notice(error.message); } finally { confirming = false; $('confirmAction').disabled = !state.preview || !state.preview.effective; }
+    confirming = true; $('confirmAction').disabled = true;
+    const preview = state.preview, fromSenders = previewFromSenders;
+    try {
+      const job = await api('jobs', { preview: preview.id });
+      state.preview = null;
+      if (fromSenders) senderSelection.clear();
+      else { selected.clear(); allMatchingSelected = false; }
+      $('confirm').close(); renderSelectionControls();
+      notice(actionName(preview.action) + ' saved. You can close this page; work continues.');
+      await pollJobs();
+      if (!jobs.some(j => j.id === job.id)) { jobs.unshift(job); renderJobs(); }
+    } catch (error) { notice(error.message); } finally {
+      confirming = false;
+      $('confirmAction').disabled = !state.preview || !state.preview.effective;
+      updateSelection();
+    }
   }
   let filterEpoch = 0, listRequest = 0, listLoading = false, detailRequest = 0, detailLoad = null, detailRefreshPending = false, selectionBusy = 0, correctionDraft = null, correctionGroups = [], correctionRequest = 0;
   const fmt = number => Number(number).toLocaleString();
@@ -133,11 +148,16 @@
     $('dock').hidden = selected.size === 0 && !jobs.some(activeJob);
     $('selectionCount').textContent = `${fmt(selected.size)} messages selected`;
     $('selectionDescription').textContent = allMatchingSelected ? 'Fixed selection across matching pages' : 'Visible message page';
-    $('review').disabled = !selected.size || selectionBusy > 0;
-    $('groupingToolbar').hidden = groupingSelection.size === 0;
-    $('groupingCount').textContent = `${fmt(groupingSelection.size)} sender groups selected`;
-    $('combineGroups').disabled = groupingSelection.size < 2 || listLoading;
-    $('splitGroup').disabled = groupingSelection.size !== 1 || listLoading;
+    const reviewBusy = previewLoading || confirming || selectionBusy > 0;
+    $('review').disabled = !selected.size || reviewBusy;
+    const byAddress = $('groupBy').value === 'address', count = senderSelection.size;
+    const unit = byAddress ? 'sender address' : 'sender group';
+    $('groupingToolbar').hidden = count === 0;
+    $('groupingCount').textContent = `${fmt(count)} ${unit}${count === 1 ? '' : byAddress ? 'es' : 's'} selected`;
+    $('reviewSenders').disabled = !count || reviewBusy || $('senderTable').hasAttribute('aria-busy');
+    $('combineGroups').hidden = $('splitGroup').hidden = byAddress;
+    $('combineGroups').disabled = count < 2 || listLoading;
+    $('splitGroup').disabled = count !== 1 || listLoading;
   }
   async function selectAllMatching() {
     if (selectionBusy || listLoading || !state.details || !state.focused) return;
@@ -166,7 +186,7 @@
   }
   function clearSelection(message) { selected.clear(); allMatchingSelected = false; invalidatePreview(); renderSelectionControls(); if (message) notice(message); }
   function filtersChanged() {
-    groupingSelection.clear();
+    senderSelection.clear();
     $('clearComposition').hidden = !composition;
     if (composition) $('clearComposition').textContent = `Clear Inbox drilldown: ${composition.label}`;
     $('compositionRows').replaceChildren();
@@ -200,7 +220,7 @@
       const visibleFacts = page => page && [page.groups, page.summary, page.coverage, page.filter,
         page.revision, page.classificationRevision, page.sync.email, page.sync.incremental_last_success_at];
       const refreshDetails = !background || forceDetails || JSON.stringify(visibleFacts(data)) !== JSON.stringify(visibleFacts(state.data));
-      if (state.data && state.revision !== data.revision) { selected.clear(); allMatchingSelected = false; groupingSelection.clear(); expanded.clear(); invalidatePreview(); notice('Grouping changed. Draft selection was cleared.'); }
+      if (state.data && state.revision !== data.revision) { selected.clear(); allMatchingSelected = false; senderSelection.clear(); expanded.clear(); invalidatePreview(); notice('Grouping changed. Draft selection was cleared.'); }
       const lastPage = Math.max(0, Math.ceil(Number(data.summary.groups) / 10) - 1);
       if (state.page > lastPage) { state.page = lastPage; return loadPage(pagerFocus); }
       if (state.data && data.filter.labels && state.data.classificationRevision !== data.classificationRevision) { selected.clear(); allMatchingSelected = false; invalidatePreview(); notice('Label results changed. Select matching messages again.'); }
@@ -304,11 +324,12 @@
     (state.data?.groups || []).forEach(g => {
       const row = node('tr'); if (state.focused?.id === g.id) row.classList.add('focused');
       const cell = node('td');
-      cell.hidden = $('groupBy').value === 'address';
-      if (!cell.hidden) cell.append(checkbox(`Select sender group ${g.label} for organizing`, 1, Number(groupingSelection.has(g.id)), checked => {
-        if (checked) groupingSelection.set(g.id, g); else groupingSelection.delete(g.id);
+      const senderCheckbox = checkbox(`Select sender ${g.address || g.label}`, 1, Number(senderSelection.has(g.id)), checked => {
+        if (checked) senderSelection.set(g.id, g); else senderSelection.delete(g.id);
         updateSelection();
-      }));
+      });
+      senderCheckbox.dataset.focusKey = 'select-sender-' + g.id;
+      cell.append(senderCheckbox);
       row.append(cell);
       const sender = node('td'), focus = node('button', undefined, 'sender-focus'), badge = node('span', g.label.slice(0, 1).toUpperCase(), 'brand'), text = node('span', undefined, 'sender-label');
       text.append(node('strong', g.label), node('small', `${g.address ? g.address + " · " : ""}${g.addresses} sender ${g.addresses === 1 ? 'address' : 'addresses'}`, 'muted')); text.append(node('small',`${bytesText(g.knownBytes)} estimated${g.unknownSizes ? ' · '+fmt(g.unknownSizes)+' sizes unknown' : ''}`,'muted')); if (g.pending) text.append(node('small', `${fmt(g.pending)} cleanup pending / unresolved`, 'pending')); focus.dataset.focusKey = 'sender-' + g.id; focus.append(badge, text); focus.onclick = () => focusGroup(g); sender.append(focus); row.append(sender, node('td', fmt(g.messages)), node('td', fmt(g.unread)), node('td', fmt(g.inbox)), node('td', dateText(g.latest)));
@@ -422,21 +443,49 @@
     if (state.focused?.id === group && state.messagePage === page &&
         (document.activeElement === document.body || document.activeElement === button)) restore();
   }
-  async function openPreview() {
-    const epoch = filterEpoch, ids = [...selected.keys()], actionType = state.action; $('review').disabled = true;
+  async function openPreview(fromSenders = false) {
+    if (previewLoading || confirming) return;
+    const epoch = filterEpoch, revision = state.revision, activeFilter = filter();
+    const classificationRevision = state.data?.classificationRevision;
+    const selection = fromSenders ? senderSelection : selected;
+    const keys = [...selection.keys()];
+    const actionType = fromSenders ? $('senderAction').value : state.action;
+    const isCurrent = () => epoch === filterEpoch && revision === state.revision
+      && (!activeFilter.labels || classificationRevision === state.data?.classificationRevision)
+      && actionType === (fromSenders ? $('senderAction').value : state.action)
+      && keys.length === selection.size && keys.every(id => selection.has(id));
+    if (!keys.length) return;
+    previewLoading = true;
+    updateSelection();
     try {
-      const preview = await api('previews', { filter: filter(), ids, action: actionType, revision: state.revision, classificationRevision: state.data?.classificationRevision }); if (epoch !== filterEpoch || actionType !== state.action || ids.length !== selected.size || ids.some(id => !selected.has(id))) { api(`previews/${preview.id}/invalidate`, {}); return; }
+      let ids = keys;
+      if (fromSenders) {
+        const rows = await api('selection', { filter: activeFilter, groups: keys, revision });
+        if (!isCurrent()) return;
+        if (!rows.length) { notice('No emails match the current filters for these senders.'); return; }
+        ids = rows.map(row => row.id);
+      }
+      const preview = await api('previews', { filter: activeFilter, ids, action: actionType, revision, classificationRevision });
+      if (!isCurrent()) { api(`previews/${preview.id}/invalidate`, {}).catch(() => { }); return; }
+      previewFromSenders = fromSenders;
       state.preview = preview; state.targetPage = 0;
       $('confirmAction').disabled = confirming || !preview.effective;
       $('actionAvailability').textContent = 'Work is saved before processing. Closing this page does not cancel it.';
       const action = preview.action === 'MARK_READ' ? `Mark ${fmt(preview.effective)} as read` : preview.action === 'ARCHIVE' ? `Archive ${fmt(preview.effective)} messages` : preview.action === 'MARK_READ_ARCHIVE' ? `Mark as Read + Archive ${fmt(preview.effective)} messages` : `Move ${fmt(preview.effective)} to Trash`;
       $('confirmTitle').textContent = action + '?'; $('confirmAction').textContent = action;
       $('confirmScope').textContent = `${preview.filter.scope === 'inbox' ? 'Inbox' : preview.filter.scope === 'indexed' ? 'All indexed mail' : preview.filter.suggestion === 'large' && !outlook ? 'Received and Sent mail' : 'All Mailbox'} · ${preview.filter.start || 'All indexed dates'}${preview.filter.end ? ' through ' + preview.filter.end : ''} · ${preview.filter.zone}${preview.filter.q ? ' · Search: ' + preview.filter.q : ''}`;
+      if (fromSenders) $('confirmScope').textContent += ' · ' + $('groupingCount').textContent;
       $('confirmCounts').textContent = `${fmt(preview.selected)} fixed targets · ${fmt(preview.effective)} eligible changes · ${fmt(preview.skipped)} will be skipped (${fmt(preview.protectedCount)} protected) · ${bytesText(preview.knownBytes)} selected${preview.unknownSizes ? ' · '+fmt(preview.unknownSizes)+' sizes unknown' : ''}`;
       $('confirmCoverage').textContent = `Indexed messages only · ${dateText(preview.coverage.oldest)}–${dateText(preview.coverage.newest)} · As of ${dateText(preview.coverage.as_of)}`;
       $('actionExplanation').textContent = preview.action === 'ARCHIVE' ? (outlook ? 'Move selected emails to Archive.' : 'Archive removes mail from Inbox but does not free storage.') : preview.action === 'TRASH' ? outlook ? 'Move selected emails to Deleted Items.' : `Move to Trash may reclaim approximately ${bytesText(preview.effectiveBytes)} after Gmail permanently deletes the emails, normally after 30 days.` : preview.action === 'MARK_READ_ARCHIVE' ? (outlook ? 'Mark selected emails as read, then move them to Archive.' : 'Gmail removes the Unread and Inbox labels in one request. Messages already read and outside Inbox are skipped.') : 'Already-read messages will be skipped.';
+      $('exactTargets').replaceChildren();
+      $('targetRange').textContent = 'Loading selected emails…';
+      $('targetPrev').disabled = $('targetNext').disabled = true;
       $('confirm').querySelector('.dialog-notice')?.remove(); $('confirm').showModal(); await loadTargets();
-    } catch (error) { notice(error.message); } finally { updateSelection(); }
+    } catch (error) { if (isCurrent()) notice(error.message); } finally {
+      previewLoading = false;
+      updateSelection();
+    }
   }
   async function loadTargets() {
     if (!state.preview) return; const id = state.preview.id, page = state.targetPage;
@@ -930,7 +979,6 @@
   $('groupBy').addEventListener('change', () => {
     composition = null;
     state.data = null;
-    $('organizeColumn').hidden = $('groupBy').value === 'address';
     filtersChanged();
   });
   $('sortMessages').onclick = () => { $('sort').value = 'messages'; sortChanged(); };
@@ -939,14 +987,20 @@
   for (const id of ['start','end']) $(id).addEventListener('change', filtersChanged);
   $('prevPage').onclick = () => { state.page--; loadPage('prevPage'); };
   $('nextPage').onclick = () => { state.page++; loadPage('nextPage'); };
-  $('combineGroups').onclick = () => openCorrections([...groupingSelection.values()], 'MERGE');
-  $('splitGroup').onclick = () => openCorrections([...groupingSelection.values()], 'SPLIT');
-  $('clearGroups').onclick = () => { groupingSelection.clear(); renderSelectionControls(); };
-  $('clear').onclick = () => clearSelection(); $('review').onclick = openPreview;
+  $('combineGroups').onclick = () => openCorrections([...senderSelection.values()], 'MERGE');
+  $('splitGroup').onclick = () => openCorrections([...senderSelection.values()], 'SPLIT');
+  $('clearGroups').onclick = () => { senderSelection.clear(); renderSelectionControls(); };
+  $('clear').onclick = () => clearSelection();
+  $('review').onclick = () => openPreview();
+  $('reviewSenders').onclick = () => openPreview(true);
   document.querySelectorAll('[data-action]').forEach(button => button.onclick = () => { state.action = button.dataset.action; invalidatePreview(); document.querySelectorAll('[data-action]').forEach(b => { b.classList.toggle('active', b === button); b.setAttribute('aria-pressed', String(b === button)); }); });
   document.querySelectorAll('[data-tab]').forEach((button, index, tabs) => { button.onclick = () => { const changed = state.tab !== button.dataset.tab; state.tab = button.dataset.tab; if (changed) state.details = null; tabs.forEach(b => { b.classList.toggle('active', b === button); b.setAttribute('aria-selected', String(b === button)); b.tabIndex = b === button ? 0 : -1; }); $('detailContent').setAttribute('aria-labelledby', button.id); renderDetail(); if (changed) loadDetails(); }; button.onkeydown = e => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) { e.preventDefault(); const next = tabs[e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : (index + 1) % 2]; next.click(); next.focus(); } }; });
   document.querySelectorAll('[data-close]').forEach(button => button.onclick = () => $(button.dataset.close).close());
-  $('confirm').addEventListener('close', () => { (selected.size ? $('review') : $('senderTable')).focus(); }); $('correction').addEventListener('close', () => { invalidateCorrection(); ($('detailContent').querySelector('[data-focus-key=organize]') || $('senderTable')).focus(); });
+  $('confirm').addEventListener('close', () => {
+    const review = $(previewFromSenders ? 'reviewSenders' : 'review');
+    (review.disabled ? $('senderTable') : review).focus();
+  });
+  $('correction').addEventListener('close', () => { invalidateCorrection(); ($('detailContent').querySelector('[data-focus-key=organize]') || $('senderTable')).focus(); });
   $('targetPrev').onclick = () => { state.targetPage--; loadTargets(); }; $('targetNext').onclick = () => { state.targetPage++; loadTargets(); };
   $('activityOpen').onclick = () => { $('activity').querySelector('.dialog-notice')?.remove(); renderActivity(); $('activity').showModal(); $('activity').querySelector('[data-close]').focus(); pollJobs(); loadHistory(true); };
   $('historyMore').onclick = () => loadHistory();

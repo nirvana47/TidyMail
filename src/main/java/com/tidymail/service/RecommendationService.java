@@ -4,6 +4,7 @@ import static com.tidymail.service.MessageRecommendation.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.tidymail.mail.outlook.OutlookMailService;
 import java.util.*;
 import java.time.Clock;
 import java.time.Instant;
@@ -60,7 +61,8 @@ public class RecommendationService {
             List<String> providerLabelIds, List<String> recipients) {
     }
 
-    private record Headers(String providerMessageId, String address, String name, String subject, String correction, boolean outlook) {
+    private record Headers(String providerMessageId, String address, String name, String subject, String correction,
+            boolean outlook, boolean outlookMeeting) {
     }
 
     private final JdbcTemplate jdbc;
@@ -380,7 +382,7 @@ public class RecommendationService {
             var headers = s.headers();
             var local = headers == null ? Map.<String, String>of()
                     : LocalMailLabels.classify(headers.address(), headers.name(), headers.subject(),
-                            headers.correction(), headers.outlook());
+                            headers.correction(), headers.outlook(), headers.outlookMeeting());
             row.set("local_label_reasons", json.valueToTree(local));
             Instant end = calendarEnd(account, s);
             if (end != null)
@@ -564,7 +566,8 @@ public class RecommendationService {
                             r.getLong("history_received_replies"), date(r.getTimestamp("last_sent_at")),
                             date(r.getTimestamp("last_received_at"))),
                     received ? new Headers(r.getString("provider_message_id"), r.getString("dashboard_from_address"),
-                            r.getString("from_display_name"), r.getString("subject_header"), override, !gmail) : null,
+                            r.getString("from_display_name"), r.getString("subject_header"), override, !gmail,
+                            !gmail && labels.contains(OutlookMailService.CALENDAR_INVITE_LABEL)) : null,
                     received ? facts : null, received ? localReasons(r.getString("local_reasons")) : Map.of(),
                     !received || r.getTimestamp("local_calendar_end") == null ? null
                             : r.getTimestamp("local_calendar_end").toInstant(),

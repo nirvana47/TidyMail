@@ -595,7 +595,7 @@ class DashboardJourneyTest extends PostgresJourneyTest {
                 "INSERT INTO message_metadata(account_id,provider,provider_message_id,dashboard_message_id,labels) VALUES(?,'google','foreign',?,ARRAY['INBOX'])",
                 other, foreign);
         mockMvc.perform(get("/dashboard").with(authenticatedAs(OWNER))).andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("Select sender groups for organizing")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("Review email action")))
                 .andExpect(header().string("Cache-Control", "no-store"));
         var body = json.writeValueAsString(
                 new DashboardPreviewService.Request(filter("all", ""), List.of(foreign), "ARCHIVE", 0));

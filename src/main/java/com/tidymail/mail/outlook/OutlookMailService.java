@@ -17,6 +17,7 @@ import org.springframework.web.util.UriUtils;
 
 @Service("outlookGraphMail")
 public class OutlookMailService {
+    public static final String CALENDAR_INVITE_LABEL = "OUTLOOK_CALENDAR_INVITE";
     private static final String ME = "/v1.0/me/";
     private static final String MESSAGE_FIELDS = "id,conversationId,parentFolderId,receivedDateTime,lastModifiedDateTime,"
         + "internetMessageId,internetMessageHeaders,from,toRecipients,subject,isRead,isDraft,hasAttachments,categories,webLink";
@@ -252,6 +253,7 @@ public class OutlookMailService {
         if (!role.equals("MAIL")) labels.add(role);
         if (!row.path("isRead").asBoolean()) labels.add("UNREAD");
         if (row.path("isDraft").asBoolean()) labels.add("DRAFT");
+        if (calendarInvite(row)) labels.add(CALENDAR_INVITE_LABEL);
         var headers = new TreeMap<String,List<String>>(String.CASE_INSENSITIVE_ORDER);
         for (var header : row.path("internetMessageHeaders")) {
             String name = text(header, "name"), value = clean(text(header, "value"));
@@ -285,6 +287,16 @@ public class OutlookMailService {
             row.path("hasAttachments").asBoolean() ? AttachmentState.PRESENT : AttachmentState.UNKNOWN,
             observed, EmailSnippet.unknown(), new MailMessage.Outlook(folder, List.copyOf(categories),
             safeLink(text(row, "webLink"))));
+    }
+
+    static boolean calendarInvite(JsonNode row) {
+        String meetingType = row.path("meetingMessageType").asText();
+        String graphType = row.path("@odata.type").asText();
+        String subject = row.path("subject").asText().stripLeading().toLowerCase(Locale.ROOT);
+        return "meetingRequest".equals(meetingType) || "meetingCancelled".equals(meetingType)
+            || "#microsoft.graph.eventMessageRequest".equals(graphType)
+            || (meetingType.isEmpty() && "#microsoft.graph.eventMessage".equals(graphType)
+                && (subject.startsWith("canceled:") || subject.startsWith("cancelled:")));
     }
 
     static String safeLink(String link) {

@@ -83,6 +83,32 @@ class LocalGmailLabelsJourneyTest extends PostgresJourneyTest {
         verifyNoInteractions(gmailProvider,outlookProvider);
     }
 
+    @Test void existingOrganizerInvitesAreRelabeledWithoutMimeReads() {
+        UUID invite=mail("invite","organizer@example.test","Organizer",
+            "Invitation: Planning @ Mon Nov 9, 2026 2pm - 3pm (organizer@example.test)","{INBOX}");
+        UUID update=mail("update","organizer@example.test","Organizer",
+            "Updated invitation: Planning @ Tuesday, Nov 10, 2026 (organizer@example.test)","{INBOX}");
+        UUID canceled=mail("canceled","organizer@example.test","Organizer",
+            "Canceled event: Planning @ 2026-11-10 (organizer@example.test)","{INBOX}");
+        UUID recurring=mail("recurring","organizer@example.test","Organizer",
+            "Invitation: Planning @ Weekly from 2pm to 3pm on Monday (PST) (organizer@example.test)","{INBOX}");
+        UUID newsletter=mail("newsletter","news@example.test","News","Invitation: Subscribe to our newsletter","{INBOX}");
+        UUID forwarded=mail("forwarded","organizer@example.test","Organizer",
+            "Fwd: Invitation: Planning @ Mon Nov 9, 2026 (organizer@example.test)","{INBOX}");
+        drain();
+        jdbc.update("UPDATE message_recommendations SET local_rules_version='gmail-header-rules-v1',local_label_reasons='{}'");
+        jdbc.update("UPDATE recommendation_backfill SET coverage_hash='previous-rule-coverage'");
+        assertThat(count("all","CALENDAR_INVITE","all",false)).isZero();
+
+        drain();
+        assertThat(count("all","CALENDAR_INVITE","all",false)).isEqualTo(4);
+        for (UUID event : List.of(invite, update, canceled, recurring))
+            assertThat(view(event).labelReasons()).containsKey("CALENDAR_INVITE").doesNotContainKey("PAST_EVENT");
+        for (UUID ordinary : List.of(newsletter, forwarded))
+            assertThat(view(ordinary).labelReasons()).doesNotContainKey("CALENDAR_INVITE");
+        verifyNoInteractions(gmailProvider,outlookProvider);
+    }
+
     @Test void storedCalendarUpdatesInvalidateEarlierPastEventMatches() throws Exception {
         UUID original=mail("old-event","calendar-notification@google.com","Calendar","Invitation: Example","{INBOX}");
         calendar("old-event","series","DTSTART:20200101T090000Z\r\nRRULE:FREQ=WEEKLY;COUNT=2\r\nSEQUENCE:1");

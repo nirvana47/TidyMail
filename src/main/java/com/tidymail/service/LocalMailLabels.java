@@ -5,7 +5,7 @@ import java.util.regex.Pattern;
 
 /** Descriptive mail labels from stored headers. These do not qualify cleanup recommendations. */
 public final class LocalMailLabels {
-    public static final String VERSION = "gmail-header-rules-v1";
+    public static final String VERSION = "gmail-header-rules-v2";
     public static final Set<String> EXTRA_FILTERS = Set.of("BANKING", "INVESTING", "SHOPPING", "DOCUMENT_COMMENT",
             "OLDER_DOCUMENT_COMMENT", "PAST_EVENT", "GMAIL_PROMOTIONS");
 
@@ -58,6 +58,10 @@ public final class LocalMailLabels {
     private static final Pattern DOC_NAME = words("google (?:docs|sheets|slides)");
     private static final Pattern CALENDAR_SUBJECT = Pattern.compile(
             "^(invitation:|updated invitation:|canceled event:|cancelled event:)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern CALENDAR_SCHEDULE = Pattern.compile(
+            "\\s+@\\s+(?:(?:mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)[,\\s]"
+                    + "|\\d{4}-\\d{2}-\\d{2}\\b|(?:daily|weekly|monthly|annually|yearly"
+                    + "|every \\d+ (?:days?|weeks?|months?|years?)) from\\s+).+\\([^()]+\\)$", Pattern.CASE_INSENSITIVE);
     private static final Pattern NOTIFY = words("payment (?:is )?(?:scheduled|pending|failed|declined)|"
             + "new (?:voicemail|text message)|refund requested");
     private static final Set<String> PURPOSES = Set.of("BILL", "RECEIPT", "STATEMENT", "SECURITY",
@@ -65,11 +69,8 @@ public final class LocalMailLabels {
 
     private LocalMailLabels() {}
 
-    static Map<String,String> classify(String address, String name, String subject, String correction) {
-        return classify(address, name, subject, correction, false);
-    }
-
-    static Map<String,String> classify(String address, String name, String subject, String correction, boolean outlook) {
+    static Map<String,String> classify(String address, String name, String subject, String correction,
+            boolean outlook, boolean outlookMeeting) {
         String sender = Objects.toString(address, "").strip().toLowerCase(Locale.ROOT);
         String display = Objects.toString(name, "").strip();
         String title = Objects.toString(subject, "").strip();
@@ -112,7 +113,9 @@ public final class LocalMailLabels {
                 && !title.matches("(?i)^(?:re|fw|fwd):.*")) {
             labels.put("DOCUMENT_COMMENT", "Microsoft 365 sender and document-comment mention subject.");
         }
-        if (domain.equals("google.com") && mailbox.equals("calendar-notification")) {
+        if (outlookMeeting) {
+            labels.put("CALENDAR_INVITE", "Outlook identified this message as a meeting request or cancellation.");
+        } else if (sender.equals("calendar-notification@google.com") || CALENDAR_SCHEDULE.matcher(title).find()) {
             add(labels, "CALENDAR_INVITE", match(CALENDAR_SUBJECT, title, "the subject"));
         }
 

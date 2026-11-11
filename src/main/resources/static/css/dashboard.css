@@ -50,3 +50,5 @@ button{min-height: 44px}@media(max-width:375px){.app{padding-left:12px;padding-r
     max-height: 12rem;
     overflow: auto;
 }
+.sender-action{width:auto;max-width:100%}
+#senderActionScope{margin:8px 0 12px}

@@ -146,15 +146,29 @@
         <button id="clearComposition" hidden></button>
         <section class="workspace">
             <div class="list">
-                <div class="row evidence" id="groupingToolbar" hidden>
-                    <span id="groupingCount"></span><button id="combineGroups">Combine</button>
-                    <button id="splitGroup">Split</button><button id="clearGroups">Clear senders</button>
+                <div class="evidence" id="groupingToolbar" hidden>
+                    <div class="row">
+                        <strong id="groupingCount" role="status"></strong>
+                        <label for="senderAction" class="muted">Email action</label>
+                        <select id="senderAction" class="sender-action" aria-describedby="senderActionScope">
+                            <option value="MARK_READ">Mark as read</option>
+                            <option value="ARCHIVE">Archive</option>
+                            <option value="MARK_READ_ARCHIVE">Mark as read + archive</option>
+                            <option value="TRASH">Move to Trash</option>
+                        </select>
+                        <button id="reviewSenders" class="primary">Review email action →</button>
+                    </div>
+                    <p id="senderActionScope" class="muted">Applies to matching emails across all pages for the selected senders.</p>
+                    <div class="row">
+                        <button id="combineGroups">Combine</button><button id="splitGroup">Split</button>
+                        <button id="clearGroups">Clear senders</button>
+                    </div>
                 </div>
                 <div class="tablewrap">
                     <table id="senderTable" tabindex="-1">
                         <thead>
                             <tr>
-                                <th id="organizeColumn" aria-label="Select sender groups for organizing"></th>
+                                <th aria-label="Select senders"></th>
                                 <th>Sender</th>
                                 <th aria-sort="descending"><button id="sortMessages" class="column-sort" aria-label="Sort by message count, highest first">Total ↓</button></th>
                                 <th aria-sort="none"><button id="sortUnread" class="column-sort" aria-label="Sort by unread count, highest first">Unread ↕</button></th>
