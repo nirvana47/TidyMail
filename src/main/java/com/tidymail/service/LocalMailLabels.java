@@ -5,7 +5,7 @@ import java.util.regex.Pattern;
 
 /** Descriptive mail labels from stored headers. These do not qualify cleanup recommendations. */
 public final class LocalMailLabels {
-    public static final String VERSION = "gmail-header-rules-v2";
+    public static final String VERSION = "gmail-header-rules-v3";
     public static final Set<String> EXTRA_FILTERS = Set.of("BANKING", "INVESTING", "SHOPPING", "DOCUMENT_COMMENT",
             "OLDER_DOCUMENT_COMMENT", "PAST_EVENT", "GMAIL_PROMOTIONS");
 
@@ -105,6 +105,9 @@ public final class LocalMailLabels {
         add(labels, "INVESTING", domain(INVESTORS, domain));
         add(labels, "SHOPPING", domain(STORES.keySet(), domain));
         add(labels, "SOCIAL", first(domain(SOCIAL, domain), match(SOCIAL_NAME, display, "the sender name")));
+        if (sender.equals("comments-noreply@docs.google.com")) {
+            labels.put("DOCUMENT_COMMENT", "Google Docs comment-notification sender.");
+        }
         if (domain.equals("google.com") && (mailbox.matches("drive-shares?-dm-noreply|comments-noreply")
                 || DOC_NAME.matcher(display).find())) {
             add(labels, "DOCUMENT_COMMENT", match(COMMENT, title, "the subject"));
