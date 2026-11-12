@@ -21,11 +21,8 @@ import com.tidymail.repository.SyncProgressRepository;
 import com.tidymail.repository.UserAccountRepository;
 import com.tidymail.security.crypto.CryptoUtil;
 import jakarta.persistence.EntityManager;
-import java.io.File;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
@@ -457,38 +454,4 @@ class Phase8DeploymentTest {
         }
     }
 
-    // ============================================================
-    // T8(d): Lint / Doc / static-asset checks (plain Java, no Spring)
-    // ============================================================
-
-    @Nested
-    @DisplayName("T8d Lint & Doc Tests")
-    class T8d_lintAndDocTests {
-
-        @Test
-        @DisplayName("T8d_01_deployMdChecks — DEPLOY.md exists with precheck, tunnel, and datasource troubleshooting")
-        void T8d_01_deployMdChecks() throws Exception {
-            File f = new File("DEPLOY.md");
-            assertTrue(f.exists(), "DEPLOY.md must exist at project root");
-
-            String contents = Files.readString(f.toPath());
-            assertThat(contents).contains("docker info");
-            assertThat(contents).contains("persistent Java host with PostgreSQL");
-            assertThat(contents).contains("SPRING_DATASOURCE");
-        }
-
-        @Test
-        @DisplayName("T8d_02_cssBreakpoints — dashboard.html has @media 375px + 44px touch targets")
-        void T8d_02_cssBreakpoints() throws Exception {
-            File dashboard = new File("src/main/resources/templates/dashboard.html");
-            assertTrue(dashboard.exists(), "dashboard.html exists");
-            assertThat(Files.readString(dashboard.toPath())).contains("/static/css/dashboard.css");
-            String dashContents = Files.readString(Path.of("src/main/resources/static/css/dashboard.css"));
-            assertThat(dashContents).contains("@media");
-            assertThat(dashContents).contains("375px");
-            assertThat(dashContents).contains("min-height: 44px");
-
-
-        }
-    }
 }

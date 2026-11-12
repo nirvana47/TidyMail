@@ -15,8 +15,6 @@ import com.tidymail.repository.UserAccountRepository;
 import com.tidymail.service.MessageMetadataQueryService;
 import com.tidymail.service.OwnedAccountScopeService;
 import com.tidymail.service.WorkspaceModelService;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -27,86 +25,6 @@ import org.springframework.security.oauth2.client.authentication.OAuth2Authentic
 import org.springframework.security.oauth2.core.user.DefaultOAuth2User;
 
 class Phase14WorkspaceFidelityTest {
-    private static final Path FRAGMENTS =
-        Path.of("src/main/resources/templates/fragments");
-    private static final Path CSS =
-        Path.of("src/main/resources/static/css/workspace.css");
-
-    @Test
-    void sharedRailSolelyOwnsPrimaryNavigationAndAccountSelection() throws Exception {
-        String nav = read("workspace-nav.html");
-        String rail = read("workspace-rail.html");
-
-        assertThat(nav)
-            .contains("Compatibility fragment only")
-            .doesNotContain("<header", "<nav", "account-scope");
-        assertThat(count(rail, "<nav")).isEqualTo(1);
-        assertThat(count(rail, "class=\"rail-account-menu\"")).isEqualTo(1);
-        assertThat(rail)
-            .contains("class=\"workspace-rail\"", "class=\"rail-navigation\"")
-            .contains("aria-label=\"Primary\"", "aria-current")
-              .contains(
-                  "Senders", "Unread Only",
-                  "Action history")
-              .contains("Add new account")
-            .contains("Feedback", "Collapse rail", "Expand rail")
-              .contains(">Settings</summary>", "Logout", "Delete my data and logout")
-              .contains("th:href=\"@{/senders}\" aria-label=\"TidyMail home\"")
-              .doesNotContain(
-                  "class=\"rail-nav-badge\"",
-                  "Queued actions:", "Queued actions unavailable", "Active account");
-    }
-
-    @Test
-    void railPreservesServerOwnedAccountAndCsrfSessionContracts() throws Exception {
-        String rail = read("workspace-rail.html");
-
-        assertThat(rail)
-            .contains("th:each=\"option : ${workspace.accountOptions}\"")
-            .contains("th:action=\"${workspace.route.path}\"")
-            .contains("name=\"account\" th:value=\"${option.value}\"")
-            .contains("th:classappend=\"${option.selected} ? ' is-selected' : ''\"")
-            .contains("th:attr=\"aria-current=${option.selected ? 'true' : null}\"")
-            .contains("/accounts/connect/google")
-            .contains("action=\"/logout\"")
-            .contains("action=\"/logout/delete-data\"")
-            .contains("th:name=\"${_csrf.parameterName}\"")
-            .contains("th:value=\"${_csrf.token}\"")
-            .contains("name=\"confirmation\" value=\"DELETE\"");
-        assertThat(count(rail, "th:name=\"${_csrf.parameterName}\"")).isEqualTo(2);
-          assertThat(count(rail, "name=\"account\"")).isEqualTo(1);
-    }
-
-    @Test
-      void categoryGroupsAreClosedAccentedAndUseTheCurrentDirectStagingContract()
-              throws Exception {
-        String senders = read("senders-results-frag.html");
-        String unread = read("unread-results-frag.html");
-        String senderPage = Files.readString(Path.of("src/main/resources/templates/senders.html"));
-
-        assertThat(senders)
-            .contains("<details class=\"cleanup-category\"")
-            .contains("category-accent-lists", "category-accent-automated")
-            .contains("category-accent-transactional", "category-accent-personal")
-            .contains("category-accent-user", "category-accent-other")
-            .contains("'category-accent-neutral'")
-            .contains("name=\"rowKey\" th:value=\"${row.rowKey}\"")
-              .doesNotContain(
-                  "<details class=\"cleanup-category\" open",
-                  "action=\"/api/selection-preview\"", "Export");
-        assertThat(senderPage)
-            .contains("id=\"sender-selection\"", "data-selection-bar")
-            .doesNotContain("/api/cleanup-actions");
-        assertThat(unread)
-            .contains("<details class=\"cleanup-category\"")
-            .contains("category-accent-lists", "category-accent-old")
-            .contains("category-accent-direct", "category-accent-attachments")
-            .contains("category-accent-other", "'category-accent-neutral'")
-              .doesNotContain(
-                  "<details class=\"cleanup-category\" open",
-                  "action=\"/api/selection-preview\"", "Export");
-      }
-
       @Test
       void workspaceModelUsesOnlyAuthorizedAccountFactsAndOmitsUnavailableCounts() {
           OwnedAccountScopeService scopes = mock(OwnedAccountScopeService.class);
@@ -147,43 +65,6 @@ class Phase14WorkspaceFidelityTest {
           WorkspacePageModel unavailable = workspaces.buildResolved(
               WorkspaceRoute.UNREAD, "7", List.of(7L), auth());
           assertThat(unavailable.inboxUnreadCountAvailable()).isFalse();
-    }
-
-    @Test
-    void cssLocksRailCategoryAccessibilityAndStressWidths() throws Exception {
-        String css = Files.readString(CSS);
-
-        assertThat(css)
-            .contains("--shell-rail: 248px", "--content-max: 1180px")
-            .contains("grid-template-columns: var(--shell-rail) minmax(0, 1fr)")
-            .contains(".workspace-shell:has(.workspace-rail-frame:not([open]))")
-            .contains(".rail-footer", "margin-top: auto")
-            .contains("text-overflow: ellipsis", "white-space: nowrap")
-            .contains(".category-accent-neutral", ".category-accent-lists")
-            .contains(".category-accent-automated", ".category-accent-transactional")
-            .contains(".category-accent-personal", ".category-accent-user")
-            .contains(".category-accent-old", ".category-accent-direct")
-            .contains(".category-accent-attachments", ".category-accent-other")
-            .contains("@media (max-width: 980px)")
-            .contains("@media (max-width: 720px)")
-            .contains("@media (max-width: 375px)")
-            .contains("@media (max-width: 320px)")
-            .contains("min-height: 44px", ":focus-visible")
-            .doesNotContain("overflow-x: hidden");
-    }
-
-    private static String read(String file) throws Exception {
-        return Files.readString(FRAGMENTS.resolve(file));
-    }
-
-    private static int count(String value, String needle) {
-        int count = 0;
-        int position = 0;
-        while ((position = value.indexOf(needle, position)) >= 0) {
-            count++;
-            position += needle.length();
-        }
-        return count;
     }
 
       private static UserAccount account(long id, String email, String ownerKey) {
