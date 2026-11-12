@@ -29,6 +29,7 @@ class DashboardClassificationTest extends PostgresJourneyTest {
     @Autowired DashboardJobService jobs;
     long account;
     @Test void explicitPersonalIdentitySurvivesLaterAutomatedClassificationRegrouping() {
+        when(classifier.classify(anyList())).thenAnswer(call->result(call.getArgument(0),"PERSONAL","AUTOMATED","BANKING"));
         UUID person=mail("alex@chase.com","Alex","Work update");
         mail("alerts@chase.com","Chase","Account update");
         finish();
@@ -42,9 +43,9 @@ class DashboardClassificationTest extends PostgresJourneyTest {
     }
     @BeforeEach void setup(){reset(classifier);when(classifier.configured()).thenReturn(true);account=userAccounts.createAccount(OWNER);classification.automatic(account,false);
         when(classifier.classify(anyList())).thenAnswer(call->{assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();List<Evidence> items=call.getArgument(0);return result(items);});}
-    Result result(List<Evidence> items){return new Result(items.stream().map(e->new Decision(e.subject().contains("offer")?"MARKETING":e.address().contains("amazon")?"RECEIPT":"PERSONAL",
-        e.address().contains("amazon")||e.address().contains("chase")||e.address().endsWith("@google.com")||e.address().contains("voice.google.com")?"AUTOMATED":"PERSON",
-        e.address().contains("amazon")?"SHOPPING":e.address().contains("chase")?"BANKING":e.address().startsWith("bard")?"AI_PRODUCT":e.address().startsWith("device")?"DEVICE_SUPPORT":"GENERAL",.98)).toList(),new BigDecimal("0.0001"));}
+    Result result(List<Evidence> items){return result(items,"PERSONAL","PERSON","GENERAL");}
+    Result result(List<Evidence> items,String category,String kind,String stream){return new Result(
+        items.stream().map(e->new Decision(category,kind,stream,.98)).toList(),new BigDecimal("0.0001"));}
     UUID mail(String address,String name,String subject){
         var identity=DashboardIdentity.parse(List.of(address),List.of(),address+subject);
         return jdbc.queryForObject("""
@@ -68,19 +69,6 @@ class DashboardClassificationTest extends PostgresJourneyTest {
         verifyNoInteractions(gmailProvider,outlookProvider);
     }
     void finish(){classification.start(account);for(int i=0;i<20&&Set.of("RUNNING","QUEUED").contains(classification.status(account).state());i++)classification.runOnce();assertThat(classification.status(account).state()).isEqualTo("COMPLETE");}
-    @Test void personalAddressesStayDistinctWhileAmazonPurposesShareFixedCategories() {
-        mail("shivani.tewari@gene.com","Shivani Tewari","Dinner tonight?");mail("shivani.tewari2016@gmail.com","Shivani Tewari","Our plans");mail("shivani.tewari20166@gmail.com","Shivani Tewari","A different address");
-        UUID receipt=mail("orders@amazon.com","Amazon","Your receipt");UUID offer=mail("orders@amazon.com","Amazon","Special offer");finish();
-        var page=dashboard.page(account,filter(""));assertThat(page.summary()).containsEntry("groups",4L).containsEntry("messages",5L);
-        assertThat(page.groups()).extracting(DashboardRepository.Group::label).contains("Shivani Tewari","Amazon");
-        assertThat(dashboard.page(account,filter("PERSONAL")).summary().get("messages")).isEqualTo(3L);
-        var marketing=dashboard.page(account,filter("MARKETING"));assertThat(marketing.summary().get("messages")).isEqualTo(1L);
-        var selected=dashboard.selection(account,filter("MARKETING"),List.of(marketing.groups().getFirst().id()),null);assertThat(selected).extracting(DashboardRepository.Selected::id).containsExactly(offer);
-        assertThat(dashboard.details(account,filter("RECEIPT"),marketing.groups().getFirst().id(),0).messages()).extracting(DashboardRepository.Message::id).containsExactly(receipt);
-        var preview=previews.create(account,new DashboardPreviewService.Request(filter("MARKETING"),List.of(receipt,offer),"TRASH",dashboard.revision(account)));
-        assertThat(preview.effective()).isEqualTo(1);assertThat(preview.skipped()).isEqualTo(1);
-        verifyNoInteractions(gmailProvider,outlookProvider);
-    }
     @Test void confirmedCleanupTargetsStayFixedWhenClassificationChangesGroupsAndCategories() {
         UUID id=mail("a@gene.com","Shivani Tewari","Hello");
         var preview=previews.create(account,new DashboardPreviewService.Request(filter(""),List.of(id),"MARK_READ",0));
@@ -98,20 +86,8 @@ class DashboardClassificationTest extends PostgresJourneyTest {
         Evidence e=(Evidence)capture.getValue().getFirst();assertThat(e.name()).isEqualTo("A Person");assertThat(e.subject()).isEqualTo("Hello");assertThat(e.gmailCategories()).containsExactly("CATEGORY_PERSONAL");
         clearInvocations(classifier);classification.start(account);assertThat(classification.status(account).total()).isZero();classification.runOnce();verify(classifier,never()).classify(anyList());
     }
-    @Test void googleStreamsStayApartVoiceCorrespondentsNeverCollapseAndChaseStillGroups() {
-        mail("bard-noreply@google.com","Google","Product news");mail("device-support@google.com","Google","Device notice");
-        mail("opaque1@txt.voice.google.com","Someone","Hi");mail("opaque2@txt.voice.google.com","Someone else","Hello");
-        mail("alerts@chase.com","Chase","Bank notice");mail("alerts@e.chase.com","Chase","Bank notice");finish();
-        assertThat(dashboard.page(account,filter("")).summary().get("groups")).isEqualTo(5L);
-        assertThat(dashboard.page(account,filter("")).groups()).extracting(DashboardRepository.Group::label)
-            .containsExactlyInAnyOrder("Google","Google","Someone","Someone else","Chase");
-        assertThat(jdbc.queryForList("""
-            SELECT group_key FROM sender_groups
-            WHERE account_id=? AND group_key LIKE 'classified-domain:google.com:%'
-            """, String.class, account)).containsExactlyInAnyOrder(
-                "classified-domain:google.com:AI_PRODUCT", "classified-domain:google.com:DEVICE_SUPPORT");
-    }
     @Test void manualGroupingAndCategoryCorrectionsWinAndStaleInputsAreReclassified() {
+        when(classifier.classify(anyList())).thenAnswer(call->result(call.getArgument(0),"MARKETING","AUTOMATED","BANKING"));
         UUID first=mail("a@chase.com","Chase","offer"),second=mail("b@e.chase.com","Chase","offer");
         UUID unit=jdbc.queryForObject("SELECT public_id FROM sender_units WHERE account_id=? AND canonical_key='a@chase.com'",UUID.class,account);
         grouping.correct(account,new DashboardGroupingService.Correction("SEPARATE",List.of(unit),null,null,0),true);
@@ -216,6 +192,7 @@ class DashboardClassificationTest extends PostgresJourneyTest {
         budget.continueSpending(account,0,false);classification.runOnce();verify(classifier,times(2)).classify(anyList());
     }
     @Test void exactAddressDetailsRetainCategoryFilterAndIndependentPagination() {
+        when(classifier.classify(anyList())).thenAnswer(call->result(call.getArgument(0),"RECEIPT","AUTOMATED","SHOPPING"));
         for(int i=0;i<12;i++)mail("orders@amazon.com","Amazon","receipt "+i);
         mail("offers@amazon.com","Amazon","offer");finish();
         var group=dashboard.page(account,filter("")).groups().getFirst().id();

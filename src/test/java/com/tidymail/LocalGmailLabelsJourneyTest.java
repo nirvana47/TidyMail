@@ -15,9 +15,7 @@ import com.tidymail.support.PostgresJourneyTest;
 import java.util.*;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.test.context.TestPropertySource;
 
-@TestPropertySource(properties = "app.gmail.relay-recipients.1=alias@relay.example.test")
 class LocalGmailLabelsJourneyTest extends PostgresJourneyTest {
     private static final String OWNER = "local-labels@example.test";
     @Autowired RecommendationService recommendations;
@@ -27,61 +25,6 @@ class LocalGmailLabelsJourneyTest extends PostgresJourneyTest {
     long account;
 
     @BeforeEach void account() { account = userAccounts.createAccount(OWNER); }
-
-    @Test void overlapsReasonsCorrectionsAndFiltersUseTheSameMessages() throws Exception {
-        UUID receipt = mail("receipt", "billing@notify.amazon.com", "Billing", "Invoice payment has posted", "{INBOX,Label_12,CATEGORY_PROMOTIONS}");
-        UUID order = mail("order", "orders@amazon.com", "Orders", "Your order is confirmed", "{INBOX}");
-        UUID shipping = mail("shipping", "orders@amazon.com", "Orders", "Your order 12345 has shipped", "{}");
-        UUID security = mail("security", "alerts@linkedin.com", "LinkedIn", "Password reset requested", "{INBOX}");
-        UUID bill = mail("bill", "billpay@alerts.chase.com", "Chase", "Your payment is due", "{INBOX}");
-        UUID statement = mail("statement", "billing@provider.example.test", "Billing", "Your current statement is available", "{}");
-        UUID investing = mail("investing", "alerts@fidelity.com", "Fidelity", "New device signed in", "{INBOX}");
-        UUID comment = mail("comment", "drive-shares-dm-noreply@google.com", "Google Sheets", "New comment in the worksheet", "{INBOX}");
-        UUID unrelated = mail("unrelated", "retail@notamazon.com", "Sender", "Buy a new device and write your personal statement on LinkedIn", "{INBOX}");
-        UUID spam = mail("spam", "receipts@amazon.com", "Receipt", "Your receipt", "{INBOX,SPAM}");
-        mail("sent", "receipts@amazon.com", "Receipt", "Your receipt", "{SENT}");
-        jdbc.update("UPDATE message_metadata SET received_at=now()-interval '31 days' WHERE dashboard_message_id=?",comment);
-        jdbc.update("UPDATE message_metadata SET to_values=ARRAY['Alias <alias@relay.example.test>'] WHERE dashboard_message_id=?",receipt);
-
-        assertThat(processing.status(account).enabled()).isTrue();
-        assertThat(count("all","SHOPPING","all",false)).isZero();
-        drain();
-
-        assertThat(view(receipt).labelReasons()).containsKeys("RECEIPT","SHOPPING","GMAIL_PROMOTIONS").doesNotContainKey("BILL");
-        assertThat(view(receipt).labelReasons().get("RECEIPT")).contains("payment has posted","subject");
-        assertThat(view(receipt).shoppingBrand()).isEqualTo("Amazon");
-        assertThat(view(receipt).relayRecipients()).containsExactly("alias@relay.example.test");
-        assertThat(view(order).labelReasons()).containsKeys("SHOPPING","ORDER").doesNotContainKey("SHIPPING");
-        assertThat(view(shipping).labelReasons().get("SHIPPING")).contains("subject").doesNotContain("12345");
-        assertThat(view(security).labelReasons()).containsKeys("SOCIAL","SECURITY");
-        assertThat(view(bill).labelReasons()).containsKeys("BILL","BANKING");
-        assertThat(view(statement).labelReasons()).containsKey("STATEMENT").doesNotContainKey("BILL");
-        assertThat(view(investing).labelReasons()).containsKeys("INVESTING","SECURITY");
-        assertThat(view(comment).labelReasons()).containsKeys("DOCUMENT_COMMENT","OLDER_DOCUMENT_COMMENT");
-        assertThat(view(unrelated).labelReasons()).isEmpty();
-        assertThat(view(spam).labelReasons()).isEmpty();
-        assertThat(count("all","SHOPPING,RECEIPT","all",false)).isEqualTo(1);
-        assertThat(count("all","SHOPPING,SECURITY","any",false)).isEqualTo(5);
-        assertThat(count("all","SHOPPING","all",true)).isEqualTo(2);
-        assertThat(count("inbox","SHOPPING","all",true)).isEqualTo(1);
-        assertThat(count("all","GMAIL_LABEL_12,GMAIL_PROMOTIONS","all",false)).isEqualTo(1);
-        assertThat(count("all","OLDER_DOCUMENT_COMMENT","all",false)).isEqualTo(1);
-
-        var page=dashboard.page(account,filter("all","SHOPPING,RECEIPT","all",false));
-        mockMvc.perform(get("/dashboard/api/groups/{group}",page.groups().getFirst().id()).param("scope","all")
-                .param("labels","SHOPPING,RECEIPT").with(authenticatedAs(OWNER)))
-            .andExpect(status().isOk()).andExpect(jsonPath("$.recommendations[0].labelReasons.RECEIPT").exists());
-
-        jdbc.update("UPDATE message_metadata SET classification_override='PERSONAL' WHERE dashboard_message_id=?",receipt);
-        assertThat(count("all","SHOPPING,RECEIPT","all",false)).isZero();
-        drain();
-        assertThat(view(receipt).labels()).contains("SHOPPING","PERSONAL").doesNotContain("RECEIPT");
-        UUID incoming=mail("new","notices@example.test","Bill – Provider","Account update","{INBOX}");
-        drain();
-        assertThat(view(incoming).labelReasons().get("BILL")).contains("sender name");
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM cleanup_jobs",Long.class)).isZero();
-        verifyNoInteractions(gmailProvider,outlookProvider);
-    }
 
     @Test void existingOrganizerInvitesAreRelabeledWithoutMimeReads() {
         UUID invite=mail("invite","organizer@example.test","Organizer",

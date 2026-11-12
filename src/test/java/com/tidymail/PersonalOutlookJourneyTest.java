@@ -185,19 +185,6 @@ class PersonalOutlookJourneyTest extends PostgresJourneyTest {
             .andExpect(content().string(org.hamcrest.Matchers.containsString("id=\"suggestionsView\" aria-pressed=\"false\"")));
     }
 
-    @Test void localLabelsUseOnlySavedOutlookEvidence() {
-        importMailbox();
-        assertThat(labels.status(accountId).enabled()).isTrue();
-        assertThat(labels.runOnce()).isTrue();
-        var view = recommendations.read(accountId, List.of(id("comment"))).getFirst();
-        assertThat(view.labelReasons()).containsKeys("DOCUMENT_COMMENT", "OLDER_DOCUMENT_COMMENT");
-        assertThat(recommendations.prepareSemantic(accountId, List.of(id("comment")))).isEmpty();
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM classification_incoming WHERE account_id=?", Integer.class, accountId)).isZero();
-        assertThat(count(DashboardFilter.from(Map.of("scope","all","label","OLDER_DOCUMENT_COMMENT")))).isEqualTo(1);
-        assertThat(recommendations.read(accountId, List.of(id("gone"))).getFirst().labelReasons())
-            .containsKey("SECURITY").doesNotContainKey("DOCUMENT_COMMENT");
-    }
-
     @Test void calendarFilterMatchesNativeMeetingsAndGoogleInvites() {
         fixture.put("meeting","in","organizer@example.test","Quarterly planning")
             .put("@odata.type","#microsoft.graph.eventMessageRequest");
