@@ -197,7 +197,7 @@
   async function loadPage(pagerFocus, background = false, forceDetails = false) {
     // A label update must survive a refresh deferred by a dialog or selection.
     if (forceDetails) detailRefreshPending = true;
-    if (background && (document.hidden || document.querySelector('dialog[open]') || selectionBusy || listLoading)) return;
+    if (background && (document.hidden || document.querySelector('dialog[open]') || selectionBusy || previewLoading || listLoading)) return;
     forceDetails ||= detailRefreshPending;
     if (forceDetails) detailRefreshPending = false;
     let pageApplied = false;
@@ -206,7 +206,7 @@
     if (!background) { $('senderTable').setAttribute('aria-busy', 'true'); renderSelectionControls(); }
     try {
       const data = await api('page?' + query()); if (request !== listRequest || epoch !== filterEpoch) return;
-      if (background && (document.querySelector('dialog[open]') || selectionBusy)) return;
+      if (background && (document.querySelector('dialog[open]') || selectionBusy || previewLoading)) return;
       const sync = data.sync;
       $('syncStatus').textContent = sync.oauth_status === 'REAUTH_REQUIRED' || sync.lifecycle === 'REAUTH_REQUIRED'
         ? 'Reconnect required' : sync.error_code || sync.lifecycle === 'ERROR' ? 'Sync needs attention'
@@ -223,7 +223,13 @@
       if (state.data && state.revision !== data.revision) { selected.clear(); allMatchingSelected = false; senderSelection.clear(); expanded.clear(); invalidatePreview(); notice('Grouping changed. Draft selection was cleared.'); }
       const lastPage = Math.max(0, Math.ceil(Number(data.summary.groups) / 10) - 1);
       if (state.page > lastPage) { state.page = lastPage; return loadPage(pagerFocus); }
-      if (state.data && data.filter.labels && state.data.classificationRevision !== data.classificationRevision) { selected.clear(); allMatchingSelected = false; invalidatePreview(); notice('Label results changed. Select matching messages again.'); }
+      if (state.data && data.filter.labels && state.data.classificationRevision !== data.classificationRevision) {
+        // Sender groups are a draft scope, resolved to current matching messages at review.
+        // Only an existing message selection or message preview has become stale here.
+        const staleMessages = selected.size > 0 || (state.preview && !previewFromSenders);
+        selected.clear(); allMatchingSelected = false;
+        if (staleMessages) { invalidatePreview(); notice('Label results changed. Select matching messages again.'); }
+      }
       state.data = data; state.revision = data.revision; pageApplied = true;
       $('accountEmail').textContent = data.sync.email;
       $('matching').textContent = fmt(data.summary.messages); $('unreadCount').textContent = fmt(data.summary.unread); $('groupCount').textContent = fmt(data.summary.groups);
@@ -446,12 +452,12 @@
   async function openPreview(fromSenders = false) {
     if (previewLoading || confirming) return;
     const epoch = filterEpoch, revision = state.revision, activeFilter = filter();
-    const classificationRevision = state.data?.classificationRevision;
+    let classificationRevision = state.data?.classificationRevision;
     const selection = fromSenders ? senderSelection : selected;
     const keys = [...selection.keys()];
     const actionType = fromSenders ? $('senderAction').value : state.action;
     const isCurrent = () => epoch === filterEpoch && revision === state.revision
-      && (!activeFilter.labels || classificationRevision === state.data?.classificationRevision)
+      && (fromSenders || !activeFilter.labels || classificationRevision === state.data?.classificationRevision)
       && actionType === (fromSenders ? $('senderAction').value : state.action)
       && keys.length === selection.size && keys.every(id => selection.has(id));
     if (!keys.length) return;
@@ -460,6 +466,12 @@
     try {
       let ids = keys;
       if (fromSenders) {
+        if (activeFilter.labels) {
+          const latest = await api('page?' + query(activeFilter));
+          if (!isCurrent()) return;
+          if (latest.revision !== revision) { notice('Grouping changed. Refresh and select senders again.'); return; }
+          classificationRevision = latest.classificationRevision;
+        }
         const rows = await api('selection', { filter: activeFilter, groups: keys, revision });
         if (!isCurrent()) return;
         if (!rows.length) { notice('No emails match the current filters for these senders.'); return; }
@@ -605,6 +617,11 @@
     if (message.calendarInvite) labels.add('Calendar invite');
     if (message.attachmentState === 'PRESENT') labels.add('Has attachments');
     const reasons = new Map(Object.entries(recommendation?.labelReasons || {}).map(([key,value]) => [recommendationLabel(key),value]));
+    const response = calendarChecks.get(message.id)?.snapshot || message.calendarResponse;
+    if (response && Date.parse(response.expiresAt) > Date.now()) {
+      const label = { RESPONDED: 'Calendar: responded', NEEDS_RESPONSE: 'Calendar: needs response', CANCELLED: 'Calendar: cancelled' }[response.state];
+      if (label) { labels.add(label); reasons.set(label, 'Calendar checked ' + dateTimeText(response.checkedAt) + '. This does not establish whether an update was reviewed.'); }
+    }
     for (const id of recommendation?.providerLabelIds || []) {
       if (!Object.hasOwn(gmailLabelNames,id)) continue;
       const label = 'Gmail label: ' + gmailLabelNames[id];
@@ -702,6 +719,39 @@
   $('labelFilter').addEventListener('toggle', () => { if ($('labelFilter').open) loadGmailLabels(); });
   $('clearLabels').onclick = () => { labelChoices.forEach(input => { input.checked = false; }); $('excludeProtectedShopping').checked = false; labelFilterChanged(); };
   for (const id of ['recommendation', 'importance']) $(id).addEventListener('change', filtersChanged);
+  const calendarChecks = new Map();
+  function appendCalendarResponse(text, m) {
+    const view = calendarChecks.get(m.id), snapshot = view?.snapshot || m.calendarResponse;
+    const labels = (state.details?.recommendations || []).find(r => r.message === m.id)?.labels || [];
+    if (!snapshot && !m.calendarInvite && !labels.includes('CALENDAR_INVITE')
+        && !evidenceViews.get(m.id)?.evidence?.calendars?.length) return;
+    const box = node('div', undefined, 'evidence'), check = node('button', snapshot ? 'Refresh calendar response' : 'Check calendar response');
+    check.type = 'button'; check.dataset.focusKey = 'calendar-' + m.id;
+    check.disabled = !!view?.pending;
+    if (view?.pending) box.append(node('p', 'Checking your calendar…'));
+    if (view?.error) box.append(node('p', view.error));
+    if (snapshot) {
+      const names = { accepted: 'Accepted', declined: 'Declined', tentative: 'Tentative', needsAction: 'Needs response', cancelled: 'Cancelled', organizer: 'You organize this event', unknown: 'Unknown' };
+      for (const event of snapshot.events) {
+        const scope = { event: 'event', series: 'series', occurrence: 'this occurrence' }[event.scope];
+        box.append(node('strong', 'Calendar: ' + (names[event.response] || 'Unknown') + (scope ? ' · ' + scope : '')));
+        box.append(node('small', event.reason, 'muted'));
+      }
+      box.append(node('small', 'Checked ' + dateTimeText(snapshot.checkedAt) + (snapshot.state === 'UNKNOWN' ? ' · Response remains unknown.' : Date.parse(snapshot.expiresAt) <= Date.now() ? ' · Refresh needed for response filters.' : ' · Included in response filters for one hour.'), 'muted'));
+    }
+    box.append(node('small', 'RSVP does not establish whether you reviewed an update. Checking does not change the event or email.', 'muted'));
+    check.onclick = async () => {
+      if (calendarChecks.get(m.id)?.pending) return;
+      calendarChecks.set(m.id, { pending: true, snapshot }); renderDetail();
+      try {
+        const result = await api(`messages/${m.id}/calendar`, {});
+        calendarChecks.set(m.id, { snapshot: result });
+        await loadPage(undefined, false, true);
+      } catch (error) { calendarChecks.set(m.id, { snapshot, error: error.message }); }
+      finally { renderDetail(); }
+    };
+    box.append(check); text.append(box);
+  }
   function appendEvidence(text,m) {
     if (state.suggestion === 'large' && m.sent) text.append(node('small', 'Sent', 'evidence'));
     if (m.sizeEstimate > 1000000) text.append(node('small', 'Large email', 'evidence'));
@@ -719,8 +769,14 @@
         const link = node('a', 'Open in Outlook'); link.href = m.outlookWebLink;
         link.target = '_blank'; link.rel = 'noopener noreferrer'; text.append(link);
       }
+      appendCalendarResponse(text, m);
       return;
     }
+    if (m.gmailWebLink) {
+      const link = node('a', 'Open in Gmail'); link.href = m.gmailWebLink;
+      link.target = '_blank'; link.rel = 'noopener noreferrer'; text.append(link);
+    }
+    appendCalendarResponse(text, m);
     const details=node('details'), summary=node('summary','Email details'), output=node('div'), check=node('button','Check details');
     details.open=openEvidence.has(m.id);
     details.addEventListener('toggle',()=>{if(details.isConnected){if(details.open)openEvidence.add(m.id);else openEvidence.delete(m.id);}});

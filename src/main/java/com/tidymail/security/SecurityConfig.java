@@ -230,7 +230,8 @@ public class SecurityConfig {
                     // the authorization redirect URL, which we inject via the custom
                     // OAuth2AuthorizationRequestResolver configured earlier in filterChain().
                     .scope("openid", "email", "profile",
-                           "https://www.googleapis.com/auth/gmail.modify")
+                           "https://www.googleapis.com/auth/gmail.modify",
+                           "https://www.googleapis.com/auth/calendar.events.readonly")
                     .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
                     .clientName("Google")
                     .build();
@@ -257,7 +258,8 @@ public class SecurityConfig {
                 .jwkSetUri(authority + "/discovery/v2.0/keys")
                 .issuerUri("https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0")
                 .userNameAttributeName("sub")
-                .scope("openid", "email", "profile", "offline_access", "https://graph.microsoft.com/Mail.ReadWrite")
+                .scope("openid", "email", "profile", "offline_access", "https://graph.microsoft.com/Mail.ReadWrite",
+                       "https://graph.microsoft.com/Calendars.Read")
                 .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
                 .clientName("Personal Microsoft Outlook")
                 .build());

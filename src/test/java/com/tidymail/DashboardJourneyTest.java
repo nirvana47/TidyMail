@@ -55,6 +55,20 @@ class DashboardJourneyTest extends PostgresJourneyTest {
     }
 
     @Test
+    void gmailDetailsLinkToTheExactMessageInTheConnectedAccount() {
+        message("18c123abc456def0", "sender@example.test", List.of("INBOX"), true, List.of(), true, NOW);
+        jdbc.update("UPDATE message_metadata SET provider_thread_id='different-thread' WHERE account_id=?", account);
+        var group = dashboard.page(account, filter("inbox", "")).groups().getFirst();
+        var detail = dashboard.details(account, filter("inbox", ""), group.id(), 0);
+        assertThat(detail.messages()).singleElement().satisfies(message -> {
+            assertThat(message.gmailWebLink()).isEqualTo(
+                "https://mail.google.com/mail/?authuser=dashboard%40example.test#all/18c123abc456def0");
+            assertThat(message.outlookWebLink()).isNull();
+        });
+        verifyNoInteractions(gmailProvider, outlookProvider);
+    }
+
+    @Test
     void receivedEligibilityIsPerMessageAndExclusionsOverrideInbox() {
         message("inbox", "Alice@shared.example", List.of("INBOX"), true, List.of(), true, NOW);
         message("archive", "Bob@shared.example", List.of(), true, List.of(), false, NOW);

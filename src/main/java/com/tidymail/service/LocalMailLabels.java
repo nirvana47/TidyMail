@@ -7,7 +7,7 @@ import java.util.regex.Pattern;
 public final class LocalMailLabels {
     public static final String VERSION = "gmail-header-rules-v3";
     public static final Set<String> EXTRA_FILTERS = Set.of("BANKING", "INVESTING", "SHOPPING", "DOCUMENT_COMMENT",
-            "OLDER_DOCUMENT_COMMENT", "PAST_EVENT", "GMAIL_PROMOTIONS");
+            "OLDER_DOCUMENT_COMMENT", "PAST_EVENT", "GMAIL_PROMOTIONS", "CALENDAR_RESPONDED", "CALENDAR_NEEDS_RESPONSE", "CALENDAR_CANCELLED");
 
     private static final List<String> BANKS = List.of("chase.com", "bankofamerica.com", "wellsfargo.com");
     private static final List<String> INVESTORS = List.of("fidelity.com", "vanguard.com", "merrill.com", "ml.com",

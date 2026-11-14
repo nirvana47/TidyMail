@@ -28,11 +28,13 @@ public final class ProviderDeepLinkService {
             return Optional.empty();
         }
         try {
-            String url = "https://" + GMAIL_HOST + "/mail/u/" + encode(accountEmail) + "/";
+            String url = "https://" + GMAIL_HOST + "/mail/?authuser=" + encode(accountEmail);
             URI uri = URI.create(url);
             if (!"https".equals(uri.getScheme()) || !GMAIL_HOST.equals(uri.getHost())
                     || uri.getRawUserInfo() != null || uri.getPort() != -1
-                    || uri.getRawQuery() != null || uri.getRawFragment() != null) {
+                    || !"/mail/".equals(uri.getRawPath())
+                    || !("authuser=" + encode(accountEmail)).equals(uri.getRawQuery())
+                    || uri.getRawFragment() != null) {
                 return Optional.empty();
             }
             return Optional.of(uri.toASCIIString());
@@ -63,15 +65,15 @@ public final class ProviderDeepLinkService {
             return Optional.empty();
         }
         try {
-            String url = "https://" + GMAIL_HOST + "/mail/u/" + encode(accountEmail)
-                + "/#all/" + encode(itemId);
+            String url = "https://" + GMAIL_HOST + "/mail/?authuser=" + encode(accountEmail)
+                + "#all/" + encode(itemId);
             URI uri = URI.create(url);
             if (!"https".equals(uri.getScheme())
                     || !GMAIL_HOST.equals(uri.getHost())
                     || uri.getRawUserInfo() != null
                     || uri.getPort() != -1
-                    || uri.getRawQuery() != null
-                    || !uri.getRawPath().equals("/mail/u/" + encode(accountEmail) + "/")
+                    || !("authuser=" + encode(accountEmail)).equals(uri.getRawQuery())
+                    || !uri.getRawPath().equals("/mail/")
                     || !uri.getRawFragment().equals("all/" + encode(itemId))) {
                 return Optional.empty();
             }

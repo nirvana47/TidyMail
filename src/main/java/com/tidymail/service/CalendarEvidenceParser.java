@@ -11,6 +11,19 @@ import org.springframework.stereotype.Component;
 /** Parse ICS locally without constructing a timezone registry or resolving URLs. */
 @Component
 public class CalendarEvidenceParser {
+    /** Transient lookup keys; never included in persisted MIME evidence. */
+    public record Identity(String uid, String organizer, String instance, String timezone, boolean unsupported) {}
+
+    public List<Identity> identities(String text) {
+        if (text == null || text.getBytes(StandardCharsets.UTF_8).length > 131072) return List.of();
+        var handler = new Handler();
+        try {
+            new CalendarParserImpl().parse(new StringReader(text), handler);
+            return handler.events.stream().map(e -> new Identity(e.get("UID"), e.get("ORGANIZER"),
+                e.get("RECURRENCE-ID"), e.get("RECURRENCE-ID-TZID"),
+                e.rangedUpdate || e.invalidTemporalParameters)).toList();
+        } catch (Exception invalid) { return List.of(); }
+    }
     public record OccurrenceDate(String value, String timezone) {}
     public record Event(String uidHash, String instance, String start, String end, String duration,
                         String timezone, String sequence, boolean recurring, boolean cancelled,

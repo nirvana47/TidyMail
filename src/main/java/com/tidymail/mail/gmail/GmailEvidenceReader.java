@@ -42,6 +42,15 @@ public class GmailEvidenceReader {
         return read(account, messageId, true);
     }
 
+    public List<CalendarEvidenceParser.Identity> readCalendarIdentities(UserAccount account, String messageId) {
+        var identities = new LinkedHashSet<CalendarEvidenceParser.Identity>();
+        var evidence = read(account, messageId, true, identities);
+        if (!"AVAILABLE".equals(evidence.structureState()) || evidence.calendars().isEmpty()
+                || evidence.calendars().stream().anyMatch(c -> !"AVAILABLE".equals(c.state()))
+                || identities.size() > 8) return List.of();
+        return List.copyOf(identities);
+    }
+
     /**
      * One projected MIME request, no snippet, body data or calendar attachment
      * retrieval.
@@ -51,6 +60,11 @@ public class GmailEvidenceReader {
     }
 
     private Evidence read(UserAccount account, String messageId, boolean content) {
+        return read(account, messageId, content, null);
+    }
+
+    private Evidence read(UserAccount account, String messageId, boolean content,
+            Set<CalendarEvidenceParser.Identity> identities) {
         Gmail gmail = clients.buildFor(account);
         try {
             var request = gmail.users().messages().get("me", messageId).setFormat("FULL")
@@ -116,6 +130,7 @@ public class GmailEvidenceReader {
                         continue;
                     }
                     String text = new String(data, StandardCharsets.UTF_8);
+                    if (identities != null) identities.addAll(calendars.identities(text));
                     var parsed = calendars.parse(text).source(node.path("partId").asText(),
                             CalendarEvidenceParser.hash(text));
                     fetchedParts.put(attachment, parsed);

@@ -21,9 +21,13 @@ import org.springframework.stereotype.Repository;
 public class DashboardRepository {
     private static final Pattern BRAND_SEPARATORS = Pattern.compile("[^a-z0-9]");
     private final NamedParameterJdbcTemplate jdbc;
+    private final com.tidymail.service.ProviderDeepLinkService providerLinks;
+    private final com.fasterxml.jackson.databind.ObjectMapper json;
 
-    public DashboardRepository(NamedParameterJdbcTemplate jdbc) {
+    public DashboardRepository(NamedParameterJdbcTemplate jdbc, com.tidymail.service.ProviderDeepLinkService providerLinks, com.fasterxml.jackson.databind.ObjectMapper json) {
+        this.json = json;
         this.jdbc = jdbc;
+        this.providerLinks = providerLinks;
     }
 
     public NamedParameterJdbcTemplate jdbc() {
@@ -66,6 +70,15 @@ public class DashboardRepository {
                       WHEN 'OLDER_DOCUMENT_COMMENT' THEN """+LOCAL_CURRENT+"""
                         AND jsonb_exists(saved.local_label_reasons,'DOCUMENT_COMMENT')
                         AND m.received_at<CAST(:asOf AS timestamptz)-interval '720 hours'
+                      WHEN 'CALENDAR_RESPONDED' THEN EXISTS(SELECT 1 FROM calendar_response_checks cr
+                        WHERE cr.account_id=m.account_id AND cr.provider_message_id=m.provider_message_id
+                        AND cr.response_state='RESPONDED' AND cr.checked_at>=CAST(:asOf AS timestamptz)-interval '1 hour')
+                      WHEN 'CALENDAR_NEEDS_RESPONSE' THEN EXISTS(SELECT 1 FROM calendar_response_checks cr
+                        WHERE cr.account_id=m.account_id AND cr.provider_message_id=m.provider_message_id
+                        AND cr.response_state='NEEDS_RESPONSE' AND cr.checked_at>=CAST(:asOf AS timestamptz)-interval '1 hour')
+                      WHEN 'CALENDAR_CANCELLED' THEN EXISTS(SELECT 1 FROM calendar_response_checks cr
+                        WHERE cr.account_id=m.account_id AND cr.provider_message_id=m.provider_message_id
+                        AND cr.response_state='CANCELLED' AND cr.checked_at>=CAST(:asOf AS timestamptz)-interval '1 hour')
                       WHEN 'PAST_EVENT' THEN """+LOCAL_CURRENT+"""
                         AND saved.local_calendar_end<=:asOf
                       WHEN 'CALENDAR_INVITE' THEN """+LOCAL_LABEL+" OR "+REQUESTED_SEMANTIC_MATCH+"""
@@ -504,6 +517,9 @@ public class DashboardRepository {
         List<Message> messages = jdbc.query(
                 filtered + """
                 SELECT filtered.*,
+                (SELECT facts::text FROM calendar_response_checks cr WHERE cr.account_id=filtered.account_id
+                    AND cr.provider_message_id=filtered.provider_message_id) calendar_response,
+                (SELECT email FROM user_accounts a WHERE a.id=filtered.account_id) account_email,
                 (SELECT folder_path FROM outlook_folders o WHERE o.account_id=filtered.account_id
                     AND o.folder_id=filtered.outlook_folder_id) outlook_folder,
                 EXISTS(SELECT 1 FROM correspondent_summary h WHERE h.account_id=filtered.account_id
@@ -524,7 +540,9 @@ public class DashboardRepository {
                   AND e.provider_message_id IN (target.provider_message_id,source.provider_message_id) AND jsonb_array_length(e.facts->'calendars')>0)) reviewed_pattern
                 """ + inGroup
                         + " ORDER BY received_at DESC NULLS LAST,provider_message_id LIMIT 10 OFFSET :message_offset",
-                p, (r, n) -> message(r,r.getString("reviewed_pattern")));
+                p, (r, n) -> message(r,r.getString("reviewed_pattern"), providerLinks.gmail(
+                    r.getString("provider"), r.getString("account_email"), null,
+                    r.getString("provider_message_id")).orElse(null), calendarResponse(r.getString("calendar_response"))));
         return new Details(messages, total, revision(account),classificationRevision(account));
     }
 
@@ -586,15 +604,21 @@ public class DashboardRepository {
                         r.getString("address")));
     }
 
-    public static Message message(ResultSet r) throws SQLException { return message(r,null); }
+    public static Message message(ResultSet r) throws SQLException { return message(r,null,null,null); }
 
-    private static Message message(ResultSet r,String pattern) throws SQLException {
+    private static Message message(ResultSet r,String pattern,String gmailWebLink,com.fasterxml.jackson.databind.JsonNode calendarResponse) throws SQLException {
         return new Message(uuid(r, "dashboard_message_id"), r.getString("subject_header"), r.getString("address"),
                 instant(r, "received_at"), r.getBoolean("unread"), uuid(r, "group_public_id"),
                 r.getString("pending_state"), r.getString("category"),r.getString("from_display_name"),r.getString("classification_override")!=null?"MANUAL":r.getString("category").equals("UNCLASSIFIED")?"NONE":"JEV",
                 r.getObject("size_estimate",Long.class),r.getString("attachment_state"),r.getString("snippet_text"),r.getString("snippet_state"),pattern,java.util.Arrays.asList((String[])r.getArray("labels").getArray()).contains("SENT"),r.getBoolean("contact"),r.getBoolean("calendar_invite"),
                 r.getString("outlook_folder"),r.getArray("outlook_categories")==null?List.of():
-                    List.of((String[])r.getArray("outlook_categories").getArray()),r.getString("outlook_web_link"));
+                    List.of((String[])r.getArray("outlook_categories").getArray()),r.getString("outlook_web_link"),gmailWebLink,calendarResponse);
+    }
+
+    private com.fasterxml.jackson.databind.JsonNode calendarResponse(String facts) throws SQLException {
+        if (facts==null) return null;
+        try { return json.readTree(facts); }
+        catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw new SQLException("Invalid calendar response snapshot",e); }
     }
 
     public static UUID uuid(ResultSet r, String column) throws SQLException {
@@ -640,7 +664,7 @@ public class DashboardRepository {
     public record Message(UUID id, String subject, String address, Instant receivedAt, boolean unread, UUID groupId,
             String pendingState, String category,String displayName,String categorySource,
             Long sizeEstimate,String attachmentState,String snippet,String snippetState,String reviewedPattern,boolean sent,boolean contact,boolean calendarInvite,
-            String outlookFolder,List<String> outlookCategories,String outlookWebLink) {
+            String outlookFolder,List<String> outlookCategories,String outlookWebLink,String gmailWebLink,com.fasterxml.jackson.databind.JsonNode calendarResponse) {
     }
 
     public record Address(String address, long messages, long unread,String displayName) {

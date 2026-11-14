@@ -120,6 +120,9 @@
                     <label><input type="checkbox" name="labelFilter" value="DOCUMENT_COMMENT">Document comment</label>
                     <label><input type="checkbox" name="labelFilter" value="OLDER_DOCUMENT_COMMENT">Document comment older than 30 days</label>
                     <label><input type="checkbox" name="labelFilter" value="PAST_EVENT">Past event</label>
+                    <label><input type="checkbox" name="labelFilter" value="CALENDAR_RESPONDED">Calendar: responded</label>
+                    <label><input type="checkbox" name="labelFilter" value="CALENDAR_NEEDS_RESPONSE">Calendar: needs response</label>
+                    <label><input type="checkbox" name="labelFilter" value="CALENDAR_CANCELLED">Calendar: cancelled</label>
                     <label th:hidden="${outlook}"><input type="checkbox" name="labelFilter" value="GMAIL_PROMOTIONS">Gmail: Promotions</label>
                     <label hidden><input type="checkbox" name="labelFilter" value="SENT">Sent</label>
                     <label><input type="checkbox" name="labelFilter" value="OTHER">Other</label>
@@ -127,7 +130,7 @@
                 </div>
                 <div class="label-choices" id="gmailLabelChoices"></div>
                 <label id="shoppingExclusions" hidden><input type="checkbox" id="excludeProtectedShopping">Exclude Receipt and Security</label>
-                <p class="muted" id="localLabelProgress">Messages with labels still pending may not appear in filtered results.</p>
+                <p class="muted" id="localLabelProgress">Messages with labels still pending may not appear in filtered results. Calendar response filters include explicit checks from the last hour. Gmail checks your primary calendar.</p>
             </details>
             <div class="metrics">
                 <div class="metric"><b id="matching">—</b><span class="muted">Matching messages</span></div>

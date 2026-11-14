@@ -104,8 +104,8 @@ class Phase10SenderUnreadWebTest {
         assertThat(uri.getHost()).isEqualTo("mail.google.com");
         assertThat(uri.getRawUserInfo()).isNull();
         assertThat(uri.getPort()).isEqualTo(-1);
-        assertThat(uri.getRawQuery()).isNull();
-        assertThat(URLDecoder.decode(uri.getRawPath().split("/")[3], StandardCharsets.UTF_8))
+        assertThat(uri.getRawPath()).isEqualTo("/mail/");
+        assertThat(URLDecoder.decode(uri.getRawQuery().substring("authuser=".length()), StandardCharsets.UTF_8))
             .isEqualTo("owner+tag@example.com");
         assertThat(URLDecoder.decode(uri.getRawFragment().substring(4), StandardCharsets.UTF_8))
             .isEqualTo("thread ?#%");

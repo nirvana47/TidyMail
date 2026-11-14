@@ -102,7 +102,8 @@ class SecurityConfigIntegrationTest {
         );
         String[] expectedMicrosoftScopes = {
             "openid", "email", "profile", "offline_access",
-            "https://graph.microsoft.com/Mail.ReadWrite"
+            "https://graph.microsoft.com/Mail.ReadWrite",
+            "https://graph.microsoft.com/Calendars.Read"
         };
         String expectedIssuerPrefix = "https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0";
         assertThat(props.isMicrosoftConfigured()).isTrue();
@@ -122,7 +123,7 @@ class SecurityConfigIntegrationTest {
             "https://www.googleapis.com/auth/gmail.modify"
         };
         assertThat(expectedGoogleScopes).hasSize(4);
-        assertThat(expectedMicrosoftScopes).hasSize(5);
+        assertThat(expectedMicrosoftScopes).hasSize(6);
     }
 
 }
