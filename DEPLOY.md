@@ -109,3 +109,26 @@ Microsoft registration keys exist, but enabling that button does not provide Out
 | Reconnection required | `/activity`; failed OAuth preserves indexed data |
 
 Ordinary logout retains data. Confirmed owner deletion is the application removal path. Back up PostgreSQL according to your retention needs.
+
+## Calendar labels
+
+Calendar: responded, Calendar: needs response and Calendar: cancelled are derived
+from read-only provider checks, independently of semantic classification. Cancelled
+is used when all matched events are cancelled; otherwise pending responses take
+priority over completed responses. Unknown, unchecked and organizer-only results
+receive none of these labels. The internal Calendar invite purpose remains for
+discovery and retention protection; Calendar invite and Past event are no longer
+shown as message labels or filter choices. Past event is no longer accepted as a
+filter. Existing mail classifications and rule versions are preserved.
+
+`app.calendar-labels.worker.enabled` defaults to true. With scheduling enabled,
+the worker checks one known invitation per connected, authorized account every
+2 seconds (`app.calendar-labels.poll-ms`), starting after 20 seconds. It uses
+stored header rules, semantic labels, provider meeting flags and MIME evidence
+to find candidates; it does not rescan ordinary mail or invoke Jev. Checks resume
+from saved timestamps after restart. Matched results refresh after 50 minutes;
+unknown results retry after 24 hours. Filters and displayed labels require a
+check within one hour, so larger queues may temporarily have incomplete coverage.
+Manual per-email checks remain available. Gmail requires read-only Calendar
+access and matches the primary calendar; Outlook requires Calendar read access.
+These descriptive labels do not automatically enqueue or authorize deletion.

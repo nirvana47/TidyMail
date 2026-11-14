@@ -14,7 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
-/** Explicit, account-scoped reads. Calendar responses never change cleanup recommendations. */
+/** Account-scoped reads. Calendar responses never change cleanup recommendations. */
 @Service
 public class CalendarResponseService {
     private final JdbcTemplate jdbc;
@@ -75,7 +75,7 @@ public class CalendarResponseService {
         if(events.isEmpty() || events.stream().anyMatch(e -> !e.state().equals("MATCHED")))return "UNKNOWN";
         if(events.stream().allMatch(e -> e.response().equals("cancelled")))return "CANCELLED";
         if(events.stream().anyMatch(e -> e.response().equals("needsAction")))return "NEEDS_RESPONSE";
-        if(events.stream().allMatch(e -> Set.of("accepted","declined","tentative").contains(e.response())))return "RESPONDED";
+        if(events.stream().allMatch(e -> Set.of("accepted","declined","tentative","cancelled").contains(e.response())))return "RESPONDED";
         return "UNKNOWN";
     }
 }

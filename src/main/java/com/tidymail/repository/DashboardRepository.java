@@ -79,8 +79,6 @@ public class DashboardRepository {
                       WHEN 'CALENDAR_CANCELLED' THEN EXISTS(SELECT 1 FROM calendar_response_checks cr
                         WHERE cr.account_id=m.account_id AND cr.provider_message_id=m.provider_message_id
                         AND cr.response_state='CANCELLED' AND cr.checked_at>=CAST(:asOf AS timestamptz)-interval '1 hour')
-                      WHEN 'PAST_EVENT' THEN """+LOCAL_CURRENT+"""
-                        AND saved.local_calendar_end<=:asOf
                       WHEN 'CALENDAR_INVITE' THEN """+LOCAL_LABEL+" OR "+REQUESTED_SEMANTIC_MATCH+"""
                         OR COALESCE(jsonb_path_exists(e.facts,'$.parts[*] ? (@.calendar == true)'),false)
                         OR COALESCE(jsonb_array_length(e.facts->'calendars'),0)>0

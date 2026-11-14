@@ -98,7 +98,6 @@
                 </div>
                 <div class="label-choices">
                     <label><input type="checkbox" name="labelFilter" value="CONTACT">Contact</label>
-                    <label><input type="checkbox" name="labelFilter" value="CALENDAR_INVITE">Calendar invite</label>
                     <label><input type="checkbox" name="labelFilter" value="LARGE_MESSAGE">Large email</label>
                     <label><input type="checkbox" name="labelFilter" value="HAS_ATTACHMENTS">Has attachments</label>
                     <label><input type="checkbox" name="labelFilter" value="HUMAN_CORRESPONDENCE">Personal</label>
@@ -119,7 +118,6 @@
                     <label><input type="checkbox" name="labelFilter" value="SHOPPING">Shopping</label>
                     <label><input type="checkbox" name="labelFilter" value="DOCUMENT_COMMENT">Document comment</label>
                     <label><input type="checkbox" name="labelFilter" value="OLDER_DOCUMENT_COMMENT">Document comment older than 30 days</label>
-                    <label><input type="checkbox" name="labelFilter" value="PAST_EVENT">Past event</label>
                     <label><input type="checkbox" name="labelFilter" value="CALENDAR_RESPONDED">Calendar: responded</label>
                     <label><input type="checkbox" name="labelFilter" value="CALENDAR_NEEDS_RESPONSE">Calendar: needs response</label>
                     <label><input type="checkbox" name="labelFilter" value="CALENDAR_CANCELLED">Calendar: cancelled</label>
@@ -130,7 +128,7 @@
                 </div>
                 <div class="label-choices" id="gmailLabelChoices"></div>
                 <label id="shoppingExclusions" hidden><input type="checkbox" id="excludeProtectedShopping">Exclude Receipt and Security</label>
-                <p class="muted" id="localLabelProgress">Messages with labels still pending may not appear in filtered results. Calendar response filters include explicit checks from the last hour. Gmail checks your primary calendar.</p>
+                <p class="muted" id="localLabelProgress">Messages with labels still pending may not appear in filtered results. Calendar labels are checked in the background and include confirmed status from the last hour; unchecked or uncertain events remain unlabelled. Gmail checks your primary calendar.</p>
             </details>
             <div class="metrics">
                 <div class="metric"><b id="matching">—</b><span class="muted">Matching messages</span></div>

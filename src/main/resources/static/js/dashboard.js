@@ -607,14 +607,14 @@
     PRIOR_SENT_CORRESPONDENCE:'You have previously emailed this exact address.', OBSERVED_CALENDAR:'A calendar invite was observed.'
   };
   const recommendationLabelNames = { CONTACT:'Contact',CALENDAR_INVITE:'Calendar invite',LARGE_MESSAGE:'Large email',HAS_ATTACHMENTS:'Has attachments',HUMAN_CORRESPONDENCE:'Personal',PERSONAL:'Personal',SENT:'Sent',GMAIL_PROMOTIONS:'Gmail: Promotions',
+    CALENDAR_RESPONDED:'Calendar: responded',CALENDAR_NEEDS_RESPONSE:'Calendar: needs response',CALENDAR_CANCELLED:'Calendar: cancelled',
     OLDER_DOCUMENT_COMMENT:'Document comment older than 30 days' };
   function recommendationLabel(value) { return recommendationLabelNames[value] || value.toLowerCase().replaceAll('_',' ').replace(/^./,c=>c.toUpperCase()); }
   const recommendationDrafts=new Map(), openRecommendationEditors=new Set();
   function appendMessageLabels(text, message, recommendation, expanded) {
-    const labels = new Set((recommendation?.labels || []).filter(label => !['UNKNOWN','SENT'].includes(label)).map(recommendationLabel));
-    if (message.category !== 'UNCLASSIFIED') labels.add(recommendationLabel(message.category));
+    const labels = new Set((recommendation?.labels || []).filter(label => !['UNKNOWN','SENT','CALENDAR_INVITE','PAST_EVENT'].includes(label)).map(recommendationLabel));
+    if (!['UNCLASSIFIED','CALENDAR_INVITE'].includes(message.category)) labels.add(recommendationLabel(message.category));
     if (message.contact) labels.add('Contact');
-    if (message.calendarInvite) labels.add('Calendar invite');
     if (message.attachmentState === 'PRESENT') labels.add('Has attachments');
     const reasons = new Map(Object.entries(recommendation?.labelReasons || {}).map(([key,value]) => [recommendationLabel(key),value]));
     const response = calendarChecks.get(message.id)?.snapshot || message.calendarResponse;
@@ -631,7 +631,7 @@
     if (recommendation?.relayRecipients?.length)
       text.append(node('small', `Relay recipient: ${recommendation.relayRecipients.join(', ')}`, 'muted'));
     if (!labels.size) {
-      text.append(node('small', 'No labels shown', 'muted'));
+      text.append(node('small', message.calendarInvite ? 'Calendar status not confirmed' : 'No labels shown', 'muted'));
       return;
     }
     const detail = node('details', undefined, 'evidence');
@@ -682,6 +682,7 @@
     $('localLabelProgress').textContent = status.error ? 'Local label processing needs a retry.' :
       status.localChecked < status.indexed ? `${fmt(status.localChecked)} of ${fmt(status.indexed)} indexed emails checked for local labels.` :
       'Local rules have checked all indexed emails. Some messages may have no matching label.';
+    $('localLabelProgress').textContent += ' Calendar labels refresh gradually with Calendar access and use checks from the last hour. Unchecked or uncertain events remain unlabelled.';
     $('recommendationStatus').textContent=`${fmt(status.assessed)} of ${fmt(status.indexed)} emails have saved local recommendations${status.queued ? ' · updates queued' : ''}${status.error ? ' · refresh stopped; retry to continue' : !status.workerAvailable ? ' · automatic local refresh is disabled in this session' : status.enabled ? ' · refreshing locally' : ' · paused'}`;
     if(outlook) $('labelingCoverage').textContent = 'Automatic local labels';
     else if(status.labeling) {
@@ -756,9 +757,6 @@
     if (state.suggestion === 'large' && m.sent) text.append(node('small', 'Sent', 'evidence'));
     if (m.sizeEstimate > 1000000) text.append(node('small', 'Large email', 'evidence'));
     if (m.contact) text.append(node('small', 'Contact', 'evidence'));
-    const savedEvidence=evidenceViews.get(m.id)?.evidence;
-    if (m.calendarInvite || (savedEvidence?.parts || []).some(part => part.calendar)
-        || (savedEvidence?.calendars || []).length) text.append(node('small', 'Calendar invite', 'evidence'));
     text.append(node('small', `${bytesText(m.sizeEstimate)} · ${m.attachmentState === 'PRESENT' ? 'Attachment found' : m.attachmentState === 'ABSENT' ? 'No attachments observed' : 'Attachments not checked'}`, 'muted'));
     if (m.snippet) text.append(node('p', m.snippet + (m.snippetState === 'TRUNCATED' ? '…' : ''), 'message-snippet'));
     else text.append(node('small', m.snippetState === 'ABSENT' ? 'No preview text available' : 'Preview text not checked', 'muted'));

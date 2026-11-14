@@ -126,6 +126,17 @@ public class RecommendationService {
         var ids = bounded(account, messages);
         if (ids.isEmpty())
             return List.of();
+        Map<UUID,String> calendarLabels = new HashMap<>();
+        named.query("""
+            SELECT m.dashboard_message_id,cr.response_state FROM calendar_response_checks cr
+            JOIN message_metadata m USING(account_id,provider_message_id)
+            WHERE cr.account_id=:account AND m.dashboard_message_id IN (:ids)
+              AND cr.checked_at>=CAST(:now AS timestamptz)-interval '1 hour'
+              AND cr.response_state IN ('RESPONDED','NEEDS_RESPONSE','CANCELLED')
+            """,new MapSqlParameterSource("account",account).addValue("ids",ids)
+                .addValue("now",java.sql.Timestamp.from(clock.instant())), row -> {
+                    calendarLabels.put(row.getObject("dashboard_message_id",UUID.class),"CALENDAR_"+row.getString("response_state"));
+                });
         return load(account, ids).stream().map(s -> {
             Freshness freshness = s.savedHash() == null ? Freshness.PENDING
                     : s.savedHash().equals(s.input().evidenceRevision()) && VERSION.equals(s.savedEngine())
@@ -133,8 +144,7 @@ public class RecommendationService {
                                     ? Freshness.CURRENT
                                     : Freshness.STALE;
             var reasons = new TreeMap<>(s.localReasons());
-            if (s.localCalendarEnd() != null && !s.localCalendarEnd().isAfter(s.input().evaluatedAt()))
-                reasons.put("PAST_EVENT", "The latest observed schedule in stored calendar evidence has ended.");
+            reasons.remove("PAST_EVENT");
             if (reasons.containsKey("DOCUMENT_COMMENT") && s.input().receivedAt() != null
                     && s.input().receivedAt().isBefore(s.input().evaluatedAt().minus(java.time.Duration.ofDays(30))))
                 reasons.put("OLDER_DOCUMENT_COMMENT", "The email was received more than 30 days ago.");
@@ -146,6 +156,12 @@ public class RecommendationService {
                 reasons.putIfAbsent("CALENDAR_INVITE", "A calendar part was observed in stored evidence.");
             var labels = new TreeSet<>(labels(s.input()));
             labels.addAll(reasons.keySet());
+            labels.removeAll(Set.of("CALENDAR_INVITE","PAST_EVENT"));
+            String calendarLabel=calendarLabels.get(s.input().message());
+            if(calendarLabel!=null) {
+                labels.add(calendarLabel);
+                reasons.put(calendarLabel,"Confirmed by a calendar check within the last hour.");
+            }
             return new View(s.input().message(), freshness,
                     freshness == Freshness.CURRENT ? decode(s.savedResult(), Result.class) : null, s.correction(),
                     labels, reasons, s.providerLabelIds(), relayRecipients(account, s.recipients()),

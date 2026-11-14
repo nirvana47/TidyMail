@@ -52,22 +52,21 @@ class LocalGmailLabelsJourneyTest extends PostgresJourneyTest {
         verifyNoInteractions(gmailProvider,outlookProvider);
     }
 
-    @Test void storedCalendarUpdatesInvalidateEarlierPastEventMatches() throws Exception {
+    @Test void storedCalendarTimingDoesNotProduceRetiredPastEventLabels() throws Exception {
         UUID original=mail("old-event","calendar-notification@google.com","Calendar","Invitation: Example","{INBOX}");
         calendar("old-event","series","DTSTART:20200101T090000Z\r\nRRULE:FREQ=WEEKLY;COUNT=2\r\nSEQUENCE:1");
         UUID mixed=mail("mixed-event","calendar-notification@google.com","Calendar","Invitation: Example","{INBOX}");
         calendar("mixed-event","mixed","DTSTART:20200101T090000Z\r\nRRULE:FREQ=YEARLY;INTERVAL=8;COUNT=2");
         drain();
-        assertThat(view(original).labelReasons()).containsKeys("CALENDAR_INVITE","PAST_EVENT");
+        assertThat(view(original).labelReasons()).containsKey("CALENDAR_INVITE").doesNotContainKey("PAST_EVENT");
         assertThat(view(mixed).labelReasons()).containsKey("CALENDAR_INVITE").doesNotContainKey("PAST_EVENT");
-        assertThat(count("all","PAST_EVENT","all",false)).isEqualTo(1);
+        assertThatThrownBy(() -> count("all","PAST_EVENT","all",false))
+            .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
 
         mail("updated-event","calendar-notification@google.com","Calendar","Updated invitation: Example","{INBOX}");
         calendar("updated-event","series","DTSTART:20300101T090000Z\r\nSEQUENCE:2");
-        assertThat(count("all","PAST_EVENT","all",false)).isZero();
         drain();
         assertThat(view(original).labelReasons()).containsKey("CALENDAR_INVITE").doesNotContainKey("PAST_EVENT");
-        assertThat(count("all","PAST_EVENT","all",false)).isZero();
         verifyNoInteractions(gmailProvider,outlookProvider);
     }
 

@@ -32,6 +32,8 @@ class CalendarResponseJourneyTest extends PostgresJourneyTest {
     @MockBean GmailClientFactory clients;
     @MockBean com.tidymail.mail.outlook.OutlookGraph graph;
     @Autowired CalendarResponseService calendar;
+    @Autowired com.tidymail.service.CalendarLabelRefreshService calendarLabels;
+    @Autowired com.tidymail.service.RecommendationService recommendations;
     @Autowired DashboardRepository dashboard;
     @Autowired ObjectMapper json;
     long account; UUID message;
@@ -130,12 +132,62 @@ class CalendarResponseJourneyTest extends PostgresJourneyTest {
         response="needsAction";
         assertThat(calendar.inspect(account,message).state()).isEqualTo("NEEDS_RESPONSE");
         assertThat(matching("CALENDAR_NEEDS_RESPONSE")).isEqualTo(1);
+        assertThat(recommendations.read(account,List.of(message)).getFirst().labels())
+            .contains("CALENDAR_NEEDS_RESPONSE").doesNotContain("CALENDAR_RESPONDED","CALENDAR_CANCELLED","CALENDAR_INVITE","PAST_EVENT");
         status="cancelled";
         assertThat(calendar.inspect(account,message).state()).isEqualTo("CANCELLED");
         assertThat(matching("CALENDAR_CANCELLED")).isEqualTo(1);
+        assertThat(matching("CALENDAR_NEEDS_RESPONSE")).isZero();
+        assertThat(matching("CALENDAR_RESPONDED")).isZero();
+        assertThat(recommendations.read(account,List.of(message)).getFirst().labels())
+            .contains("CALENDAR_CANCELLED").doesNotContain("CALENDAR_RESPONDED","CALENDAR_NEEDS_RESPONSE","CALENDAR_INVITE","PAST_EVENT");
         forbidden=true;
         assertThat(calendar.inspect(account,message).state()).isEqualTo("UNKNOWN");
         assertThat(matching("CALENDAR_CANCELLED")).isZero();
+    }
+
+    @Test void calendarFilterChoicesExposeOnlyTheThreeStatusLabels() throws Exception {
+        String html=mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/dashboard")
+                .with(authenticatedAs(OWNER))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(html).contains("value=\"CALENDAR_RESPONDED\"", "value=\"CALENDAR_NEEDS_RESPONSE\"", "value=\"CALENDAR_CANCELLED\"")
+            .doesNotContain("value=\"CALENDAR_INVITE\"", "value=\"PAST_EVENT\"");
+    }
+
+    @Test void backgroundRefreshChecksOnlyKnownInvitesAndResumesWithoutReclassifyingMail() {
+        jdbc.update("""
+            INSERT INTO message_evidence(account_id,provider_message_id,evidence_version,evidence_hash,observed_at,facts)
+            VALUES(?,'invite','test','test',now(),'{"parts":[{"calendar":true}]}')
+            """,account);
+        jdbc.update("""
+            INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,dashboard_from_address,
+                dashboard_unit_kind,dashboard_unit_key,subject_header,labels,label_evidence_known,received_at)
+            VALUES(?,'google','ordinary','news@example.test','news@example.test','ADDRESS','news@example.test',
+                'Ordinary email',ARRAY['INBOX'],true,now())
+            """,account);
+        calendarLabels.runOnce();
+        assertThat(matching("CALENDAR_RESPONDED")).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM calendar_response_checks",Long.class)).isEqualTo(1);
+        int reads=requests.size();
+        calendarLabels.runOnce();
+        assertThat(requests).hasSize(reads);
+        jdbc.update("UPDATE calendar_response_checks SET checked_at=now()-interval '55 minutes'");
+        status="cancelled";
+        calendarLabels.runOnce();
+        assertThat(matching("CALENDAR_CANCELLED")).isEqualTo(1);
+        assertThat(matching("CALENDAR_RESPONDED")).isZero();
+        forbidden=true;
+        jdbc.update("UPDATE calendar_response_checks SET checked_at=now()-interval '2 hours'");
+        calendarLabels.runOnce();
+        assertThat(matching("CALENDAR_CANCELLED")).isZero();
+        reads=requests.size();
+        calendarLabels.runOnce();
+        assertThat(requests).hasSize(reads); // Unknown matches back off for a day.
+        jdbc.update("UPDATE user_accounts SET scopes=ARRAY['openid'] WHERE id=?",account);
+        jdbc.update("UPDATE calendar_response_checks SET checked_at=now()-interval '2 days'");
+        calendarLabels.runOnce();
+        assertThat(requests).hasSize(reads);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM cleanup_jobs",Long.class)).isZero();
+        verifyNoInteractions(gmailProvider,outlookProvider);
     }
 
     @Test void ownershipAndCsrfAreCheckedBeforeAnyProviderRead() throws Exception {
