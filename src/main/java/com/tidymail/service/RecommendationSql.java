@@ -28,24 +28,23 @@ account_context_raw AS MATERIALIZED (
           m.labels && ARRAY['CATEGORY_SOCIAL'],m.labels && ARRAY['CATEGORY_UPDATES'],m.labels && ARRAY['CATEGORY_FORUMS'],
           CASE WHEN sl.variant='SNIPPET' THEN m.snippet_text END,CASE WHEN sl.variant='SNIPPET' THEN m.snippet_state END)::text)
         """;
+    private static final String ATTENTION = """
+        CASE WHEN NOT m.label_evidence_known THEN 'UNKNOWN'
+          WHEN NOT m.unread THEN 'READ'
+          WHEN m.received_at IS NULL OR m.received_at>CAST(:asOf AS timestamptz) THEN 'UNKNOWN'
+          WHEN extract(epoch FROM(CAST(:asOf AS timestamptz)-m.received_at))>COALESCE(p.attention_days,60)*86400 THEN 'OLDER_UNREAD'
+          ELSE 'RECENT_UNREAD' END
+        """;
     public static final String HASH = """
           md5(jsonb_build_array(recommendation_metadata_hash(m),a.email,a.aliases,a.coverage_hash,
               e.evidence_version,e.evidence_hash,e.facts,to_jsonb(h),to_jsonb(p),to_jsonb(c),sl.input_hash,sl.judgment,
-              CASE WHEN NOT m.label_evidence_known THEN 'UNKNOWN'
-                WHEN NOT m.unread THEN 'READ'
-                WHEN m.received_at IS NULL OR m.received_at>CAST(:asOf AS timestamptz) THEN 'UNKNOWN'
-                WHEN extract(epoch FROM(CAST(:asOf AS timestamptz)-m.received_at))>COALESCE(p.attention_days,60)*86400 THEN 'OLDER_UNREAD'
-                ELSE 'RECENT_UNREAD' END)::text)
-        """;
+              %s)::text)
+        """.formatted(ATTENTION);
     public static final String STAMP = """
         md5(jsonb_build_array(COALESCE(v.revision,0),a.email,a.aliases,a.coverage_hash,
           e.evidence_version,e.evidence_hash,to_jsonb(h),p.revision,c.revision,sl.input_hash,sl.attempt_id,
-          CASE WHEN NOT m.label_evidence_known THEN 'UNKNOWN'
-            WHEN NOT m.unread THEN 'READ'
-            WHEN m.received_at IS NULL OR m.received_at>CAST(:asOf AS timestamptz) THEN 'UNKNOWN'
-            WHEN extract(epoch FROM(CAST(:asOf AS timestamptz)-m.received_at))>COALESCE(p.attention_days,60)*86400 THEN 'OLDER_UNREAD'
-            ELSE 'RECENT_UNREAD' END)::text)
-        """;
+          %s)::text)
+        """.formatted(ATTENTION);
     public static final String JOINS = """
         LEFT JOIN message_evidence e ON e.account_id=m.account_id AND e.provider_message_id=m.provider_message_id
         LEFT JOIN correspondent_summary h ON h.account_id=m.account_id AND h.address=m.dashboard_from_address
@@ -62,10 +61,6 @@ account_context_raw AS MATERIALIZED (
         AND ROW(saved.history_revision,saved.history_sent,saved.history_received,saved.history_sent_replies,saved.history_received_replies,
                 saved.history_last_sent,saved.history_last_received)
           IS NOT DISTINCT FROM ROW(COALESCE(h.revision,0),COALESCE(h.sent_count,0),COALESCE(h.received_count,0),COALESCE(h.sent_reply_count,0),COALESCE(h.received_reply_count,0),h.last_sent_at,h.last_received_at)
-        AND saved.attention_source=CASE WHEN NOT m.label_evidence_known THEN 'UNKNOWN'
-            WHEN NOT m.unread THEN 'READ'
-            WHEN m.received_at IS NULL OR m.received_at>CAST(:asOf AS timestamptz) THEN 'UNKNOWN'
-            WHEN extract(epoch FROM(CAST(:asOf AS timestamptz)-m.received_at))>COALESCE(p.attention_days,60)*86400 THEN 'OLDER_UNREAD'
-            ELSE 'RECENT_UNREAD' END)
-        """;
+        AND saved.attention_source=%s)
+        """.formatted(ATTENTION);
 }

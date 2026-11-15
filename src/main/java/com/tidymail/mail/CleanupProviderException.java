@@ -46,6 +46,6 @@ public class CleanupProviderException extends RuntimeException {
     }
 
     public boolean rejected() {
-        return status == 400 || status == 401 || status == 403 || status == 404 || status == 429;
+        return status >= 400 && status < 500 && status != 408;
     }
 }

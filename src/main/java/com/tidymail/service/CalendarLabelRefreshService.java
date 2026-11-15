@@ -48,8 +48,6 @@ public class CalendarLabelRefreshService {
 
     private boolean hasCalendarAccess(UserAccount account) {
         if("google".equals(account.getProvider()))return GoogleCalendarReader.hasAccess(account);
-        return "microsoft".equals(account.getProvider()) && account.getScopes()!=null
-            && account.getScopes().stream().anyMatch(s -> Set.of("Calendars.ReadBasic","Calendars.Read","Calendars.ReadWrite")
-                .contains(s.substring(s.lastIndexOf('/')+1)));
+        return "microsoft".equals(account.getProvider()) && com.tidymail.mail.outlook.OutlookCalendarReader.hasAccess(account);
     }
 }

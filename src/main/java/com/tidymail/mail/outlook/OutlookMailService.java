@@ -212,6 +212,11 @@ public class OutlookMailService {
 
     /** Called in the sync or cleanup transaction, after acquiring the appropriate lease and row locks. */
     public void save(long account, MailMessage message, UUID baseline) {
+        // Fence in-flight pre-mutation sync pages, including the folder and categories projection.
+        if (Boolean.TRUE.equals(jdbc.queryForObject("""
+            SELECT EXISTS(SELECT 1 FROM message_metadata WHERE account_id=? AND provider_message_id=?
+              AND cleanup_updated_at>?)
+            """, Boolean.class, account, message.id(), java.sql.Timestamp.from(message.observationStartedAt())))) return;
         var row = mapper.apply(account, message, null, Instant.now());
         row.setFullScanGeneration(baseline);
         var details = Objects.requireNonNull(message.outlook());
@@ -230,18 +235,64 @@ public class OutlookMailService {
             """, baseline, account, message.id(), details.folderId(), baseline);
     }
 
-    /** Run once for one claimed target. A move is never repeated by this method. */
-    public void apply(UserAccount account, MailMessage before, BulkActionType action, Runnable readCompleted) {
-        String source = ME + "mailFolders/" + segment(before.outlook().folderId()) + "/messages/" + segment(before.id());
-        if ((action == BulkActionType.MARK_READ || action == BulkActionType.MARK_READ_ARCHIVE) && before.isUnread()) {
-            graph.request(account, HttpMethod.PATCH, source, Map.of("isRead", true));
-            if (action == BulkActionType.MARK_READ_ARCHIVE) readCompleted.run();
+    /** Combined actions preserve acknowledged reads before dispatching the archive moves. */
+    public Map<String,CleanupResult> cleanup(UserAccount account,List<String> ids,Set<String> unread,
+            BulkActionType action,java.util.function.Consumer<Map<String,CleanupResult>> readCompleted) {
+        if(action!=BulkActionType.MARK_READ_ARCHIVE)return applyBatch(account,ids,action);
+        var reading=ids.stream().filter(unread::contains).toList();
+        var results=new HashMap<String,CleanupResult>();
+        if(!reading.isEmpty()) {
+            results.putAll(applyBatch(account,reading,BulkActionType.MARK_READ));
+            readCompleted.accept(results);
         }
-        boolean trash = action == BulkActionType.TRASH;
-        boolean archive = action == BulkActionType.ARCHIVE || action == BulkActionType.MARK_READ_ARCHIVE;
-        if (trash || archive && !before.labelIds().contains("OUTLOOK_ARCHIVE")) {
-            graph.request(account, HttpMethod.POST, source + "/move", Map.of("destinationId", trash ? "deleteditems" : "archive"));
+        var moving=ids.stream().filter(id->!unread.contains(id) || results.get(id).accepted()).toList();
+        if(!moving.isEmpty())results.putAll(applyBatch(account,moving,BulkActionType.ARCHIVE));
+        return results;
+    }
+
+    /** One unordered Graph batch: each response is independent, including throttles and missing responses. */
+    private Map<String,CleanupResult> applyBatch(UserAccount account, List<String> ids, BulkActionType action) {
+        if (ids.isEmpty() || ids.size() > 20 || new HashSet<>(ids).size() != ids.size()
+                || action == BulkActionType.MARK_READ_ARCHIVE)
+            throw new IllegalArgumentException("One batch requires 1–20 unique IDs and a single operation");
+        var requests = new ArrayList<Map<String,Object>>();
+        for (int i = 0; i < ids.size(); i++) {
+            boolean read = action == BulkActionType.MARK_READ;
+            requests.add(Map.of("id", Integer.toString(i), "method", read ? "PATCH" : "POST",
+                "url", "/me/messages/" + segment(ids.get(i)) + (read ? "" : "/move"),
+                "headers", Map.of("Content-Type", "application/json", "Prefer", "IdType=\"ImmutableId\""),
+                "body", read ? Map.of("isRead", true)
+                    : Map.of("destinationId", action == BulkActionType.TRASH ? "deleteditems" : "archive")));
         }
+        var result = new LinkedHashMap<String,CleanupResult>();
+        ids.forEach(id -> result.put(id, new CleanupResult(null, new CleanupProviderException(0, null))));
+        JsonNode response;
+        try { response = graph.request(account, HttpMethod.POST, "/v1.0/$batch", Map.of("requests", requests)); }
+        catch (CleanupProviderException error) {
+            ids.forEach(id -> result.put(id, new CleanupResult(null, error)));
+            return result;
+        }
+        if (response == null || !response.path("responses").isArray()) return result;
+        var seen = new HashSet<Integer>();
+        for (var item : response.path("responses")) {
+            int index;
+            try { index = Integer.parseInt(item.path("id").asText()); }
+            catch (NumberFormatException ignored) { continue; }
+            if (index < 0 || index >= ids.size()) continue;
+            String id = ids.get(index);
+            if (!seen.add(index)) {
+                result.put(id, new CleanupResult(null, new CleanupProviderException(0, null)));
+                continue;
+            }
+            var failure=OutlookGraph.failure(item);
+            BigInteger revision=null;
+            if(failure==null && id.equals(item.path("body").path("id").asText()))try {
+                var modified=Instant.parse(item.path("body").path("lastModifiedDateTime").asText());
+                revision=BigInteger.valueOf(modified.getEpochSecond()).multiply(BigInteger.valueOf(1_000_000_000)).add(BigInteger.valueOf(modified.getNano()));
+            } catch(RuntimeException ignored) { /* Successful status is sufficient; sync fills optional metadata. */ }
+            result.put(id,new CleanupResult(revision,failure));
+        }
+        return result;
     }
 
     private MailMessage project(JsonNode row, Map<String,String> roles, Instant observed) {

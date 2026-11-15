@@ -132,3 +132,18 @@ check within one hour, so larger queues may temporarily have incomplete coverage
 Manual per-email checks remain available. Gmail requires read-only Calendar
 access and matches the primary calendar; Outlook requires Calendar read access.
 These descriptive labels do not automatically enqueue or authorize deletion.
+
+## Outlook cleanup
+
+Confirmed Outlook actions use Graph JSON batches of up to 20 independent requests.
+Successful per-message responses update the local labels, read state and folder
+immediately; the normal path makes no preflight or verification reads. Combined
+read-and-archive actions persist acknowledged read results before batching moves.
+The worker drains up to eight ready batches per poll and rechecks local eligibility,
+protection and cancellation before each dispatch.
+
+Explicit throttles retry only rejected targets, with bounded attempts and
+`Retry-After` delays shared with Outlook sync. Lost or missing responses retain
+uncertain targets without replaying moves. Background sync can settle those targets;
+bounded read-only cleanup recovery remains available. Uncertain targets do not
+introduce recovery delays for successful batches of other queued messages.

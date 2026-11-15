@@ -22,23 +22,14 @@ public class MailboxSyncStateRepository {
     }
 
     public Optional<StateSnapshot> findByAccountId(long accountId) {
-        requireAccount(accountId);
-        return jdbc.query("""
-            SELECT account_id, provider, lifecycle, incremental_cursor_kind,
-                   incremental_cursor_value, incremental_last_success_at,
-                   backfill_page_token, backfill_status, gmail_backfill_phase, gmail_scope_total,
-                   initial_batch_completed_at, provider_total,
-                   rescan_status, rescan_generation, rescan_started_at, rescan_anchor,
-                   freshness_lease_owner, freshness_lease_expires_at,
-                   backfill_lease_owner, backfill_lease_expires_at, version
-              FROM mailbox_sync_state
-             WHERE account_id = :account_id
-            """, account(accountId), result -> result.next()
-                ? Optional.of(snapshot(result))
-                : Optional.empty());
+        return readState(accountId,false);
     }
 
     public StateSnapshot lockForCommit(long accountId) {
+        return readState(accountId,true).orElseThrow(()->new IllegalStateException("Mailbox sync state not found"));
+    }
+
+    private Optional<StateSnapshot> readState(long accountId,boolean lock) {
         requireAccount(accountId);
         return jdbc.query("""
             SELECT account_id, provider, lifecycle, incremental_cursor_kind,
@@ -50,13 +41,8 @@ public class MailboxSyncStateRepository {
                    backfill_lease_owner, backfill_lease_expires_at, version
               FROM mailbox_sync_state
              WHERE account_id = :account_id
-             FOR UPDATE
-            """, account(accountId), result -> {
-                if (!result.next()) {
-                    throw new IllegalStateException("Mailbox sync state not found");
-                }
-                return snapshot(result);
-            });
+            """ + (lock?" FOR UPDATE":""),account(accountId),result -> result.next()
+                ? Optional.of(snapshot(result)) : Optional.empty());
     }
 
     public void ensureState(long accountId, String provider) {

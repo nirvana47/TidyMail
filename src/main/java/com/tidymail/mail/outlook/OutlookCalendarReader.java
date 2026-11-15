@@ -13,9 +13,12 @@ import org.springframework.stereotype.Component;
 public class OutlookCalendarReader {
     private final OutlookGraph graph;
     public OutlookCalendarReader(OutlookGraph graph) { this.graph=graph; }
+    public static boolean hasAccess(UserAccount account) {
+        return account.getScopes()!=null && account.getScopes().stream().anyMatch(s ->
+            Set.of("Calendars.ReadBasic","Calendars.Read","Calendars.ReadWrite").contains(s.substring(s.lastIndexOf('/')+1)));
+    }
     public List<CalendarResponse> read(UserAccount account,String messageId) {
-        if(account.getScopes()==null || account.getScopes().stream().noneMatch(s ->
-                Set.of("Calendars.ReadBasic","Calendars.Read","Calendars.ReadWrite").contains(s.substring(s.lastIndexOf('/')+1))))
+        if(!hasAccess(account))
             return List.of(CalendarResponse.unknown("Reconnect Outlook to grant read-only Calendar access."));
         try {
             String message=URLEncoder.encode(messageId,StandardCharsets.UTF_8).replace("+","%20");

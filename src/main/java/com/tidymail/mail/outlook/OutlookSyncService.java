@@ -18,13 +18,15 @@ public class OutlookSyncService {
     private final JdbcTemplate jdbc;
     private final TransactionTemplate tx;
     private final MailboxSyncStateRepository states;
+    private final com.tidymail.service.DashboardJobService cleanup;
 
     public OutlookSyncService(OutlookMailService outlook, JdbcTemplate jdbc,
-            TransactionTemplate tx, MailboxSyncStateRepository states) {
+            TransactionTemplate tx, MailboxSyncStateRepository states, com.tidymail.service.DashboardJobService cleanup) {
         this.outlook = outlook;
         this.jdbc = jdbc;
         this.tx = tx;
         this.states = states;
+        this.cleanup = cleanup;
     }
 
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(OutlookSyncService.class);
@@ -99,7 +101,10 @@ public class OutlookSyncService {
                         DELETE FROM message_metadata WHERE account_id=? AND provider_message_id=?
                         AND last_synced_at<=? AND (cleanup_updated_at IS NULL OR cleanup_updated_at<=?)
                         """, id, message, Timestamp.from(observed), Timestamp.from(observed));
-                    else outlook.save(id, value, null);
+                    else {
+                        outlook.save(id, value, null);
+                        cleanup.reconcileOutlookSync(id, value);
+                    }
                     jdbc.update("DELETE FROM outlook_reconcile WHERE account_id=? AND message_id=?", id, message);
                 });
             });
@@ -271,7 +276,10 @@ public class OutlookSyncService {
 
     private void save(long account, List<MailMessage> messages, UUID baseline) {
         messages.stream().sorted(Comparator.comparing(MailMessage::id))
-            .forEach(message -> outlook.save(account, message, baseline));
+            .forEach(message -> {
+                outlook.save(account, message, baseline);
+                cleanup.reconcileOutlookSync(account, message);
+            });
     }
 
     private void commit(long account, String lease, Runnable work) {

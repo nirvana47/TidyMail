@@ -40,16 +40,16 @@ public class DashboardCleanupWorker {
         if(enabled)executor.scheduleWithFixedDelay(this::tick,Math.max(0,startupDelayMs),Math.max(1,pollMs),TimeUnit.MILLISECONDS);
     }
     public void tick() {
-        if(running.compareAndSet(false,true))executor.submit(()->{
-            try{runOnce();}catch(Exception error){LoggerFactory.getLogger(getClass()).warn("Dashboard cleanup worker deferred after {}",error.getClass().getSimpleName());}
+        if(running.compareAndSet(false,true)) {
+            try{for (int i=0; i<8 && !Thread.currentThread().isInterrupted() && runOnce(); i++) { }}catch(Exception error){LoggerFactory.getLogger(getClass()).warn("Dashboard cleanup worker deferred after {}",error.getClass().getSimpleName());}
             finally{running.set(false);}
-        });
+        }
     }
     @PreDestroy public void close() {executor.shutdownNow();}
 
-    public void runOnce() {
+    public boolean runOnce() {
         if(TransactionSynchronizationManager.isActualTransactionActive())throw new IllegalStateException("Provider I/O cannot run inside a database transaction");
-        var claim=jobs.claim();if(claim==null)return;
+        var claim=jobs.claim();if(claim==null)return false;
         UserAccount account;
         MailProvider gmail = providers.get("gmailMailService");
         java.util.function.Function<List<String>,List<MailMessage>> reader;
@@ -59,36 +59,38 @@ public class DashboardCleanupWorker {
                 throw new IllegalStateException("Cleanup provider unavailable");
             reader=claim.outlook() ? ids -> outlook.getCurrentMetadata(account, ids)
                 : ids -> ((MailboxSyncProvider)gmail).getCleanupMetadata(account, ids);
-        } catch(RuntimeException error){jobs.defer(claim,error);return;}
+        } catch(RuntimeException error){jobs.defer(claim,error);return true;}
         if(claim.verification()) {
             Map<String,MailMessage> observations;RuntimeException failure=null;
             try{observations=read(reader,claim.targets());}
             catch(RuntimeException error){observations=Map.of();failure=error;}
-            jobs.complete(claim,null,claim.targets(),observations,failure);return;
+            jobs.complete(claim,null,claim.targets(),observations,failure);return true;
         }
         Map<String,MailMessage> before=Map.of();
-        if(!claim.responseBased())try{before=read(reader,claim.targets());}catch(RuntimeException error){jobs.defer(claim,error);return;}
-        var dispatch=jobs.dispatch(claim,before);if(dispatch==null)return;
+        if(!claim.acknowledged())try{before=read(reader,claim.targets());}catch(RuntimeException error){jobs.defer(claim,error);return true;}
+        var dispatch=jobs.dispatch(claim,before);if(dispatch==null)return true;
         long started=System.nanoTime();
         RuntimeException failure=null;
-        try{
-            if (claim.outlook()) {
-                var target = dispatch.targets().getFirst();
-                outlook.apply(account, before.get(target.providerId()), BulkActionType.valueOf(claim.action()),
-                    () -> jobs.recordOutlookRead(dispatch));
-            } else if(claim.action().equals("MARK_READ"))gmail.markReadOnce(account,dispatch.targets().stream().map(Target::providerId).toList());
-            else gmail.cleanupOnce(account,dispatch.targets().stream().map(Target::providerId).toList(),BulkActionType.valueOf(claim.action()));
+        Map<String,CleanupResult> results=new HashMap<>();
+        var ids=dispatch.targets().stream().map(Target::providerId).toList();
+        try {
+            if(claim.outlook())results=outlook.cleanup(account,ids,dispatch.outlookReadIds(),BulkActionType.valueOf(claim.action()),
+                read->jobs.completeAcknowledged(dispatch,read,true));
+            else if(claim.action().equals("MARK_READ"))gmail.markReadOnce(account,ids);
+            else gmail.cleanupOnce(account,ids,BulkActionType.valueOf(claim.action()));
         } catch(RuntimeException error){failure=error;}
-        if(claim.responseBased()){
-            jobs.completeAcknowledged(dispatch,failure);
-            log.info("Cleanup batch job={} action={} mode={} targets={} outcome={} elapsedMs={}",
-                claim.job(),claim.action(),claim.executionMode(),dispatch.targets().size(),
-                failure==null?"ACKNOWLEDGED":failure.getClass().getSimpleName(),TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-started));
-            return;
+        if(claim.acknowledged()) {
+            if(!claim.outlook() || failure!=null)for(String id:ids)results.put(id,new CleanupResult(null,failure));
+            jobs.completeAcknowledged(dispatch,results,false);
+            log.info("Cleanup batch job={} action={} mode={} targets={} accepted={} elapsedMs={}",
+                claim.job(),claim.action(),claim.executionMode(),ids.size(),results.values().stream().filter(CleanupResult::accepted).count(),
+                TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-started));
+            return true;
         }
         Map<String,MailMessage> after;RuntimeException readFailure=null;
         try{after=read(reader,dispatch.targets());}catch(RuntimeException error){after=Map.of();readFailure=error;}
         jobs.complete(claim,dispatch.batch(),dispatch.targets(),after,failure,readFailure);
+        return true;
     }
     private Map<String,MailMessage> read(java.util.function.Function<List<String>,List<MailMessage>> reader,List<Target> targets) {
         var ids=targets.stream().map(Target::providerId).toList();

@@ -48,6 +48,8 @@ class PersonalOutlookJourneyTest extends PostgresJourneyTest {
     @Autowired UserAccountRepository accounts;
     @Autowired MailboxSyncStateRepository states;
     @Autowired OutlookSyncService sync;
+    @Autowired com.tidymail.mail.outlook.OutlookMailService outlook;
+    @Autowired org.springframework.transaction.support.TransactionTemplate tx;
     @Autowired DashboardRepository dashboard;
     @Autowired DashboardPreviewService previews;
     @Autowired DashboardJobService jobs;
@@ -224,7 +226,9 @@ class PersonalOutlookJourneyTest extends PostgresJourneyTest {
         assertThat(retry.unresolved()).isEqualTo(1);
         assertThatThrownBy(() -> confirm("move", "TRASH")).hasMessageContaining("active or unresolved");
         jdbc.update("UPDATE cleanup_jobs SET next_attempt_at=now() WHERE public_id=?", retry.id());
-        cleanup.runOnce();
+        cleanup.runOnce(); // The first recovery read fails; no mutation is repeated.
+        assertThat(jobs.get(accountId, retry.id()).unresolved()).isEqualTo(1);
+        drain(); // Existing background sync resolves the lost response and settles the job.
         assertThat(jobs.get(accountId, retry.id()).changed()).isEqualTo(1);
         assertThat(fixture.writes).containsExactly("PATCH:move", "POST:move", "POST:move");
         assertThat(detail(id("move")).outlookFolder()).isEqualTo("Archive");
@@ -250,6 +254,116 @@ class PersonalOutlookJourneyTest extends PostgresJourneyTest {
         assertThat(jobs.get(accountId, archive).changed()).isEqualTo(1);
         assertThat(detail(id("move")).outlookFolder()).isEqualTo("Archive");
         assertThat(fixture.writes).containsExactly("POST:comment", "PATCH:move", "POST:move");
+    }
+
+    @Test void bulkAcknowledgementsUseTwentyItemBatchesWithoutReadsAndRetainCancellation() {
+        for (int i=0; i<45; i++) fixture.put("bulk"+i,"in","bulk@example.test","Bulk "+i);
+        importMailbox();
+        var ids = java.util.stream.IntStream.range(0,45).mapToObj(i -> id("bulk"+i)).toList();
+        var preview = previews.create(accountId, new DashboardPreviewService.Request(ALL, ids, "TRASH", dashboard.revision(accountId)));
+        UUID job = jobs.confirm(accountId, preview.id()).id();
+        fixture.messageReads=0;
+        cleanup.runOnce();
+        assertThat(jobs.get(accountId,job).changed()).isEqualTo(20);
+        assertThat(fixture.batches).containsExactly(20);
+        assertThat(fixture.messageReads).isZero();
+        cleanup.runOnce();
+        assertThat(jobs.get(accountId,job).changed()).isEqualTo(40);
+        jobs.cancel(accountId,job);
+        cleanup.runOnce();
+        assertThat(jobs.get(accountId,job).cancelled()).isEqualTo(5);
+        assertThat(fixture.batches).containsExactly(20,20);
+        assertThat(fixture.writes).hasSize(40);
+        assertThat(fixture.messageReads).isZero();
+    }
+
+    @Test void mixedBatchResultsRetryOnlyThrottledTargetsAndSyncSettlesMissingAcknowledgements() {
+        importMailbox();
+        var ids = List.of(id("move"),id("gone"),id("comment"));
+        var preview = previews.create(accountId, new DashboardPreviewService.Request(ALL, ids, "TRASH", dashboard.revision(accountId)));
+        UUID job = jobs.confirm(accountId,preview.id()).id();
+        fixture.rejected.put("gone",429);
+        fixture.rejected.put("comment",403);
+        fixture.messageReads=0;
+        cleanup.runOnce();
+        var progress = jobs.get(accountId,job);
+        assertThat(progress.changed()).isEqualTo(1);
+        assertThat(progress.failed()).isEqualTo(1);
+        assertThat(progress.remaining()).isEqualTo(1);
+        assertThat(fixture.messageReads).isZero();
+        assertThat(fixture.writes).containsExactly("POST:move");
+        assertThat(jdbc.queryForObject("SELECT next_attempt_at>now() FROM cleanup_jobs WHERE public_id=?",Boolean.class,job)).isTrue();
+        jdbc.update("UPDATE cleanup_jobs SET next_attempt_at=now() WHERE public_id=?",job);
+        fixture.omitLastResponse=true;
+        cleanup.runOnce();
+        assertThat(jobs.get(accountId,job).unresolved()).isEqualTo(1);
+        assertThat(fixture.writes).containsExactly("POST:move","POST:gone");
+        assertThat(fixture.messageReads).isZero();
+        drain();
+        assertThat(jobs.get(accountId,job).changed()).isEqualTo(2);
+        assertThat(jobs.get(accountId,job).unresolved()).isZero();
+        assertThat(fixture.writes).containsExactly("POST:move","POST:gone");
+    }
+
+    @Test void uncertainOutcomesDoNotDelayTheRemainingQueuedMessages() {
+        for (int i=0; i<21; i++) fixture.put("bulk"+i,"in","bulk@example.test","Bulk "+i);
+        importMailbox();
+        var ids=java.util.stream.IntStream.range(0,21).mapToObj(i -> id("bulk"+i)).toList();
+        var preview=previews.create(accountId,new DashboardPreviewService.Request(ALL,ids,"TRASH",dashboard.revision(accountId)));
+        UUID job=jobs.confirm(accountId,preview.id()).id();
+        fixture.omitLastResponse=true;
+        cleanup.runOnce();
+        assertThat(jobs.get(accountId,job).unresolved()).isEqualTo(1);
+        assertThat(jobs.get(accountId,job).remaining()).isEqualTo(1);
+        jdbc.update("UPDATE cleanup_job_targets SET verification_attempts=6 WHERE job_id=? AND state='AWAITING_VERIFICATION'",job);
+        assertThat(jdbc.queryForObject("SELECT next_attempt_at<=now() FROM cleanup_jobs WHERE public_id=?",Boolean.class,job)).isTrue();
+        cleanup.runOnce();
+        assertThat(jobs.get(accountId,job).changed()).isEqualTo(20);
+        assertThat(fixture.batches).containsExactly(20,1);
+        drain();
+        assertThat(jobs.get(accountId,job).changed()).isEqualTo(21);
+        assertThat(fixture.writes).hasSize(21);
+    }
+
+    @Test void anInflightSyncObservationCannotUndoAnAcknowledgedMove() {
+        importMailbox();
+        var stale = outlook.getCurrentMetadata(account,List.of("move")).getFirst();
+        UUID job=confirm("move","MARK_READ_ARCHIVE");
+        cleanup.runOnce();
+        assertThat(jobs.get(accountId,job).changed()).isEqualTo(1);
+        tx.executeWithoutResult(status -> outlook.save(accountId,stale,null));
+        assertThat(detail(id("move")).outlookFolder()).isEqualTo("Archive");
+        assertThat(detail(id("move")).unread()).isFalse();
+    }
+
+    @Test void lostWholeBatchResponseReconcilesWithoutRepeatingAnyMoves() {
+        importMailbox();
+        var preview = previews.create(accountId,new DashboardPreviewService.Request(ALL,
+            List.of(id("move"),id("comment")),"TRASH",dashboard.revision(accountId)));
+        UUID job=jobs.confirm(accountId,preview.id()).id();
+        fixture.loseBatchResponse=true;
+        cleanup.runOnce();
+        assertThat(jobs.get(accountId,job).unresolved()).isEqualTo(2);
+        assertThat(fixture.writes).hasSize(2);
+        drain();
+        assertThat(jobs.get(accountId,job).changed()).isEqualTo(2);
+        assertThat(fixture.writes).hasSize(2);
+    }
+
+    @Test void tickDrainsMoreThanOneBatchAndRechecksLocalProtections() {
+        for (int i=0; i<25; i++) fixture.put("bulk"+i,"in","bulk@example.test","Bulk "+i);
+        importMailbox();
+        var ids = java.util.stream.IntStream.range(0,25).mapToObj(i -> id("bulk"+i)).toList();
+        var preview = previews.create(accountId,new DashboardPreviewService.Request(ALL,ids,"TRASH",dashboard.revision(accountId)));
+        UUID job=jobs.confirm(accountId,preview.id()).id();
+        cleanup.tick();
+        assertThat(jobs.get(accountId,job).changed()).isEqualTo(25);
+        assertThat(fixture.batches).containsExactly(20,5);
+        UUID protectedJob=confirm("move","TRASH");
+        jdbc.update("INSERT INTO protected_senders(account_id,sender_address,source) VALUES(?,?,'USER')",accountId,"user@example.test");
+        cleanup.tick();
+        assertThat(jobs.get(accountId,protectedJob).skipped()).isEqualTo(1);
+        assertThat(fixture.writes).doesNotContain("POST:move");
     }
 
     private OAuth2AuthenticationToken outlookAuth(UserAccount user) {
@@ -284,6 +398,10 @@ class PersonalOutlookJourneyTest extends PostgresJourneyTest {
     private class GraphFixture {
         final Map<String,com.fasterxml.jackson.databind.node.ObjectNode> messages = new LinkedHashMap<>();
         final List<String> writes = new ArrayList<>();
+        final List<Integer> batches = new ArrayList<>();
+        int messageReads;
+        final Map<String,Integer> rejected = new HashMap<>();
+        boolean omitLastResponse, loseBatchResponse;
         final Map<String,Long> sizes = new HashMap<>(Map.of("move",2_000_000L,"gone",1_000_000L,
             "comment",3_000_000L,"sent-item",4_000_000L,"draft-item",5_000_000L));
         final Map<String,String> wellKnown = Map.of("inbox","in", "archive","arc", "sentitems","sent",
@@ -305,12 +423,37 @@ class PersonalOutlookJourneyTest extends PostgresJourneyTest {
 
         JsonNode request(UserAccount owner, HttpMethod method, String url, Object payload) {
             assertThat(owner.getId()).isEqualTo(accountId);
+            if (url.equals("/v1.0/$batch")) {
+                var requests = json.valueToTree(payload).path("requests");
+                batches.add(requests.size());
+                assertThat(requests.size()).isBetween(1,20);
+                var response = json.createObjectNode();
+                var responses = response.putArray("responses");
+                for (var request : requests) {
+                    assertThat(request.path("headers").path("Prefer").asText()).isEqualTo("IdType=\"ImmutableId\"");
+                    var row = json.createObjectNode().put("id", request.path("id").asText());
+                    String requestUrl = request.path("url").asText();
+                    String target = requestUrl.substring("/me/messages/".length()).replace("/move", "");
+                    if (rejected.containsKey(target)) {
+                        row.put("status", rejected.remove(target));
+                        row.putObject("headers").put("retry-after", "2");
+                    } else try {
+                        var body = request(owner, HttpMethod.valueOf(request.path("method").asText()),
+                            "/v1.0" + requestUrl, json.convertValue(request.path("body"), Map.class));
+                        row.put("status", request.path("method").asText().equals("POST") ? 201 : 200).set("body", body);
+                    } catch (CleanupProviderException failure) { row.put("status", failure.status()); }
+                    responses.insert(0, row); // Graph responses need not match request order.
+                }
+                if (omitLastResponse) { omitLastResponse=false; responses.remove(responses.size()-1); }
+                if (loseBatchResponse) { loseBatchResponse=false; throw new CleanupProviderException(0,null); }
+                return response;
+            }
             String path = url.replace("https://graph.microsoft.com","").split("\\?",2)[0];
             if (!method.equals(HttpMethod.GET)) {
                 var parts = path.split("/");
                 String id = parts[parts.length - (method == HttpMethod.POST ? 2 : 1)];
                 var message = messages.get(id);
-                assertThat(parts[4]).isEqualTo(message.path("parentFolderId").asText());
+                if (path.contains("/mailFolders/")) assertThat(parts[4]).isEqualTo(message.path("parentFolderId").asText());
                 writes.add(method+":"+id);
                 if (method == HttpMethod.PATCH) {
                     assertThat(payload).isEqualTo(Map.of("isRead",true));
@@ -345,6 +488,7 @@ class PersonalOutlookJourneyTest extends PostgresJourneyTest {
                 return page(messages.values().stream().map(JsonNode.class::cast).toList(),null,null);
             }
             if (path.startsWith(ME+"messages/")) {
+                messageReads++;
                 if (afterMove && failMessageReadAfterMove) {
                     failMessageReadAfterMove=false;
                     throw new CleanupProviderException(503,null);

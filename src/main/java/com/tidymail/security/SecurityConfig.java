@@ -63,8 +63,18 @@ public class SecurityConfig {
             throw new IllegalArgumentException(
                 "OAUTH_REFRESH_EXPIRY_SKEW_SECONDS must be between 0 and 3600");
         }
+        var requests=new org.springframework.http.client.SimpleClientHttpRequestFactory();
+        requests.setConnectTimeout(Duration.ofSeconds(10));
+        requests.setReadTimeout(Duration.ofSeconds(20));
+        var rest=new org.springframework.web.client.RestTemplate(List.of(
+            new org.springframework.http.converter.FormHttpMessageConverter(),
+            new org.springframework.security.oauth2.core.http.converter.OAuth2AccessTokenResponseHttpMessageConverter()));
+        rest.setRequestFactory(requests);
+        rest.setErrorHandler(new org.springframework.security.oauth2.client.http.OAuth2ErrorResponseErrorHandler());
+        var tokens=new org.springframework.security.oauth2.client.endpoint.DefaultRefreshTokenTokenResponseClient();
+        tokens.setRestOperations(rest);
         return OAuth2AuthorizedClientProviderBuilder.builder()
-            .refreshToken(refresh -> refresh.clockSkew(Duration.ofSeconds(expirySkewSeconds)))
+            .refreshToken(refresh -> refresh.clockSkew(Duration.ofSeconds(expirySkewSeconds)).accessTokenResponseClient(tokens))
             .build();
     }
 

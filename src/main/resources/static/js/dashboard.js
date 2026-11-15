@@ -29,7 +29,7 @@
   }
   const actionName = action => ({ MARK_READ: 'Mark as Read', ARCHIVE: 'Archive', MARK_READ_ARCHIVE: 'Mark as Read + Archive', TRASH: 'Move to Trash' }[action] || action);
   const activeJob = j => j.remaining > 0 || j.verificationPending;
-  const jobCounts = j => `${fmt(j.changed)} ${j.executionMode === 'RESPONSE' ? 'accepted by Gmail' : 'changed'} · ${fmt(j.failed)} failed · ${fmt(j.skipped)} skipped · ${fmt(j.unresolved)} unresolved${j.partialRead ? ' · '+fmt(j.partialRead)+' read, archive incomplete' : ''} · ${fmt(j.cancelled)} cancelled before dispatch · ${fmt(j.remaining)} remaining of ${fmt(j.total)}`;
+  const jobCounts = j => `${fmt(j.changed)} ${j.executionMode === 'RESPONSE' ? 'accepted by Gmail' : j.executionMode === 'OUTLOOK' ? 'accepted by Outlook' : 'changed'} · ${fmt(j.failed)} failed · ${fmt(j.skipped)} skipped · ${fmt(j.unresolved)} unresolved${j.partialRead ? ' · '+fmt(j.partialRead)+' read, archive incomplete' : ''} · ${fmt(j.cancelled)} cancelled before dispatch · ${fmt(j.remaining)} remaining of ${fmt(j.total)}`;
   function renderJobs() {
     const focused = document.activeElement?.dataset?.cancelJob;
     $('jobProgress').replaceChildren();
