@@ -6,7 +6,7 @@ const { chromium, expect } = require('playwright/test');
 const root = path.resolve(__dirname, '../..');
 const inmail = 'inmail-hit-reply@linkedin.com', invitations = 'invitations@linkedin.com';
 const groups = [
-  { id: 'linkedin', label: 'LinkedIn', addresses: 2, messages: 69, unread: 35 },
+  { id: 'linkedin', label: 'LinkedIn', addresses: 22, messages: 89, unread: 55 },
   { id: 'target', label: 'Target', addresses: 2, messages: 4, unread: 2 }
 ].map(g => ({ ...g, inbox: g.messages, latest: '2026-11-14T12:00:00Z', knownBytes: 0, unknownSizes: 0 }));
 const messages = [[inmail, 36, 'linkedin'], [invitations, 33, 'linkedin'], ['news@target.com', 2, 'target'], ['offers@target.com', 2, 'target']]
@@ -15,6 +15,8 @@ const messages = [[inmail, 36, 'linkedin'], [invitations, 33, 'linkedin'], ['new
     receivedAt: '2026-11-14T12:00:00Z', category: 'UNCLASSIFIED', displayName: address === inmail ? 'Vashu Walia' : '',
     attachmentState: 'ABSENT', snippetState: 'ABSENT'
   })));
+// A fully expanded group must be taller than the viewport to expose focus scrolling.
+for (let i = 0; i < 20; i++) messages.push({ ...messages[0], id: `extra-${i}`, address: `extra${i}@linkedin.com` });
 let previewIds = [], delaySelection = null, selectionStarted = null;
 (async () => {
   const browser = await chromium.launch({ headless: true });
@@ -38,8 +40,8 @@ let previewIds = [], delaySelection = null, selectionStarted = null;
       if (endpoint === 'jobs') return send([]);
       if (endpoint === 'recommendations') return send({ enabled: false, labeling: {} });
       if (endpoint === 'page') return send({ groups, revision: 1, classificationRevision: 1,
-        filter: { labels: '' }, summary: { messages: 73, unread: 37, groups: 2, known_bytes: 0 },
-        coverage: { indexed: 73 }, sync: { email: 'fixture@example.test', initial_batch_completed_at: '2026-11-14T12:00:00Z' } });
+        filter: { labels: '' }, summary: { messages: 93, unread: 57, groups: 2, known_bytes: 0 },
+        coverage: { indexed: 93 }, sync: { email: 'fixture@example.test', initial_batch_completed_at: '2026-11-14T12:00:00Z' } });
       if (endpoint === 'selection') {
         const request = route.request().postDataJSON();
         const rows = messages.filter(m => request.groups.includes(m.groupId) && (!request.address || request.address === m.address) && (!request.unreadOnly || m.unread));
@@ -72,7 +74,11 @@ let previewIds = [], delaySelection = null, selectionStarted = null;
     const expand = label => page.getByRole('button', { name: `Show sender addresses for ${label}`, exact: true }).click();
     await page.goto('https://tidymail.test/');
     await expand('LinkedIn');
+    await addressBox(inmail).evaluate(input => window.scrollBy(0, input.getBoundingClientRect().top - 150));
+    const scrollBeforeSelection = await page.evaluate(() => window.scrollY);
     await addressBox(inmail).check(); await selectedCount(36);
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeLessThanOrEqual(scrollBeforeSelection + 5);
+    await expect(addressBox(inmail)).toBeFocused();
     await openAddress(invitations);
     await expect(addressBox(inmail)).toBeChecked();
     await expect(page.locator('#detailContent')).toContainText(invitations);
@@ -138,6 +144,6 @@ let previewIds = [], delaySelection = null, selectionStarted = null;
     await page.locator('#search').fill('changed');
     await expect(page.locator('#selectionRow')).toBeHidden();
     assert.deepEqual(errors, []);
-    console.log('PASS: address/message synchronization, additive selection, paging, collapse, group boundary, exact Trash preview, unread scope, filter reset, and stale response rejection.');
+    console.log('PASS: stable scroll position and checkbox focus in a 22-address group, address/message synchronization, additive selection, paging, collapse, group boundary, exact Trash preview, unread scope, filter reset, and stale response rejection.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

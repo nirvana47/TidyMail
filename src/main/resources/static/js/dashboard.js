@@ -360,6 +360,7 @@
   }
   async function selectAddress(g, address, checked) {
     if (selectionBusy || listLoading) return;
+    const restore = rememberFocus(document.querySelector('.workspace'));
     // Opening another parent group is the boundary for message selection.
     if (state.focused?.id !== g.id) focusGroup(g, address);
     if (!checked) {
@@ -378,7 +379,10 @@
       invalidatePreview();
     } catch (error) {
       if (epoch === filterEpoch && generation === selectionGeneration) notice(error.message);
-    } finally { selectionBusy--; renderSelectionControls(); }
+    } finally {
+      selectionBusy--; renderSelectionControls();
+      if (generation === selectionGeneration && document.activeElement === $('senderTable')) restore();
+    }
   }
   function addressLink(g,a) {
     const button=node('button',`${a.displayName || a.address}${a.displayName ? ' · '+a.address : ''} · ${fmt(a.messages)} messages`,'sender-focus');
@@ -1096,6 +1100,9 @@
   function keepFocusVisible() {
     const target = document.activeElement;
     if (!target || target === document.body || $('dock').hidden || $('dock').contains(target) || target.closest('dialog')) return;
+    // The table is a temporary focus fallback while selection controls are disabled.
+    // Its bottom can be far below the viewport; scrolling it into view jumps the page.
+    if (target === $('senderTable')) return;
     const bottom = $('dock').getBoundingClientRect().top - 8, bounds = target.getBoundingClientRect();
     if (bounds.bottom > bottom) window.scrollBy({ top: bounds.bottom - bottom, behavior: 'instant' });
   }
