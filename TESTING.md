@@ -33,3 +33,10 @@ truncates fixture data between tests; standalone migration tests clean their
 scratch database to test fresh installs and upgrades at historical versions.
 Keep both databases disposable. Maven reports are in `target/surefire-reports/`.
 See the [acceptance notes](docs/TESTING.md) for product journeys and live checks.
+
+The frontend selection journey runs in Chromium with fixture responses only:
+`node tools/verification/dashboard-selection.cjs` (requires Playwright and its
+Chromium browser, with Playwright available on Node's module path). It checks
+address/message checkbox synchronization, selection within one parent group,
+exact Trash preview IDs, unread scope, and delayed-response handling. It does
+not connect to the live mailbox or perform cleanup.

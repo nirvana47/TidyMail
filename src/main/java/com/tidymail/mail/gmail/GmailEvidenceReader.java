@@ -188,7 +188,7 @@ public class GmailEvidenceReader {
                         response.disconnect();
                     }
                 } catch (IOException failure) {
-                    throw new java.io.UncheckedIOException("Evidence read failed",failure);
+                    throw new java.io.UncheckedIOException("Could not check this email. Try again later.",failure);
                 }
             });
         }

@@ -148,7 +148,9 @@ public class GoogleCalendarReader {
             try {
                 byte[] data=response.getContent().readNBytes(1048577);bytes+=data.length;
                 if(data.length>1048576 || bytes>4194304)throw new IOException("Calendar response limit reached");
-                return json.readTree(data);
+                var page=json.readTree(data);
+                if(page==null || !page.isObject())throw new IOException("Invalid Calendar response");
+                return page;
             } finally { response.disconnect(); }
         }
     }

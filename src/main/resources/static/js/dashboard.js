@@ -5,7 +5,7 @@
   const state = { scope: 'inbox', suggestion: '', page: 0, messagePage: 0, address: null, tab: 'messages', data: null, focused: null, details: null, action: 'MARK_READ', preview: null, targetPage: 0, revision: 0 };
   const selected = new Map(), expanded = new Map(), senderSelection = new Map();
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-  let allMatchingSelected = false, composition = null;
+  let composition = null, selectionGeneration = 0;
   let jobs = [], confirming = false, previewLoading = false, previewFromSenders = false;
   let jobsRequest = 0, historyPage = 0, historyTotal = 0, historyLoading = false;
   const history = new Map();
@@ -66,7 +66,7 @@
       const job = await api('jobs', { preview: preview.id });
       state.preview = null;
       if (fromSenders) senderSelection.clear();
-      else { selected.clear(); allMatchingSelected = false; }
+      else { selectionGeneration++; selected.clear(); }
       $('confirm').close(); renderSelectionControls();
       notice(actionName(preview.action) + ' saved. You can close this page; work continues.');
       await pollJobs();
@@ -147,7 +147,8 @@
     $('selectionRow').hidden = selected.size === 0;
     $('dock').hidden = selected.size === 0 && !jobs.some(activeJob);
     $('selectionCount').textContent = `${fmt(selected.size)} messages selected`;
-    $('selectionDescription').textContent = allMatchingSelected ? 'Fixed selection across matching pages' : 'Visible message page';
+    const addresses = new Set([...selected.values()].map(m => m.address));
+    $('selectionDescription').textContent = `${state.focused?.label || 'Current group'} · ${fmt(addresses.size)} sender ${addresses.size === 1 ? 'address' : 'addresses'} · Fixed message selection`;
     const reviewBusy = previewLoading || confirming || selectionBusy > 0;
     $('review').disabled = !selected.size || reviewBusy;
     const byAddress = $('groupBy').value === 'address', count = senderSelection.size;
@@ -161,19 +162,17 @@
   }
   async function selectAllMatching() {
     if (selectionBusy || listLoading || !state.details || !state.focused) return;
-    const epoch = filterEpoch, revision = state.revision, detail = detailRequest;
+    const epoch = filterEpoch, revision = state.revision, group = state.focused.id, generation = selectionGeneration;
     selectionBusy++;
     renderSelectionControls();
     try {
       const rows = await api('selection', { filter: filter(), revision, groups: [state.focused.id], address: state.address,
         unreadOnly: $('detailUnreadOnly').checked });
-      if (epoch !== filterEpoch || detail !== detailRequest || revision !== state.revision) return;
-      selected.clear();
+      if (epoch !== filterEpoch || group !== state.focused?.id || revision !== state.revision || generation !== selectionGeneration) return;
       rows.forEach(row => selected.set(row.id, row));
-      allMatchingSelected = rows.length > 0;
       invalidatePreview();
     } catch (error) {
-      if (epoch === filterEpoch && detail === detailRequest) notice(error.message);
+      if (epoch === filterEpoch && group === state.focused?.id && generation === selectionGeneration) notice(error.message);
     } finally {
       selectionBusy--;
       renderSelectionControls();
@@ -184,7 +183,7 @@
     if (state.preview) { const old = state.preview.id; state.preview = null; api(`previews/${old}/invalidate`, {}).catch(() => { }); }
     if ($('confirm').open) $('confirm').close();
   }
-  function clearSelection(message) { selected.clear(); allMatchingSelected = false; invalidatePreview(); renderSelectionControls(); if (message) notice(message); }
+  function clearSelection(message) { selectionGeneration++; selected.clear(); invalidatePreview(); renderSelectionControls(); if (message) notice(message); }
   function filtersChanged() {
     senderSelection.clear();
     $('clearComposition').hidden = !composition;
@@ -220,14 +219,14 @@
       const visibleFacts = page => page && [page.groups, page.summary, page.coverage, page.filter,
         page.revision, page.classificationRevision, page.sync.email, page.sync.incremental_last_success_at];
       const refreshDetails = !background || forceDetails || JSON.stringify(visibleFacts(data)) !== JSON.stringify(visibleFacts(state.data));
-      if (state.data && state.revision !== data.revision) { selected.clear(); allMatchingSelected = false; senderSelection.clear(); expanded.clear(); invalidatePreview(); notice('Grouping changed. Draft selection was cleared.'); }
+      if (state.data && state.revision !== data.revision) { selectionGeneration++; selected.clear(); senderSelection.clear(); expanded.clear(); invalidatePreview(); notice('Grouping changed. Draft selection was cleared.'); }
       const lastPage = Math.max(0, Math.ceil(Number(data.summary.groups) / 10) - 1);
       if (state.page > lastPage) { state.page = lastPage; return loadPage(pagerFocus); }
       if (state.data && data.filter.labels && state.data.classificationRevision !== data.classificationRevision) {
         // Sender groups are a draft scope, resolved to current matching messages at review.
         // Only an existing message selection or message preview has become stale here.
         const staleMessages = selected.size > 0 || (state.preview && !previewFromSenders);
-        selected.clear(); allMatchingSelected = false;
+        selectionGeneration++; selected.clear();
         if (staleMessages) { invalidatePreview(); notice('Label results changed. Select matching messages again.'); }
       }
       state.data = data; state.revision = data.revision; pageApplied = true;
@@ -342,7 +341,7 @@
       const expandCell = node('td'); if (g.addresses > 1) { const expand = node('button', expanded.has(g.id) ? '⌃' : '⌄'); expand.setAttribute('aria-label', `Show sender addresses for ${g.label}`); expand.setAttribute('aria-expanded', String(expanded.has(g.id))); expand.onclick = () => expandGroup(g); expandCell.append(expand); } row.append(expandCell); body.append(row);
       if (expanded.has(g.id)) {
         const detail = node('tr', undefined, 'address-row'), td = node('td'); td.colSpan = 7;
-        for (const address of expanded.get(g.id)) { const a = node('div', undefined, 'inline-address'); a.append(addressLink(g,address)); td.append(a); } detail.append(td); body.append(detail);
+        for (const address of expanded.get(g.id)) { const a = node('div', undefined, 'inline-address'); a.append(addressCheckbox(g, address), addressLink(g,address)); td.append(a); } detail.append(td); body.append(detail);
       }
     });
     restore();
@@ -352,13 +351,45 @@
     const epoch = filterEpoch, request = listRequest;
     try { const detail = await api(`groups/${g.id}/addresses?${query()}`); if (request !== listRequest || epoch !== filterEpoch || detail.revision !== state.revision) return; expanded.set(g.id, detail.addresses); renderGroups(); } catch (error) { if (request === listRequest && epoch === filterEpoch) notice(error.message); }
   }
+  function addressCheckbox(g, address) {
+    const count = [...selected.values()].filter(m => m.groupId === g.id && m.address === address.address).length;
+    const input = checkbox(`Select all matching messages from ${address.address}`, address.messages, count,
+      checked => selectAddress(g, address.address, checked));
+    input.dataset.focusKey = `select-address-${g.id}-${address.address}`;
+    return input;
+  }
+  async function selectAddress(g, address, checked) {
+    if (selectionBusy || listLoading) return;
+    // Opening another parent group is the boundary for message selection.
+    if (state.focused?.id !== g.id) focusGroup(g, address);
+    if (!checked) {
+      for (const [id, message] of selected) {
+        if (message.groupId === g.id && message.address === address) selected.delete(id);
+      }
+      invalidatePreview(); renderSelectionControls(); return;
+    }
+    const epoch = filterEpoch, revision = state.revision, generation = selectionGeneration;
+    selectionBusy++; renderSelectionControls();
+    try {
+      // Address-row counts use the main filters, independently of the detail unread toggle.
+      const rows = await api('selection', { filter: filter(), revision, groups: [g.id], address });
+      if (epoch !== filterEpoch || revision !== state.revision || generation !== selectionGeneration || state.focused?.id !== g.id) return;
+      rows.forEach(row => selected.set(row.id, row));
+      invalidatePreview();
+    } catch (error) {
+      if (epoch === filterEpoch && generation === selectionGeneration) notice(error.message);
+    } finally { selectionBusy--; renderSelectionControls(); }
+  }
   function addressLink(g,a) {
     const button=node('button',`${a.displayName || a.address}${a.displayName ? ' · '+a.address : ''} · ${fmt(a.messages)} messages`,'sender-focus');
     button.onclick=()=>{ state.tab='messages'; focusGroup(g,a.address); $('messagesTab').click(); $('messagesTab').focus(); };
     return button;
   }
   function focusGroup(g, address = null) {
-    if (state.focused?.id !== g.id || state.address !== address || (!allMatchingSelected && state.messagePage)) clearSelection();
+    if (state.focused?.id !== g.id) {
+      const hadSelection = selected.size > 0;
+      clearSelection(hadSelection ? 'Sender group changed. Previous message selection was cleared.' : undefined);
+    }
     state.address = address; state.focused = g; state.messagePage = 0; state.details = null; $('detail').hidden = false; renderGroups(); renderDetail(); return loadDetails(); }
   function loadDetails(refresh = false) {
     if (!state.focused) return Promise.resolve();
@@ -406,7 +437,7 @@
       const visible = node('div', undefined, 'evidence'), count = detail.messages.filter(m => selected.has(m.id)).length;
       visible.append(checkbox(`Select visible messages (${detail.messages.length})`, detail.messages.length, count, checked => { for (const m of detail.messages) { if (checked) selected.set(m.id, m); else selected.delete(m.id); } invalidatePreview(); renderSelectionControls(); }), node('span', ' Select visible messages'));
       const total = detail.total;
-      if (count && count === detail.messages.length && total > count && !allMatchingSelected) {
+      if (count && count === detail.messages.length && total > count) {
         const all = node('button', `Select all ${fmt(total)} matching ${$('detailUnreadOnly').checked ? 'unread messages' : 'messages'} in this view`);
         all.disabled = selectionBusy > 0 || listLoading;
         all.onclick = selectAllMatching;
@@ -427,7 +458,7 @@
       const paging = node('div', undefined, 'paging'), prev = node('button', '‹'), next = node('button', '›'); prev.setAttribute('aria-label', 'Previous message page'); next.setAttribute('aria-label', 'Next message page'); prev.disabled = state.messagePage === 0; next.disabled = (state.messagePage + 1) * 10 >= detail.total;
       prev.dataset.focusKey = 'message-prev'; next.dataset.focusKey = 'message-next'; prev.onclick = () => pageMessages(-1, prev); next.onclick = () => pageMessages(1, next); paging.append(prev, node('span', detail.messages.length ? `${state.messagePage * 10 + 1}–${state.messagePage * 10 + detail.messages.length} of ${fmt(detail.total)}` : '0 messages'), next); content.append(paging);
     } else {
-      for (const a of detail.addresses) { const row = node('div', undefined, 'message-row'); row.append(addressLink(state.focused,a)); content.append(row); }
+      for (const a of detail.addresses) { const row = node('div', undefined, 'message-row'); row.append(addressCheckbox(state.focused, a), addressLink(state.focused,a)); content.append(row); }
       content.append(node('p', state.focused.evidence, 'evidence'));
       if ($('groupBy').value === 'current') {
         const controls = node('div', undefined, 'corrections'), organize = node('button', 'Organize sender group');
@@ -443,8 +474,7 @@
     const restore = rememberFocus($('detailContent'));
     state.details = null;
     state.messagePage = page;
-    if (!allMatchingSelected) clearSelection();
-    else renderDetail();
+    renderDetail();
     await loadDetails();
     if (state.focused?.id === group && state.messagePage === page &&
         (document.activeElement === document.body || document.activeElement === button)) restore();
@@ -670,7 +700,7 @@
       try {
         await api(`messages/${m.id}/recommendation`,{action:action.value || null,importance:importance.value || null,revision:recommendationDrafts.get(m.id)?.revision ?? view.correction.revision});
         recommendationDrafts.delete(m.id);openRecommendationEditors.delete(m.id);
-        selected.clear();allMatchingSelected = false;invalidatePreview();notice('Recommendation saved for this email. No mail was moved.');
+        selectionGeneration++;selected.clear();invalidatePreview();notice('Recommendation saved for this email. No mail was moved.');
         state.details=null;await loadPage();await loadRecommendations();
       } catch(error) { notice(error.message);save.disabled=false; }
     };
@@ -1037,7 +1067,7 @@
   });
   $('sortMessages').onclick = () => { $('sort').value = 'messages'; sortChanged(); };
   $('sortUnread').onclick = () => { $('sort').value = 'unread'; sortChanged(); };
-  $('detailUnreadOnly').onchange = () => { state.messagePage = 0; state.details = null; clearSelection('Message view changed. Draft selection was cleared.'); renderDetail(); loadDetails(); };
+  $('detailUnreadOnly').onchange = () => { state.messagePage = 0; state.details = null; renderDetail(); loadDetails(); };
   for (const id of ['start','end']) $(id).addEventListener('change', filtersChanged);
   $('prevPage').onclick = () => { state.page--; loadPage('prevPage'); };
   $('nextPage').onclick = () => { state.page++; loadPage('nextPage'); };

@@ -63,6 +63,21 @@ public class SecurityConfig {
             throw new IllegalArgumentException(
                 "OAUTH_REFRESH_EXPIRY_SKEW_SECONDS must be between 0 and 3600");
         }
+        var tokens=new org.springframework.security.oauth2.client.endpoint.DefaultRefreshTokenTokenResponseClient();
+        tokens.setRestOperations(tokenRestOperations());
+        return OAuth2AuthorizedClientProviderBuilder.builder()
+            .refreshToken(refresh -> refresh.clockSkew(Duration.ofSeconds(expirySkewSeconds)).accessTokenResponseClient(tokens))
+            .build();
+    }
+
+    @Bean
+    public org.springframework.security.oauth2.client.endpoint.DefaultAuthorizationCodeTokenResponseClient authorizationCodeTokenResponseClient() {
+        var tokens=new org.springframework.security.oauth2.client.endpoint.DefaultAuthorizationCodeTokenResponseClient();
+        tokens.setRestOperations(tokenRestOperations());
+        return tokens;
+    }
+
+    private static org.springframework.web.client.RestTemplate tokenRestOperations() {
         var requests=new org.springframework.http.client.SimpleClientHttpRequestFactory();
         requests.setConnectTimeout(Duration.ofSeconds(10));
         requests.setReadTimeout(Duration.ofSeconds(20));
@@ -71,11 +86,7 @@ public class SecurityConfig {
             new org.springframework.security.oauth2.core.http.converter.OAuth2AccessTokenResponseHttpMessageConverter()));
         rest.setRequestFactory(requests);
         rest.setErrorHandler(new org.springframework.security.oauth2.client.http.OAuth2ErrorResponseErrorHandler());
-        var tokens=new org.springframework.security.oauth2.client.endpoint.DefaultRefreshTokenTokenResponseClient();
-        tokens.setRestOperations(rest);
-        return OAuth2AuthorizedClientProviderBuilder.builder()
-            .refreshToken(refresh -> refresh.clockSkew(Duration.ofSeconds(expirySkewSeconds)).accessTokenResponseClient(tokens))
-            .build();
+        return rest;
     }
 
     @Bean
@@ -180,6 +191,7 @@ public class SecurityConfig {
                 .loginPage("/login")
                 .successHandler(loginSuccessHandler)
                 .authorizedClientService(authorizedClientService)
+                .tokenEndpoint(token -> token.accessTokenResponseClient(authorizationCodeTokenResponseClient()))
                 .authorizationEndpoint(authEndpoint -> authEndpoint
                     .authorizationRequestResolver(customResolver)
                 )

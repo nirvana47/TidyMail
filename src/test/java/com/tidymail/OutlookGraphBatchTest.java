@@ -22,9 +22,10 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
 class OutlookGraphBatchTest {
-    @Test
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans={true,false})
     @org.junit.jupiter.api.Timeout(35)
-    void stalledTokenEndpointTimesOutBeforeMutationAndAllowsRecovery() throws Exception {
+    void stalledTokenEndpointTimesOutBeforeMutationAndAllowsRecovery(boolean refresh) throws Exception {
         var endpoint=com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1",0),0);
         var release=new java.util.concurrent.CountDownLatch(1);
         var calls=new java.util.concurrent.atomic.AtomicInteger();
@@ -58,18 +59,37 @@ class OutlookGraphBatchTest {
             ReflectionTestUtils.setField(graph,"rest",builder.build());
             var account=new UserAccount();account.setId(7L);account.setProvider("microsoft");
             account.setProviderAccountId("fixture");account.setOauthStatus(UserAccount.OAuthStatus.ACTIVE);
-            assertThatThrownBy(()->graph.request(account,HttpMethod.POST,"/v1.0/$batch",Map.of()))
-                .isInstanceOfSatisfying(CleanupProviderException.class,error->{
-                    assertThat(error.status()).isEqualTo(503);
-                    assertThat(error.retryableRejection()).isTrue();
-                    assertThat(error).hasRootCauseInstanceOf(java.net.SocketTimeoutException.class);
-                });
+            var codeClient=new com.tidymail.security.SecurityConfig().authorizationCodeTokenResponseClient();
+            var authorizationRequest=org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest.authorizationCode()
+                .authorizationUri("https://login.example/authorize").clientId("fixture")
+                .redirectUri("http://localhost/callback").state("fixture-state").build();
+            var authorizationResponse=org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationResponse.success("fixture-code")
+                .redirectUri("http://localhost/callback").state("fixture-state").build();
+            var grant=new org.springframework.security.oauth2.client.endpoint.OAuth2AuthorizationCodeGrantRequest(registration,
+                new org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationExchange(authorizationRequest,authorizationResponse));
+            if(refresh) {
+                assertThatThrownBy(()->graph.request(account,HttpMethod.POST,"/v1.0/$batch",Map.of()))
+                    .isInstanceOfSatisfying(CleanupProviderException.class,error->{
+                        assertThat(error.status()).isEqualTo(503);
+                        assertThat(error.retryableRejection()).isTrue();
+                        assertThat(error).hasRootCauseInstanceOf(java.net.SocketTimeoutException.class);
+                    });
+            } else {
+                assertThatThrownBy(()->codeClient.getTokenResponse(grant))
+                    .isInstanceOf(OAuth2AuthorizationException.class)
+                    .hasRootCauseInstanceOf(java.net.SocketTimeoutException.class);
+            }
             server.verify(); // The stalled authorization sent no mutation.
             release.countDown();
-            server.expect(requestTo("https://graph.microsoft.com/v1.0/$batch"))
-                .andExpect(header("Authorization","Bearer recovered"))
-                .andRespond(withSuccess("{\"responses\":[]}",MediaType.APPLICATION_JSON));
-            assertThat(graph.request(account,HttpMethod.POST,"/v1.0/$batch",Map.of()).path("responses").isArray()).isTrue();
+            if(refresh) {
+                server.expect(requestTo("https://graph.microsoft.com/v1.0/$batch"))
+                    .andExpect(header("Authorization","Bearer recovered"))
+                    .andRespond(withSuccess("{\"responses\":[]}",MediaType.APPLICATION_JSON));
+                assertThat(graph.request(account,HttpMethod.POST,"/v1.0/$batch",Map.of()).path("responses").isArray()).isTrue();
+            } else {
+                // A fresh authorization attempt can use the endpoint after it recovers.
+                assertThat(codeClient.getTokenResponse(grant).getAccessToken().getTokenValue()).isEqualTo("recovered");
+            }
             assertThat(calls.get()).isEqualTo(2);
             server.verify();
         } finally {release.countDown();endpoint.stop(0);}
