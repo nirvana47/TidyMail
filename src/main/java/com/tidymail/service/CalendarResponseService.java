@@ -51,7 +51,11 @@ public class CalendarResponseService {
             }
             Instant now=Instant.now();
             var result=new Snapshot(state(events),now,now.plusSeconds(3600),events);
-            String encoded=json.writeValueAsString(result);
+            String encoded;
+            try { encoded=json.writeValueAsString(result); }
+            catch(com.fasterxml.jackson.core.JsonProcessingException failure) {
+                throw new IllegalStateException("Calendar result could not be encoded",failure);
+            }
             tx.executeWithoutResult(status -> {
                 jdbc.queryForObject("SELECT id FROM user_accounts WHERE id=? FOR UPDATE",Long.class,account);
                 var present=jdbc.queryForList("SELECT id FROM message_metadata WHERE account_id=? AND provider_message_id=? FOR KEY SHARE",Long.class,account,rows.getFirst());
@@ -68,8 +72,26 @@ public class CalendarResponseService {
             });
             return result;
         } catch(ResponseStatusException e) { throw e; }
-        catch(Exception failure) { throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,"Calendar could not be checked. Retry or reconnect your account if needed."); }
+        catch(org.springframework.dao.DataAccessException failure) {
+            diagnose(account,failure);
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"Calendar results could not be loaded or saved. Try again later.",failure);
+        } catch(java.io.UncheckedIOException failure) {
+            diagnose(account,failure);
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,"Calendar could not be checked. Try again later.",failure);
+        } catch(com.tidymail.security.oauth2.ManagedGoogleCredentialService.CredentialAuthorizationException failure) {
+            diagnose(account,failure);
+            boolean reconnect=failure.getCode()==com.tidymail.security.oauth2.ManagedGoogleCredentialService.FailureCode.REAUTH_REQUIRED;
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,reconnect
+                ? "Reconnect Google to check Calendar." : "Google authorization is temporarily unavailable. Try again later.",failure);
+        } catch(RuntimeException failure) {
+            diagnose(account,failure);
+            throw failure;
+        }
         finally { reading.remove(account); }
+    }
+    private void diagnose(long account,RuntimeException failure) {
+        org.slf4j.LoggerFactory.getLogger(getClass()).warn("Calendar check account={} diagnostic={}",account,
+            com.tidymail.util.FailureDiagnostics.failureDiagnostic(failure));
     }
     private static String state(List<CalendarResponse> events) {
         if(events.isEmpty() || events.stream().anyMatch(e -> !e.state().equals("MATCHED")))return "UNKNOWN";

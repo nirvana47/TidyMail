@@ -41,12 +41,17 @@ public class OutlookCalendarReader {
             };
             if(response.equals("unknown"))return List.of(CalendarResponse.unknown("Your current Outlook Calendar response is unavailable."));
             return List.of(new CalendarResponse("MATCHED",response,"confirmed",scope,"Matched using Outlook's associated calendar event. RSVP does not establish whether an update was reviewed."));
-        } catch(com.tidymail.mail.CleanupProviderException denied) {
-            return List.of(CalendarResponse.unknown(denied.status()==403
-                ? "Microsoft denied Calendar access. Reconnect Outlook with read-only Calendars.Read access."
-                : "Outlook Calendar could not be checked. Retry later."));
-        } catch(RuntimeException unavailable){
-            return List.of(CalendarResponse.unknown("Outlook Calendar could not be checked. Retry or reconnect Outlook if needed."));
+        } catch(com.tidymail.mail.CleanupProviderException failure) {
+            org.slf4j.LoggerFactory.getLogger(getClass()).warn("Outlook calendar account={} diagnostic={}",account.getId(),
+                com.tidymail.util.FailureDiagnostics.failureDiagnostic(failure));
+            String reason=switch(failure.status()) {
+                case 401 -> "Reconnect Outlook to check Calendar.";
+                case 403 -> "Microsoft denied Calendar access. Reconnect Outlook with read-only Calendars.Read access.";
+                case 404 -> "The Outlook email or associated calendar event is no longer available.";
+                case 429 -> "Microsoft is limiting Calendar checks. Try again later.";
+                default -> "Outlook Calendar could not be checked. Retry later.";
+            };
+            return List.of(CalendarResponse.unknown(reason));
         }
     }
 }

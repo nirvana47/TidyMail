@@ -135,7 +135,9 @@ public class GmailEvidenceReader {
                             CalendarEvidenceParser.hash(text));
                     fetchedParts.put(attachment, parsed);
                     facts.add(parsed);
-                } catch (Exception ignored) {
+                } catch (IOException | java.io.UncheckedIOException | IllegalArgumentException failure) {
+                    org.slf4j.LoggerFactory.getLogger(getClass()).warn("Calendar attachment read diagnostic={}",
+                        com.tidymail.util.FailureDiagnostics.failureDiagnostic(failure));
                     facts.add(new CalendarEvidenceParser.Facts("FAILED", List.of(),
                             "Calendar content could not be retrieved"));
                 }
@@ -148,8 +150,8 @@ public class GmailEvidenceReader {
                     complete ? "AVAILABLE" : "TRUNCATED",
                     hasAttachment ? "PRESENT" : complete && !ambiguousAttachment ? "ABSENT" : "UNKNOWN",
                     List.copyOf(parts), List.copyOf(facts), reads.count, reads.bytes);
-        } catch (Exception ignored) {
-            throw new IllegalStateException("Could not check this email. Reconnect Gmail if needed, then try again.");
+        } catch (IOException failure) {
+            throw new java.io.UncheckedIOException("Could not check this email. Try again later.",failure);
         }
     }
 
@@ -185,8 +187,8 @@ public class GmailEvidenceReader {
                     } finally {
                         response.disconnect();
                     }
-                } catch (IOException ignored) {
-                    throw new IllegalStateException("Evidence read failed");
+                } catch (IOException failure) {
+                    throw new java.io.UncheckedIOException("Evidence read failed",failure);
                 }
             });
         }

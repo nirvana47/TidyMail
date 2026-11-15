@@ -19,6 +19,21 @@ public class DashboardClassificationWorker {
     private final ExecutorService executor=Executors.newSingleThreadExecutor(r->{var t=new Thread(r,"jev-classification");t.setDaemon(true);return t;});
     public DashboardClassificationWorker(DashboardClassificationService service){this.service=service;}
     @Scheduled(fixedDelayString="${app.classification.poll-ms:1000}",initialDelayString="${app.classification.startup-delay-ms:15000}")
-    public void tick(){if(!enabled || benchmarking)return;if(running.compareAndSet(false,true))executor.submit(()->{try{for(int i=0;i<5;i++)if(!service.runOnce())break;}catch(RuntimeException suppressed){/* No remote content or exception bodies in logs. Durable lease enables recovery. */}finally{running.set(false);}});}
+    public void tick() {
+        if(!enabled || benchmarking || !running.compareAndSet(false,true))return;
+        try {
+            executor.execute(() -> {
+                try {
+                    for(int i=0;i<5 && !Thread.currentThread().isInterrupted();i++)if(!service.runOnce())break;
+                } catch(RuntimeException failure) {
+                    org.slf4j.LoggerFactory.getLogger(getClass()).warn("Classification worker deferred diagnostic={}",
+                        com.tidymail.util.FailureDiagnostics.failureDiagnostic(failure));
+                } finally {running.set(false);}
+            });
+        } catch(RejectedExecutionException stopped) {
+            running.set(false);
+            if(!executor.isShutdown())throw stopped;
+        }
+    }
     @PreDestroy public void close(){executor.shutdownNow();}
 }

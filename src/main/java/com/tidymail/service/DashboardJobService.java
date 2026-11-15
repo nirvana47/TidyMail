@@ -424,9 +424,12 @@ public class DashboardJobService {
         boolean waiting=queued || jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM cleanup_job_targets WHERE job_id=:job AND state='AWAITING_VERIFICATION' AND verification_attempts<6)",p,Boolean.class);
         boolean unresolved=jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM cleanup_job_targets WHERE job_id=:job AND state='AWAITING_VERIFICATION')",p,Boolean.class);
         String providerName=claim.outlook()?"Outlook":"Gmail";
-        String reason=exhausted?"Verification limit reached; unresolved outcomes retained":waiting&&(error!=null||verification||unresolved)?
-            claim.acknowledged()&&!verification&&error instanceof com.tidymail.mail.CleanupProviderException provider&&provider.retryableRejection()
-                ?"Waiting for "+providerName+" rate limit to clear":"Waiting to retry provider reads":null;
+        String reason=exhausted?"Verification limit reached; unresolved outcomes retained"
+            :waiting&&(error!=null||verification||unresolved)?"Waiting to retry provider reads":null;
+        if(waiting && claim.acknowledged() && !verification
+                && error instanceof CleanupProviderException provider && provider.retryableRejection())
+            reason=provider.status()==429?"Waiting for "+providerName+" rate limit to clear"
+                :"Waiting to retry "+providerName+" before dispatch";
         long delay=error==null&&!verification&&(queued||!unresolved)?0:
             Math.min(64000L,1000L<<Math.min(attempts,6))+java.util.concurrent.ThreadLocalRandom.current().nextLong(251);
         Instant next=Instant.now().plusMillis(delay);

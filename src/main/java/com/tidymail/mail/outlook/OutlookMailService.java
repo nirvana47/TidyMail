@@ -289,7 +289,7 @@ public class OutlookMailService {
             if(failure==null && id.equals(item.path("body").path("id").asText()))try {
                 var modified=Instant.parse(item.path("body").path("lastModifiedDateTime").asText());
                 revision=BigInteger.valueOf(modified.getEpochSecond()).multiply(BigInteger.valueOf(1_000_000_000)).add(BigInteger.valueOf(modified.getNano()));
-            } catch(RuntimeException ignored) { /* Successful status is sufficient; sync fills optional metadata. */ }
+            } catch(java.time.format.DateTimeParseException ignored) { /* Successful status is sufficient; sync fills optional metadata. */ }
             result.put(id,new CleanupResult(revision,failure));
         }
         return result;

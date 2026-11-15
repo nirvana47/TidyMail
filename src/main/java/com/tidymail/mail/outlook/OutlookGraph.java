@@ -33,21 +33,30 @@ public class OutlookGraph {
         rest = RestClient.builder().requestFactory(requests).build();
     }
 
-    private synchronized String accessToken(UserAccount account) {
+    private final java.util.concurrent.locks.ReentrantLock authorization=new java.util.concurrent.locks.ReentrantLock();
+
+    private String accessToken(UserAccount account) {
         if (!"microsoft".equals(account.getProvider()) || account.getOauthStatus() != UserAccount.OAuthStatus.ACTIVE)
-            throw new IllegalStateException("OUTLOOK_RECONNECT_REQUIRED");
+            throw new CleanupProviderException(401,null);
+        try {
+            if(!authorization.tryLock(10,java.util.concurrent.TimeUnit.SECONDS))
+                throw new CleanupProviderException(503,"2",true);
+        } catch(InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new CleanupProviderException(503,"2",true,interrupted);
+        }
         try {
             var client = clients.authorize(OAuth2AuthorizeRequest.withClientRegistrationId("microsoft")
                 .principal(account.getProviderAccountId()).build());
-            if (client == null || !client.getAccessToken().getExpiresAt().isAfter(Instant.now()))
+            if (client == null || client.getAccessToken().getExpiresAt() == null || !client.getAccessToken().getExpiresAt().isAfter(Instant.now()))
                 throw new CleanupProviderException(401,null);
             return client.getAccessToken().getTokenValue();
         } catch (org.springframework.security.oauth2.core.OAuth2AuthorizationException error) {
             boolean reconnect=java.util.Set.of("invalid_grant","invalid_client","unauthorized_client","invalid_token")
                 .contains(error.getError().getErrorCode());
             // Authorization failed before any Graph mutation was sent; transient failures can be retried.
-            throw new CleanupProviderException(reconnect?401:503,reconnect?null:"30",!reconnect);
-        }
+            throw new CleanupProviderException(reconnect?401:503,reconnect?null:"30",!reconnect,error);
+        } finally {authorization.unlock();}
     }
 
     private final ConcurrentHashMap<Long,java.util.concurrent.Semaphore> capacity = new ConcurrentHashMap<>();
@@ -61,7 +70,7 @@ public class OutlookGraph {
         }
         catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
-            throw new CleanupProviderException(503,"2",true);
+            throw new CleanupProviderException(503,"2",true,interrupted);
         }
         try { return execute(account, method, link, payload); }
         finally { permits.release(count); }
@@ -80,9 +89,10 @@ public class OutlookGraph {
                 || !(uri.getPath().startsWith("/v1.0/me/")
                     || method == HttpMethod.POST && uri.getPath().equals("/v1.0/$batch")))
             throw new IllegalArgumentException("Invalid Graph continuation URL");
+        String token=accessToken(account); // Authorization and persistence occur before Graph transport.
         try {
             var request = rest.method(method).uri(uri)
-                .headers(headers -> headers.setBearerAuth(accessToken(account)))
+                .headers(headers -> headers.setBearerAuth(token))
                 .header("Prefer", "IdType=\"ImmutableId\", odata.maxpagesize=100");
             if (payload != null) request.contentType(MediaType.APPLICATION_JSON).body(payload);
             if (method.equals(HttpMethod.GET) || uri.getPath().equals("/v1.0/$batch")) {
@@ -91,6 +101,8 @@ public class OutlookGraph {
                     var failure=failure(response);
                     if(failure!=null)recordThrottle(account.getId(),failure);
                 }
+                if(body==null || !body.isObject())throw new CleanupProviderException(0,null,false,
+                    new org.springframework.http.converter.HttpMessageConversionException("Invalid Graph response"));
                 return body;
             }
             request.retrieve().toBodilessEntity();
@@ -98,12 +110,12 @@ public class OutlookGraph {
         } catch (RestClientResponseException error) {
             var headers = error.getResponseHeaders();
             var failure = new CleanupProviderException(error.getStatusCode().value(),
-                headers == null ? null : headers.getFirst("Retry-After"));
+                headers == null ? null : headers.getFirst("Retry-After"),error.getStatusCode().value()==429,error);
             recordThrottle(account.getId(), failure);
             throw failure;
         } catch (RestClientException error) {
             // Response loss is ambiguous for a mutation. The cleanup worker reads it back.
-            throw new CleanupProviderException(0, null);
+            throw new CleanupProviderException(0, null,false,error);
         }
     }
 

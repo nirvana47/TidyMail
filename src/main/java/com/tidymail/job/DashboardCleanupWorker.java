@@ -41,7 +41,7 @@ public class DashboardCleanupWorker {
     }
     public void tick() {
         if(running.compareAndSet(false,true)) {
-            try{for (int i=0; i<8 && !Thread.currentThread().isInterrupted() && runOnce(); i++) { }}catch(Exception error){LoggerFactory.getLogger(getClass()).warn("Dashboard cleanup worker deferred after {}",error.getClass().getSimpleName());}
+            try{for (int i=0; i<8 && !Thread.currentThread().isInterrupted() && runOnce(); i++) { }}catch(RuntimeException error){log.warn("Dashboard cleanup worker deferred diagnostic={}",com.tidymail.util.FailureDiagnostics.failureDiagnostic(error));}
             finally{running.set(false);}
         }
     }
@@ -59,15 +59,15 @@ public class DashboardCleanupWorker {
                 throw new IllegalStateException("Cleanup provider unavailable");
             reader=claim.outlook() ? ids -> outlook.getCurrentMetadata(account, ids)
                 : ids -> ((MailboxSyncProvider)gmail).getCleanupMetadata(account, ids);
-        } catch(RuntimeException error){jobs.defer(claim,error);return true;}
+        } catch(RuntimeException error){diagnose(claim,"before dispatch",error);jobs.defer(claim,error);return true;}
         if(claim.verification()) {
             Map<String,MailMessage> observations;RuntimeException failure=null;
             try{observations=read(reader,claim.targets());}
-            catch(RuntimeException error){observations=Map.of();failure=error;}
+            catch(RuntimeException error){diagnose(claim,"verification",error);observations=Map.of();failure=error;}
             jobs.complete(claim,null,claim.targets(),observations,failure);return true;
         }
         Map<String,MailMessage> before=Map.of();
-        if(!claim.acknowledged())try{before=read(reader,claim.targets());}catch(RuntimeException error){jobs.defer(claim,error);return true;}
+        if(!claim.acknowledged())try{before=read(reader,claim.targets());}catch(RuntimeException error){diagnose(claim,"before dispatch",error);jobs.defer(claim,error);return true;}
         var dispatch=jobs.dispatch(claim,before);if(dispatch==null)return true;
         long started=System.nanoTime();
         RuntimeException failure=null;
@@ -78,7 +78,7 @@ public class DashboardCleanupWorker {
                 read->jobs.completeAcknowledged(dispatch,read,true));
             else if(claim.action().equals("MARK_READ"))gmail.markReadOnce(account,ids);
             else gmail.cleanupOnce(account,ids,BulkActionType.valueOf(claim.action()));
-        } catch(RuntimeException error){failure=error;}
+        } catch(RuntimeException error){diagnose(claim,"dispatch",error);failure=error;}
         if(claim.acknowledged()) {
             if(!claim.outlook() || failure!=null)for(String id:ids)results.put(id,new CleanupResult(null,failure));
             jobs.completeAcknowledged(dispatch,results,false);
@@ -88,9 +88,13 @@ public class DashboardCleanupWorker {
             return true;
         }
         Map<String,MailMessage> after;RuntimeException readFailure=null;
-        try{after=read(reader,dispatch.targets());}catch(RuntimeException error){after=Map.of();readFailure=error;}
+        try{after=read(reader,dispatch.targets());}catch(RuntimeException error){diagnose(claim,"read after dispatch",error);after=Map.of();readFailure=error;}
         jobs.complete(claim,dispatch.batch(),dispatch.targets(),after,failure,readFailure);
         return true;
+    }
+    private void diagnose(Claim claim,String phase,RuntimeException failure) {
+        log.warn("Cleanup job={} phase={} diagnostic={}",claim.job(),phase,
+            com.tidymail.util.FailureDiagnostics.failureDiagnostic(failure));
     }
     private Map<String,MailMessage> read(java.util.function.Function<List<String>,List<MailMessage>> reader,List<Target> targets) {
         var ids=targets.stream().map(Target::providerId).toList();

@@ -42,7 +42,10 @@ public class CalendarLabelRefreshService {
                 """,UUID.class,account.getId());
             if(candidates.isEmpty())continue;
             try { calendar.inspect(account.getId(),candidates.getFirst()); }
-            catch(RuntimeException unavailable) { /* Retry next pass; provider details never enter logs. */ }
+            catch(RuntimeException failure) {
+                org.slf4j.LoggerFactory.getLogger(getClass()).warn("Calendar refresh account={} diagnostic={}",account.getId(),
+                    com.tidymail.util.FailureDiagnostics.failureDiagnostic(failure));
+            }
         }
     }
 

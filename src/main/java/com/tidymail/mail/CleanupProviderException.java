@@ -17,7 +17,11 @@ public class CleanupProviderException extends RuntimeException {
     }
 
     public CleanupProviderException(int status, String retryAfter, boolean retryableRejection) {
-        super("Cleanup provider request failed; label verification required");
+        this(status,retryAfter,retryableRejection,null);
+    }
+
+    public CleanupProviderException(int status,String retryAfter,boolean retryableRejection,Throwable cause) {
+        super("Cleanup provider request failed; label verification required",cause);
         this.status = status;
         this.retryableRejection = retryableRejection;
         Instant at = null;

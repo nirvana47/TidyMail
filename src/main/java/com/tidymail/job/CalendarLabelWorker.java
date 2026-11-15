@@ -20,9 +20,19 @@ public class CalendarLabelWorker {
     public CalendarLabelWorker(CalendarLabelRefreshService service) { this.service=service; }
     @Scheduled(fixedDelayString="${app.calendar-labels.poll-ms:2000}",initialDelayString="${app.calendar-labels.startup-delay-ms:20000}")
     public void tick() {
-        if(enabled && running.compareAndSet(false,true))executor.submit(() -> {
-            try { service.runOnce(); } finally { running.set(false); }
-        });
+        if(!enabled || !running.compareAndSet(false,true))return;
+        try {
+            executor.execute(() -> {
+                try { service.runOnce(); }
+                catch(RuntimeException failure) {
+                    org.slf4j.LoggerFactory.getLogger(getClass()).warn("Calendar label worker deferred diagnostic={}",
+                        com.tidymail.util.FailureDiagnostics.failureDiagnostic(failure));
+                } finally { running.set(false); }
+            });
+        } catch(java.util.concurrent.RejectedExecutionException stopped) {
+            running.set(false);
+            if(!executor.isShutdown())throw stopped;
+        }
     }
     @PreDestroy public void close() { executor.shutdownNow(); }
 }

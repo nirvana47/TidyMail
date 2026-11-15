@@ -37,8 +37,19 @@ public class GoogleCalendarReader {
             var results=new ArrayList<CalendarResponse>();
             for (var identity:identities) results.add(match(reads, identity));
             return List.copyOf(results);
-        } catch (Exception failure) {
-            return List.of(CalendarResponse.unknown("Calendar could not be checked. Retry or reconnect Google if needed."));
+        } catch (com.google.api.client.http.HttpResponseException failure) {
+            org.slf4j.LoggerFactory.getLogger(getClass()).warn("Google calendar account={} diagnostic={}",account.getId(),
+                com.tidymail.util.FailureDiagnostics.failureDiagnostic(failure));
+            return List.of(CalendarResponse.unknown(switch(failure.getStatusCode()) {
+                case 401 -> "Reconnect Google to check Calendar.";
+                case 403 -> "Google denied this Calendar check. Check Calendar access before retrying.";
+                case 429 -> "Google is limiting Calendar checks. Try again later.";
+                default -> "Calendar could not be checked. Try again later.";
+            }));
+        } catch (IOException failure) {
+            org.slf4j.LoggerFactory.getLogger(getClass()).warn("Google calendar account={} diagnostic={}",account.getId(),
+                com.tidymail.util.FailureDiagnostics.failureDiagnostic(failure));
+            return List.of(CalendarResponse.unknown("Calendar could not be checked. Try again later."));
         }
     }
 

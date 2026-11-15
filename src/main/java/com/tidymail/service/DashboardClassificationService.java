@@ -107,7 +107,12 @@ public class DashboardClassificationService {
             budget.report(claim.token(),result.cost());save(claim,result);
         }
         catch(Unavailable safe){received=System.nanoTime();if(safe.reportedCost()!=null)budget.report(claim.token(),safe.reportedCost());else budget.unknown(claim.token());fail(claim,safe.getMessage(),safe.reportedCost()!=null && safe.retryable());}
-        catch(RuntimeException suppressed){budget.unknown(claim.token());fail(claim,"Classification could not be saved. Check billing before retrying; existing mailbox actions are unchanged.",false);}
+        catch(RuntimeException failure){
+            org.slf4j.LoggerFactory.getLogger(getClass()).warn("Classification job={} diagnostic={}",claim.id(),
+                com.tidymail.util.FailureDiagnostics.failureDiagnostic(failure));
+            budget.unknown(claim.token());
+            fail(claim,"Classification could not be completed. Check billing before retrying; existing mailbox actions are unchanged.",false);
+        }
         finally {budget.metrics(claim.token(),(received-claimed)/1_000_000,(claimed-began+System.nanoTime()-received)/1_000_000,uncertain);}
         return true;
     }

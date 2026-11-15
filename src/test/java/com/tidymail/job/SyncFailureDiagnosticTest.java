@@ -11,9 +11,9 @@ class SyncFailureDiagnosticTest {
     void reportsStatusAndLocationsWithoutProviderPayloads() {
         var provider = new HttpResponseException.Builder(403, "private subject", new HttpHeaders())
             .setContent("secret-token private@example.com").build();
-        var failure = new IllegalStateException("private@example.com", provider);
-        String diagnostic = IncrementalSyncJob.failureDiagnostic(failure);
+        var failure = new IllegalStateException("SECRET_TOKEN", provider);
+        String diagnostic = com.tidymail.util.FailureDiagnostics.failureDiagnostic(failure);
         assertThat(diagnostic).contains("IllegalStateException", "HttpResponseException", "status=403")
-            .doesNotContain("private", "secret-token");
+            .doesNotContain("private", "secret-token", "SECRET_TOKEN");
     }
 }
