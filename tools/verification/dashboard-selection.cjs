@@ -19,7 +19,7 @@ const messages = [[inmail, 36, 'linkedin'], [invitations, 33, 'linkedin'], ['new
 for (let i = 0; i < 20; i++) messages.push({ ...messages[0], id: `extra-${i}`, address: `extra${i}@linkedin.com` });
 let previewIds = [], delaySelection = null, selectionStarted = null;
 (async () => {
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
   try {
     const page = await browser.newPage({ viewport: { width: 1500, height: 1100 } });
     const errors = [];
@@ -31,9 +31,17 @@ let previewIds = [], delaySelection = null, selectionStarted = null;
         const html = fs.readFileSync(path.join(root, 'src/main/resources/templates/dashboard.html'), 'utf8')
           .replace('th:href="@{/static/css/dashboard.css}"', 'href="/static/css/dashboard.css"')
           .replace('th:src="@{/static/js/dashboard.js}"', 'src="/static/js/dashboard.js"')
+          .replace('th:src="@{/static/js/inbox-rules.js}"', 'src="/static/js/inbox-rules.js"')
+          .replace('th:href="@{/static/css/rules.css}"', 'href="/static/css/rules.css"')
           .replace('<body ', '<body data-provider="google" data-account="fixture" ')
           .replace('name="_csrf_header"', 'name="_csrf_header" content="X-CSRF-TOKEN"');
         return route.fulfill({ contentType: 'text/html', body: html });
+      }
+      if (url.pathname === '/rules/save') return route.fulfill({ status: 400, contentType: 'text/html', body: '<p role="alert">Choose a valid sender address.</p>' });
+      if (url.pathname === '/rules/new') {
+        const sender = url.searchParams.get('sender'), action = url.searchParams.get('action');
+        assert.equal(route.request().headers()['x-tidymail-account'], 'fixture');
+        return route.fulfill({ contentType: 'text/html', body: `<main id="ruleEditorContent"><form action="/rules/save" method="post"><label>Rule name<input name="name"></label><label>From<textarea name="senders">${sender}</textarea></label><select name="action"><option value="${action}">${action}</option></select><button>Save draft and preview</button></form></main>` });
       }
       if (url.pathname.startsWith('/static/')) return route.fulfill({ path: path.join(root, 'src/main/resources', url.pathname) });
       const endpoint = url.pathname.replace('/dashboard/api/', '');
@@ -95,6 +103,17 @@ let previewIds = [], delaySelection = null, selectionStarted = null;
     await expand('LinkedIn'); await expand('LinkedIn');
     await expect(addressBox(inmail)).toBeChecked(); await expect(addressBox(invitations)).toBeChecked();
     await expand('Target'); await selectedCount(69);
+    await page.locator('[data-action="MARK_READ_ARCHIVE"]').click();
+    await page.locator('#createMessageRule').click();
+    await expect(page.locator('#inboxRule')).toBeVisible();
+    await expect(page.locator('#inboxRuleContent [name="senders"]')).toHaveValue([inmail, invitations].sort().join(', '));
+    await expect(page.locator('#inboxRuleContent [name="action"]')).toHaveValue('READ_ARCHIVE');
+    assert.equal(page.url(), 'https://tidymail.test/');
+    await page.locator('#inboxRuleContent button').click();
+    await expect(page.locator('#inboxRuleError')).toHaveText('Choose a valid sender address.');
+    await expect(page.locator('#inboxRuleContent [name="senders"]')).toHaveValue([inmail, invitations].sort().join(', '));
+    await page.locator('#inboxRule [data-close]').click(); await selectedCount(69);
+    await expect(addressBox(inmail)).toBeChecked(); await expect(addressBox(invitations)).toBeChecked();
     await page.locator('[data-action="TRASH"]').click(); await page.locator('#review').click();
     await expect(page.locator('#confirm')).toBeVisible();
     assert.equal(previewIds.length, 69); assert.equal(new Set(previewIds).size, 69);
@@ -144,6 +163,6 @@ let previewIds = [], delaySelection = null, selectionStarted = null;
     await page.locator('#search').fill('changed');
     await expect(page.locator('#selectionRow')).toBeHidden();
     assert.deepEqual(errors, []);
-    console.log('PASS: stable scroll position and checkbox focus in a 22-address group, address/message synchronization, additive selection, paging, collapse, group boundary, exact Trash preview, unread scope, filter reset, and stale response rejection.');
+    console.log('PASS: stable scroll position and checkbox focus in a 22-address group, address/message synchronization, additive selection, paging, collapse, group boundary, exact Trash preview, unread scope, filter reset, stale response rejection, and inline rule action/sender transfer with validation and selection preservation.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

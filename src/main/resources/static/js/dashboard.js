@@ -151,11 +151,13 @@
     $('selectionDescription').textContent = `${state.focused?.label || 'Current group'} · ${fmt(addresses.size)} sender ${addresses.size === 1 ? 'address' : 'addresses'} · Fixed message selection`;
     const reviewBusy = previewLoading || confirming || selectionBusy > 0;
     $('review').disabled = !selected.size || reviewBusy;
+    $('createMessageRule').disabled = !selected.size || reviewBusy;
     const byAddress = $('groupBy').value === 'address', count = senderSelection.size;
     const unit = byAddress ? 'sender address' : 'sender group';
     $('groupingToolbar').hidden = count === 0;
     $('groupingCount').textContent = `${fmt(count)} ${unit}${count === 1 ? '' : byAddress ? 'es' : 's'} selected`;
     $('reviewSenders').disabled = !count || reviewBusy || $('senderTable').hasAttribute('aria-busy');
+    $('createSenderSelectionRule').disabled = $('reviewSenders').disabled;
     $('combineGroups').hidden = $('splitGroup').hidden = byAddress;
     $('combineGroups').disabled = count < 2 || listLoading;
     $('splitGroup').disabled = count !== 1 || listLoading;
@@ -429,7 +431,13 @@
   }
   function renderDetail() {
     if (!state.focused) return;
-    $('detailTitle').textContent = state.focused.label; $('detailBadge').textContent = state.focused.label.slice(0, 1).toUpperCase();
+    $('detailTitle').textContent = state.focused.label;
+    const ruleSender = state.address || state.focused.address;
+    let ruleButton = $('createSenderRule');
+    if (!ruleButton) { ruleButton = node('button', 'Create rule…'); ruleButton.id = 'createSenderRule'; $('detailTitle').parentElement.append(ruleButton); }
+    ruleButton.hidden = !ruleSender;
+    ruleButton.onclick = () => createInboxRule([ruleSender], state.action, 'For this sender');
+    $('detailBadge').textContent = state.focused.label.slice(0, 1).toUpperCase();
     $('detailCounts').textContent = state.details ? `${fmt(state.details.total)} matching ${$('detailUnreadOnly').checked ? 'unread messages' : 'messages'}` : `${fmt(state.focused.messages)} matching messages · ${fmt(state.focused.unread)} unread`;
     $('detailUnreadOnly').disabled = state.tab !== 'messages' || selectionBusy > 0;
     const content = $('detailContent'), restore = rememberFocus(content);
@@ -457,6 +465,7 @@
           node('small', `${dateText(m.receivedAt)} · ${m.unread ? 'Unread' : 'Read'}`, 'muted'));
         if (m.reviewedPattern) text.append(node('small',`Reviewed pattern: ${categoryName(m.reviewedPattern)} · Importance is not determined by this pattern`, 'muted'));
         if (m.pendingState) text.append(node('small', pendingText(m.pendingState), 'pending'));
+        const ruleButton = node('button', 'Create rule…'); ruleButton.type = 'button'; ruleButton.setAttribute('aria-label', 'Create rule from ' + (m.subject || 'this email')); ruleButton.onclick = () => createInboxRule([m.address], state.action, 'From this email: ' + (m.subject || '(No subject)')); text.append(ruleButton);
         appendMessageLabels(text, m, recommendation, expandedLabels.has(m.id)); appendEvidence(text,m); appendRecommendation(text,m,recommendation); row.append(checkbox(`Select message ${m.subject || '(No subject)'}`, 1, selected.has(m.id) ? 1 : 0, checked => { if (checked) selected.set(m.id, m); else selected.delete(m.id); invalidatePreview(); renderSelectionControls(); }), text); content.append(row); }
       if (!detail.total) content.append(node('p', 'No matching messages in this group.', 'evidence'));
       const paging = node('div', undefined, 'paging'), prev = node('button', '‹'), next = node('button', '›'); prev.setAttribute('aria-label', 'Previous message page'); next.setAttribute('aria-label', 'Next message page'); prev.disabled = state.messagePage === 0; next.disabled = (state.messagePage + 1) * 10 >= detail.total;
@@ -1080,6 +1089,22 @@
   $('clearGroups').onclick = () => { senderSelection.clear(); renderSelectionControls(); };
   $('clear').onclick = () => clearSelection();
   $('review').onclick = () => openPreview();
+  function createInboxRule(addresses, action, context) {
+    const senders = [...new Set(addresses.filter(Boolean))].sort();
+    if (!senders.length || senders.length > 20) { notice('Choose emails from 1–20 exact sender addresses to create a rule.'); return; }
+    document.dispatchEvent(new CustomEvent('tidymail:create-rule', { detail: { senders, action, context, account: document.body.dataset.account } }));
+  }
+  $('createMessageRule').onclick = () => createInboxRule([...selected.values()].map(m => m.address), state.action, `From ${fmt(selected.size)} selected emails`);
+  $('createSenderSelectionRule').onclick = async () => {
+    const epoch = filterEpoch, revision = state.revision, generation = selectionGeneration, groups = [...senderSelection.keys()], action = $('senderAction').value;
+    if (!groups.length || selectionBusy || listLoading) return;
+    selectionBusy++; updateSelection();
+    try {
+      const rows = await api('selection', { filter: filter(), revision, groups });
+      if (epoch !== filterEpoch || revision !== state.revision || generation !== selectionGeneration || groups.length !== senderSelection.size || groups.some(id => !senderSelection.has(id)) || action !== $('senderAction').value) return;
+      createInboxRule(rows.map(m => m.address), action, `From ${fmt(groups.length)} selected sender groups · ${fmt(rows.length)} matching emails`);
+    } catch (error) { notice(error.message); } finally { selectionBusy--; updateSelection(); }
+  };
   $('reviewSenders').onclick = () => openPreview(true);
   document.querySelectorAll('[data-action]').forEach(button => button.onclick = () => { state.action = button.dataset.action; invalidatePreview(); document.querySelectorAll('[data-action]').forEach(b => { b.classList.toggle('active', b === button); b.setAttribute('aria-pressed', String(b === button)); }); });
   document.querySelectorAll('[data-tab]').forEach((button, index, tabs) => { button.onclick = () => { const changed = state.tab !== button.dataset.tab; state.tab = button.dataset.tab; if (changed) state.details = null; tabs.forEach(b => { b.classList.toggle('active', b === button); b.setAttribute('aria-selected', String(b === button)); b.tabIndex = b === button ? 0 : -1; }); $('detailContent').setAttribute('aria-labelledby', button.id); renderDetail(); if (changed) loadDetails(); }; button.onkeydown = e => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) { e.preventDefault(); const next = tabs[e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : (index + 1) % 2]; next.click(); next.focus(); } }; });

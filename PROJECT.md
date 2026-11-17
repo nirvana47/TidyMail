@@ -69,3 +69,37 @@ User-authorized optional hosted Jev classification is now implemented; see [arch
 [Codebase map](docs/CODEBASE.md) explains flows and ownership; [Status](docs/STATUS.md) records evidence and remaining work; [Deployment](DEPLOY.md) and [Testing](docs/TESTING.md) cover operation and verification. [History](docs/HISTORY.md) explains recovery of removed plans.
 
 Source, migrations and executable tests are the implementation authority. Update these documents when behavior changes; historical phase names and old source comments are not current requirements.
+
+## Incoming email rules — 2026-11-15
+
+`/rules` adds a shared Gmail/Outlook editor with saved drafts, historical metadata
+examples, explicit activation, and native rule management. Actions include
+Archive, Mark as read, Trash, and Mark as read combined with Archive or Trash.
+Provider rules continue while TidyMail is closed. Existing supported rules can
+be brought under management; unsupported rules link to native settings.
+
+Rule-settings permissions are requested separately when connecting Rules:
+Gmail `gmail.settings.basic`, Outlook `MailboxSettings.ReadWrite`. Drafts work
+without those permissions. Gmail subject previews use provider search; Outlook
+uses subject text matching. Gmail pause removes the managed filter and resume
+recreates it; Outlook disables/enables its rule. Editing a paused Outlook rule
+uses a reviewed replacement and preserves its original sequence position.
+Durable operation intent, read-back, uncertain-response recovery, external-drift
+checks, and periodic reconciliation live in `com.tidymail.rules`. Suggestions
+cite consistent successful cleanup recorded in TidyMail, never inferred intent
+from direct native deletion. No automatic activation or permanent deletion is
+included. Native rules survive local data deletion; pending rule operations block
+credential deletion until resolved. Local protections are checked on activation
+and during reconciliation, rather than synchronously by the provider at delivery.
+
+Verification uses real PostgreSQL and rendered HTTP journeys with simulated
+providers, plus existing Outlook/cleanup regressions. Live provider activation
+and delivery semantics still need a user-reviewed rule trial after consent.
+
+Rule creation is available directly in the dashboard: selected-message actions,
+selected-sender actions, sender details, and individual messages open a drawer.
+It carries exact sender addresses and the chosen action into the shared editor;
+saving, previewing and enabling stay in that drawer. Inbox selection and filters
+remain intact. The separate `/rules` page is the management surface. The drawer
+explicitly distinguishes future rule conditions from current inbox filters and
+from a one-time cleanup action.

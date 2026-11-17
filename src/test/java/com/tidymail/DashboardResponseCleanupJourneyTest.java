@@ -28,6 +28,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 @TestPropertySource(properties="app.cleanup.execution-mode=RESPONSE")
 class DashboardResponseCleanupJourneyTest extends PostgresJourneyTest {
     static final String OWNER="response-cleanup@example.test";
+    @Autowired com.tidymail.rules.RuleSuggestionService ruleSuggestions;
     @Autowired DashboardJobService jobs;
     @Autowired DashboardPreviewService previews;
     @Autowired DashboardCleanupWorker worker;
@@ -72,6 +73,9 @@ class DashboardResponseCleanupJourneyTest extends PostgresJourneyTest {
         for(int i=0;i<3;i++){ready(job.id());worker.runOnce();}
         var result=result(job.id());assertThat(result.changed()).isEqualTo(2165);
         assertThat(result.status()).isEqualTo("COMPLETED");assertThat(result.executionMode()).isEqualTo("RESPONSE");
+        var suggestion=ruleSuggestions.list(account).getFirst();
+        assertThat(suggestion.sender()).isEqualTo("sender@example.test");assertThat(suggestion.count()).isEqualTo(2165);
+        ruleSuggestions.dismiss(account,suggestion.sender(),suggestion.action());assertThat(ruleSuggestions.list(account)).isEmpty();
         assertThat(sends.stream().map(List::size)).containsExactly(1000,1000,165);
         assertThat(sends.stream().flatMap(List::stream).toList()).doesNotHaveDuplicates().hasSize(2165);
         verify(gmailProvider,never()).getCleanupMetadata(any(),anyList());

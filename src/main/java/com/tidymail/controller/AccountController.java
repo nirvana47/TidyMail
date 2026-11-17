@@ -56,7 +56,7 @@ public class AccountController {
      * OAuth callback knows this is a new-account link rather than an existing
      * session.
      */
-    @GetMapping("/accounts/connect/{provider}")
+    @GetMapping({"/accounts/connect/{provider}", "/rules/connect/{provider}"})
     public String connect(
             @PathVariable String provider,
             HttpServletRequest request,
@@ -66,7 +66,8 @@ public class AccountController {
                 HttpStatus.NOT_FOUND, "Connection provider is unavailable");
         }
         accountSessions.beginAddAccount(request, authentication, provider);
-        return "redirect:/oauth2/authorization/" + provider;
+        if ("true".equals(request.getParameter("rules"))) request.getSession().setAttribute("RULES_OAUTH_RETURN", true);
+        return "redirect:/oauth2/authorization/" + provider + ("true".equals(request.getParameter("rules")) ? "?rules=true" : "");
     }
 
     @PostMapping("/dashboard/accounts/connect/{provider}")

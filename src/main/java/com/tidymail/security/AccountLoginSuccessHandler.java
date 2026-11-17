@@ -49,6 +49,11 @@ public class AccountLoginSuccessHandler
             throw new ServletException("OAuth account authentication is required");
         }
         var account = accountSessions.initializeLogin(request, oauth);
+        if(Boolean.TRUE.equals(request.getSession().getAttribute("RULES_OAUTH_RETURN"))){
+            request.getSession().removeAttribute("RULES_OAUTH_RETURN");
+            getRedirectStrategy().sendRedirect(request,response,"/rules");
+            return;
+        }
         boolean pendingBootstrap = mailboxStates.findByAccountId(account.activeAccountId())
             .map(state -> state.initialBatchCompletedAt() == null)
             .orElse(false);

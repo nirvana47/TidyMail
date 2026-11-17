@@ -9,6 +9,8 @@
     <title>TidyMail — Inbox cleanup</title>
     <link rel="stylesheet" th:href="@{/static/css/dashboard.css}">
     <script defer th:src="@{/static/js/dashboard.js}"></script>
+    <script defer th:src="@{/static/js/inbox-rules.js}"></script>
+    <link rel="stylesheet" th:href="@{/static/css/rules.css}">
 </head>
 
 <body th:attr="data-provider=${outlook ? 'microsoft' : 'google'},data-account=${activeAccount}">
@@ -41,7 +43,7 @@
                     </form>
                 </div>
                 <div class="row" style="margin-top:10px"><span id="syncStatus" class="sync-line" role="status">Checking
-                        sync…</span><button id="activityOpen">Activity</button></div>
+                        sync…</span><button id="activityOpen">Activity</button><a class="muted-link" href="/rules">Manage rules</a></div>
             </div>
         </header>
         <nav class="row" aria-label="Mailbox views"><button id="sendersView" aria-pressed="true">Senders</button><button id="suggestionsView" aria-pressed="false">Suggestions</button></nav>
@@ -157,7 +159,7 @@
                             <option value="MARK_READ_ARCHIVE">Mark as read + archive</option>
                             <option value="TRASH">Move to Trash</option>
                         </select>
-                        <button id="reviewSenders" class="primary">Review email action →</button>
+                        <button id="reviewSenders" class="primary">Review email action →</button><button id="createSenderSelectionRule">Create rule…</button>
                     </div>
                     <p id="senderActionScope" class="muted">Applies to matching emails across all pages for the selected senders.</p>
                     <div class="row">
@@ -210,13 +212,21 @@
                         data-action="MARK_READ" aria-pressed="true">Mark as read</button><button data-action="ARCHIVE"
                         aria-pressed="false">Archive</button><button data-action="MARK_READ_ARCHIVE"
                         aria-pressed="false">Mark as Read + Archive</button><button class="trash" data-action="TRASH"
-                        aria-pressed="false">Move to Trash</button><button id="review" class="primary">Review and
+                        aria-pressed="false">Move to Trash</button><button id="createMessageRule">Create rule…</button><button id="review" class="primary">Review and
                         confirm →</button></div>
             </div>
             <div id="jobProgress" role="status" aria-live="polite"></div>
         </section>
         <noscript>Enable JavaScript to browse indexed messages and inspect selections.</noscript>
     </main>
+    <dialog id="inboxRule" class="drawer" aria-labelledby="inboxRuleTitle">
+        <header class="row spread"><h2 id="inboxRuleTitle">Create rule</h2><button type="button" data-close="inboxRule">Close</button></header>
+        <p id="inboxRuleContext" class="muted"></p>
+        <p class="muted">Starts with the chosen sender addresses. Current inbox filters are not copied into the rule.</p>
+        <p class="muted">This rule handles future incoming email. Your current email action is separate; creating a rule does not apply it to the selected emails.</p>
+        <p id="inboxRuleError" class="rule-alert" role="alert" hidden></p>
+        <div id="inboxRuleContent" aria-live="polite"></div>
+    </dialog>
     <dialog id="labeling" aria-labelledby="labelingTitle">
         <div class="row spread"><h2 id="labelingTitle">Label / reclassify emails</h2><button data-close="labeling" aria-label="Close labeling">×</button></div>
         <p id="labelingDialogCoverage"></p>
@@ -321,7 +331,7 @@
             <summary>Delete local account data</summary>
             <p>This removes your locally indexed data and connection credentials for linked accounts. It does not delete
                 messages in Gmail or Outlook.</p>
-            <form th:action="@{/logout/delete-data}" method="post"><label>Type DELETE <input name="confirmation"
+            <p>Native Gmail and Outlook rules continue after deleting local TidyMail data. Pause or remove them in Rules first to stop automation.</p><form th:action="@{/logout/delete-data}" method="post"><label>Type DELETE <input name="confirmation"
                         pattern="DELETE" required autocomplete="off"></label><button>Delete local data and sign
                     out</button></form>
         </details>

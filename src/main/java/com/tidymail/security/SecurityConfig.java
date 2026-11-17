@@ -185,7 +185,22 @@ public class SecurityConfig {
                     clientRepo, "/oauth2/authorization");
             defaultResolver.setAuthorizationRequestCustomizer(
                 SecurityConfig::customizeAuthorizationRequest);
-            final OAuth2AuthorizationRequestResolver customResolver = defaultResolver;
+            final OAuth2AuthorizationRequestResolver customResolver = new OAuth2AuthorizationRequestResolver() {
+                private OAuth2AuthorizationRequest augment(jakarta.servlet.http.HttpServletRequest request, OAuth2AuthorizationRequest resolved) {
+                    if (resolved == null || !"true".equals(request.getParameter("rules"))) return resolved;
+                    var scopes = new java.util.LinkedHashSet<>(resolved.getScopes());
+                    String registration = resolved.getAttribute(OAuth2ParameterNames.REGISTRATION_ID);
+                    if ("google".equals(registration)) scopes.add("https://www.googleapis.com/auth/gmail.settings.basic");
+                    else if ("microsoft".equals(registration)) scopes.add("https://graph.microsoft.com/MailboxSettings.ReadWrite");
+                    return OAuth2AuthorizationRequest.from(resolved).scopes(scopes).build();
+                }
+                public OAuth2AuthorizationRequest resolve(jakarta.servlet.http.HttpServletRequest request) {
+                    return augment(request, defaultResolver.resolve(request));
+                }
+                public OAuth2AuthorizationRequest resolve(jakarta.servlet.http.HttpServletRequest request, String registrationId) {
+                    return augment(request, defaultResolver.resolve(request, registrationId));
+                }
+            };
 
             http.oauth2Login(oauth2 -> oauth2
                 .loginPage("/login")
@@ -224,6 +239,7 @@ public class SecurityConfig {
             // prompt=consent ensures an existing grant is eligible to issue one again.
             requestBuilder.additionalParameters(params -> {
                 params.put("access_type", "offline");
+                params.put("include_granted_scopes", "true");
                 params.put("prompt", "consent");
             });
         } else if ("microsoft".equals(built.getAttribute(OAuth2ParameterNames.REGISTRATION_ID))) {

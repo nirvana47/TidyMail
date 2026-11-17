@@ -1,0 +1,17 @@
+.rules-page{max-width:1120px}.rules-page h1{margin:12px 0 6px}.rules-page .surface{margin:24px 0;padding:24px}.rule-form{display:grid;gap:18px;max-width:780px}.rule-form fieldset{border:0;padding:0;display:grid;gap:16px}.rule-form label{display:grid;gap:8px;font-weight:600}.rule-form input,.rule-form textarea,.rule-form select{width:100%;box-sizing:border-box;padding:10px;font:inherit}.rule-form input[type=checkbox]{width:auto}.rule-form label.row{display:flex;align-items:center;font-weight:400}.rule-form button{justify-self:start}.rule-columns{display:grid;grid-template-columns:1fr 1fr;gap:20px}.rule-alert{padding:14px 18px;background:#fff4dd;color:#694100;border-left:3px solid #c78c26;border-radius:6px}.native-rule{border-top:1px solid #ddd;padding:18px 0}.native-rule pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:300px;overflow:auto;font-size:13px}.rule-actions{display:flex;gap:12px;flex-wrap:wrap;align-items:center}.rules-page td{vertical-align:top}.rules-page td p{margin:7px 0;max-width:540px}.rules-page table{width:100%}.rules-page a.button{display:inline-block;padding:10px 16px;border:1px solid #c4c9d3;border-radius:8px;text-decoration:none}.rules-page small{font-weight:400}@media(max-width:700px){.rule-columns{grid-template-columns:1fr}.rules-page .surface{padding:14px}}
+
+.rule-example-group{margin:18px 0}.rule-example-group summary{font-weight:600;cursor:pointer}.rule-example-group table{margin-top:12px}
+
+/* Contextual creation stays over the mailbox, using the same server-rendered editor. */
+dialog#inboxRule{width:min(760px,100%);max-width:760px;padding:20px 24px;box-sizing:border-box}
+#inboxRuleContent .app{padding:0;max-width:100%}
+#inboxRuleContent .rules-page>h1{display:none}
+#inboxRuleContent .surface{padding:16px;margin:16px 0;box-shadow:none}
+#inboxRuleContent .rule-form{max-width:100%;gap:12px}
+#inboxRuleContent .rule-columns{gap:14px}
+#inboxRuleContent label{margin:0}
+#inboxRuleContent table{font-size:13px}
+#inboxRuleContent .surface p{margin:10px 0}
+#inboxRuleContent [aria-busy=true]{opacity:.7}
+#createSenderRule{margin-top:8px}
+.message-text>button{margin-top:8px}

@@ -37,6 +37,7 @@
                   </a>
 
                 <p class="rail-label">Manage</p>
+                <a href="/rules"><span>Rules</span></a>
                 <a th:href="@{/review(view='history',account=${workspace.selectedAccountQuery})}"
                      th:attr="aria-current=${workspace.route.value == 'review' ? 'page' : null}">
                       <span>Action history</span>
@@ -88,7 +89,7 @@
         </form>
         <details class="delete-data-control">
             <summary class="rail-menu-row delete-data-summary">Delete my data and logout</summary>
-            <p>This permanently removes every connected account and all TidyMail data.</p>
+            <p>This permanently removes every connected account and all TidyMail data. Native Gmail and Outlook rules keep running. Pause or remove them in Rules first to stop automation.</p>
             <form method="post" action="/logout/delete-data"
                   onsubmit="return window.confirm('Delete every connected account and all TidyMail data, then log out? This permanently removes provider tokens, indexed metadata, sender statistics, queued actions, history, analytics, logs, and settings.')">
                 <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"

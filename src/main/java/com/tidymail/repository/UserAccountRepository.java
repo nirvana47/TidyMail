@@ -24,7 +24,9 @@ public interface UserAccountRepository extends JpaRepository<UserAccount, Long> 
     List<Long> lockOwnerForDeletion(@Param("owner") String owner);
 
     @Query(value="""
-        SELECT (SELECT count(*) FROM cleanup_jobs j JOIN user_accounts a ON a.id=j.account_id
+        SELECT (SELECT count(*) FROM automation_rules r JOIN user_accounts a ON a.id=r.account_id
+        WHERE a.owner_key=:owner AND r.pending_operation IS NOT NULL)
+        + (SELECT count(*) FROM cleanup_jobs j JOIN user_accounts a ON a.id=j.account_id
         WHERE a.owner_key=:owner AND (j.worker_id IS NOT NULL OR EXISTS
         (SELECT 1 FROM cleanup_job_targets t WHERE t.job_id=j.public_id
          AND t.state IN ('QUEUED','DISPATCH_INTENT'))))
