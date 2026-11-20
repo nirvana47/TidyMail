@@ -65,8 +65,8 @@ class DashboardSimplificationTest extends PostgresJourneyTest {
     }
     @Test void syncDetailsHaveNoLegacyNavigationAndSignOutKeepsIndex() throws Exception {
         long account=userAccounts.createAccount(OWNER);enqueue(account,1);
-        String html=mockMvc.perform(get("/activity").with(authenticatedAs(OWNER))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
-        assertThat(html).contains("Back to Activity").doesNotContain("href=\"/unread", "href=\"/unsubscribe", "href=\"/analytics", "href=\"/accounts/connect", "href=\"/review", "href=\"/senders");
+        String html=mockMvc.perform(get("/activity/sync").with(authenticatedAs(OWNER))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(html).doesNotContain("href=\"/unread", "href=\"/unsubscribe", "href=\"/analytics", "href=\"/accounts/connect", "href=\"/review", "href=\"/senders");
         mockMvc.perform(post("/logout").with(authenticatedAs(OWNER)).with(csrfToken())).andExpect(status().is3xxRedirection());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM message_metadata WHERE account_id=?",Long.class,account)).isEqualTo(1);
     }

@@ -251,7 +251,14 @@ public class OutlookMailService {
     }
 
     /** One unordered Graph batch: each response is independent, including throttles and missing responses. */
-    private Map<String,CleanupResult> applyBatch(UserAccount account, List<String> ids, BulkActionType action) {
+    public Map<String,CleanupResult> fileOnce(UserAccount account,List<String> ids,String destination) {
+        if(destination==null||destination.isBlank())throw new IllegalArgumentException("Folder required");
+        return applyBatch(account,ids,null,destination);
+    }
+    private Map<String,CleanupResult> applyBatch(UserAccount account,List<String> ids,BulkActionType action) {
+        return applyBatch(account,ids,action,null);
+    }
+    private Map<String,CleanupResult> applyBatch(UserAccount account, List<String> ids, BulkActionType action,String destination) {
         if (ids.isEmpty() || ids.size() > 20 || new HashSet<>(ids).size() != ids.size()
                 || action == BulkActionType.MARK_READ_ARCHIVE)
             throw new IllegalArgumentException("One batch requires 1–20 unique IDs and a single operation");
@@ -262,7 +269,7 @@ public class OutlookMailService {
                 "url", "/me/messages/" + segment(ids.get(i)) + (read ? "" : "/move"),
                 "headers", Map.of("Content-Type", "application/json", "Prefer", "IdType=\"ImmutableId\""),
                 "body", read ? Map.of("isRead", true)
-                    : Map.of("destinationId", action == BulkActionType.TRASH ? "deleteditems" : "archive")));
+                    : Map.of("destinationId",destination!=null?destination:action == BulkActionType.TRASH ? "deleteditems" : "archive")));
         }
         var result = new LinkedHashMap<String,CleanupResult>();
         ids.forEach(id -> result.put(id, new CleanupResult(null, new CleanupProviderException(0, null))));

@@ -21,6 +21,8 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
     com.tidymail.service.JevClassifier classifier;
     @org.springframework.boot.test.mock.mockito.MockBean
     com.tidymail.mail.gmail.GmailEvidenceReader evidenceReader;
+    @org.springframework.boot.test.mock.mockito.SpyBean
+    com.tidymail.rules.GmailRuleProvider ruleLabels;
     @org.springframework.beans.factory.annotation.Autowired
     com.tidymail.job.DashboardCleanupWorker cleanupWorker;
     @org.springframework.beans.factory.annotation.Autowired
@@ -41,6 +43,8 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
     @Test
     void serveSyntheticDashboardForBrowserAcceptance() throws Exception {
         long account = userAccounts.createAccount("browser-fixture@example.test");
+        org.mockito.Mockito.doReturn(java.util.List.of(new com.tidymail.rules.GmailRuleProvider.Destination("Label_42","Offers"),new com.tidymail.rules.GmailRuleProvider.Destination("Label_43","Receipts"))).when(ruleLabels).destinations(org.mockito.ArgumentMatchers.any());
+        org.mockito.Mockito.doAnswer(i->ruleLabels.useDestination(i.getArgument(1),"Label_42")).when(ruleLabels).prepare(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any());
         jdbc.update("UPDATE classification_budget SET owner_account=? WHERE id=1",account);
         classification.automatic(account,false);
         jdbc.update(
@@ -199,6 +203,10 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
             return null;
         }).when(gmailProvider).cleanupOnce(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyList(),
                 org.mockito.ArgumentMatchers.any());
+        org.mockito.Mockito.doAnswer(call->{
+            java.util.List<String> ids=call.getArgument(1);String label=call.getArgument(2);boolean skip=call.getArgument(3);
+            for(String id:ids)providerLabels.computeIfPresent(id,(key,current)->{var next=new java.util.HashSet<>(current);next.add(label);if(skip)next.remove("INBOX");return next;});return null;
+        }).when(gmailProvider).fileOnce(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.anyList(),org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.anyBoolean());
         var cleanup = java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
         cleanup.scheduleWithFixedDelay(cleanupWorker::tick, 1, 1, java.util.concurrent.TimeUnit.SECONDS);
         var session = new MockHttpSession();
@@ -221,7 +229,7 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
                 byte[] body = response.getContentAsByteArray();
                 if (exchange.getRequestURI().getPath().equals("/dashboard")) {
                     String html=new String(body,java.nio.charset.StandardCharsets.UTF_8);
-                    body=html.replace("<h1>TidyMail</h1>","<h1>TidyMail</h1><p><strong>Synthetic test mailbox — no real emails.</strong></p>").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                    body=html.replace("<h1>Mailbox</h1>","<h1>Mailbox</h1><small data-browser-fixture>Synthetic test mailbox</small>").getBytes(java.nio.charset.StandardCharsets.UTF_8);
                 }
                 exchange.sendResponseHeaders(response.getStatus(), body.length == 0 ? -1 : body.length);
                 if (body.length > 0)

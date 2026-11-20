@@ -18,6 +18,20 @@ import org.springframework.transaction.annotation.Transactional;
 class MailboxActivityJourneyTest extends PostgresJourneyTest {
 
     @Test
+    void cleanupDashboardIsAStandalonePageWithAccountScopedEmptyHistory() throws Exception {
+        String email = "dashboard-activity@example.test";
+        userAccounts.createAccount(email);
+        String page = mockMvc.perform(get("/activity").with(authenticatedAs(email)))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(page).contains("<h1>Activity</h1>", "Total mail cleared", "Top cleared senders",
+            "Cleanup history", "No cleanup activity yet", "Page 1 of 1", "Storage saved: unavailable",
+            "href=\"/activity\" data-activity-link aria-current=\"page\"")
+            .doesNotContain("<dialog", "id=\"senderTable\"");
+        mockMvc.perform(get("/activity").param("page", "-1").with(authenticatedAs(email)))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void activityRouteRendersTruthfulAccountScopedStatus() throws Exception {
         String email = "activity@example.test";
         long accountId = userAccounts.createAccount(email);
@@ -32,7 +46,7 @@ class MailboxActivityJourneyTest extends PostgresJourneyTest {
                 'COMPLETE', ?)
             """, accountId, Timestamp.from(checkedAt), Timestamp.from(checkedAt));
 
-        String page = mockMvc.perform(get("/activity")
+        String page = mockMvc.perform(get("/activity/sync")
                 .param("account", Long.toString(accountId))
                 .with(authenticatedAs(email)))
             .andExpect(status().isOk())

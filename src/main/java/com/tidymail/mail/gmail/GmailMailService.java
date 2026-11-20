@@ -488,12 +488,20 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
             throw new IllegalArgumentException("Cleanup requires 1–1000 unique exact IDs");
         if(!java.util.Set.of(BulkActionType.MARK_READ,BulkActionType.ARCHIVE,BulkActionType.TRASH,BulkActionType.MARK_READ_ARCHIVE).contains(action))
             throw new IllegalArgumentException("Unsupported dashboard action");
+        modifyOnce(account,messageIds,action,null,false);
+    }
+    @Override public void fileOnce(UserAccount account,List<String> ids,String label,boolean skipInbox) {
+        if(ids==null||ids.isEmpty()||ids.size()>1000||new HashSet<>(ids).size()!=ids.size()||ids.stream().anyMatch(id->id==null||id.isBlank())||label==null||label.isBlank())throw new IllegalArgumentException("Exact IDs and label required");
+        modifyOnce(account,ids,null,label,skipInbox);
+    }
+    private void modifyOnce(UserAccount account,List<String> messageIds,BulkActionType action,String label,boolean skipInbox) {
         Gmail gmail=clientFactory.buildFor(account);
         rateLimiter.supplyWithCleanupPermit(() -> {
             rateLimiter.charge(account.getId(),50,false);
             try {
                 var body=new BatchModifyMessagesRequest().setIds(List.copyOf(messageIds));
-                if(action==BulkActionType.TRASH)body.setAddLabelIds(List.of("TRASH"));
+                if(label!=null) {body.setAddLabelIds(List.of(label));if(skipInbox)body.setRemoveLabelIds(List.of("INBOX"));}
+                else if(action==BulkActionType.TRASH)body.setAddLabelIds(List.of("TRASH"));
                 else body.setRemoveLabelIds(switch (action) {
                     case ARCHIVE -> List.of("INBOX");
                     case MARK_READ -> List.of("UNREAD");

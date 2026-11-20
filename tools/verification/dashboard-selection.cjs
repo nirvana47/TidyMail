@@ -33,6 +33,7 @@ let previewIds = [], delaySelection = null, selectionStarted = null;
           .replace('th:src="@{/static/js/dashboard.js}"', 'src="/static/js/dashboard.js"')
           .replace('th:src="@{/static/js/inbox-rules.js}"', 'src="/static/js/inbox-rules.js"')
           .replace('th:href="@{/static/css/rules.css}"', 'href="/static/css/rules.css"')
+          .replace('<aside th:replace="~{fragments/app-sidebar :: sidebar(\'mailbox\', \'\')}"></aside>', fs.readFileSync(path.join(root, 'src/main/resources/templates/fragments/app-sidebar.html'), 'utf8').match(/<aside[\s\S]*?<\/aside>/)[0].replace('th:attr="aria-current=${active == \'mailbox\' ? \'page\' : null}"', 'aria-current="page"'))
           .replace('<body ', '<body data-provider="google" data-account="fixture" ')
           .replace('name="_csrf_header"', 'name="_csrf_header" content="X-CSRF-TOKEN"');
         return route.fulfill({ contentType: 'text/html', body: html });
@@ -81,6 +82,34 @@ let previewIds = [], delaySelection = null, selectionStarted = null;
     const selectedCount = count => expect(page.locator('#selectionCount')).toHaveText(`${count} messages selected`);
     const expand = label => page.getByRole('button', { name: `Show sender addresses for ${label}`, exact: true }).click();
     await page.goto('https://tidymail.test/');
+    // Real keyboard-operated overlays and filter changes must preserve existing scope rules.
+    await page.locator('#filtersOpen').click();
+    await expect(page.locator('#filtersDialog')).toBeVisible();
+    await page.locator('#start').fill('2026-01-01');
+    await page.locator('#start').dispatchEvent('change');
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#filtersOpen')).toBeFocused();
+    await expect(page.locator('#activeFilters')).toContainText('From 2026-01-01');
+    await page.getByRole('button', { name: 'Remove filter: From 2026-01-01', exact: true }).click();
+    await expect(page.locator('#start')).toHaveValue('');
+    await expect(page.locator('#filterCount')).toBeHidden();
+    await page.locator('[data-settings-link]').click();
+    await expect(page.locator('#settings')).toBeVisible();
+    await page.locator('#toolsOpen').click();
+    await expect(page.locator('#settings')).not.toBeVisible();
+    await expect(page.locator('#tools')).toBeVisible();
+    assert.equal(await page.locator('dialog[open]').count(), 1);
+    await page.keyboard.press('Escape');
+    await page.locator('#detailClose').click();
+    await expect(page.locator('#detail')).toBeHidden();
+    await page.locator('[data-focus-key=sender-linkedin]').click();
+    await expect(page.locator('#detail')).toBeVisible();
+    if (process.env.TIDYMAIL_UI_SCREENSHOTS) {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.screenshot({ path: path.join(process.env.TIDYMAIL_UI_SCREENSHOTS, 'mailbox.png') });
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+      await page.setViewportSize({ width: 1500, height: 1100 });
+    }
     await expand('LinkedIn');
     await addressBox(inmail).evaluate(input => window.scrollBy(0, input.getBoundingClientRect().top - 150));
     const scrollBeforeSelection = await page.evaluate(() => window.scrollY);
@@ -103,19 +132,31 @@ let previewIds = [], delaySelection = null, selectionStarted = null;
     await expand('LinkedIn'); await expand('LinkedIn');
     await expect(addressBox(inmail)).toBeChecked(); await expect(addressBox(invitations)).toBeChecked();
     await expand('Target'); await selectedCount(69);
-    await page.locator('[data-action="MARK_READ_ARCHIVE"]').click();
+    await page.locator('#messageAction').selectOption('MARK_READ_ARCHIVE');
     await page.locator('#createMessageRule').click();
     await expect(page.locator('#inboxRule')).toBeVisible();
     await expect(page.locator('#inboxRuleContent [name="senders"]')).toHaveValue([inmail, invitations].sort().join(', '));
-    await expect(page.locator('#inboxRuleContent [name="action"]')).toHaveValue('READ_ARCHIVE');
+    await expect(page.locator('#inboxRuleContent [name="action"]')).toHaveValue('ORGANIZE');
     assert.equal(page.url(), 'https://tidymail.test/');
     await page.locator('#inboxRuleContent button').click();
     await expect(page.locator('#inboxRuleError')).toHaveText('Choose a valid sender address.');
     await expect(page.locator('#inboxRuleContent [name="senders"]')).toHaveValue([inmail, invitations].sort().join(', '));
-    await page.locator('#inboxRule [data-close]').click(); await selectedCount(69);
+    await page.locator('#inboxRuleContent [name="name"]').fill('Unsaved rule name');
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#inboxRule')).toBeVisible();
+    await expect(page.locator('#inboxRuleError')).toContainText('unsaved changes');
+    await page.getByRole('button', { name: 'Keep editing', exact: true }).click();
+    await page.locator('#inboxRule [data-close]').click();
+    await page.getByRole('button', { name: 'Discard changes', exact: true }).click(); await selectedCount(69);
     await expect(addressBox(inmail)).toBeChecked(); await expect(addressBox(invitations)).toBeChecked();
-    await page.locator('[data-action="TRASH"]').click(); await page.locator('#review').click();
+    await page.locator('#messageAction').selectOption('TRASH'); await page.locator('#review').click();
     await expect(page.locator('#confirm')).toBeVisible();
+    if (process.env.TIDYMAIL_UI_SCREENSHOTS) {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.screenshot({ path: path.join(process.env.TIDYMAIL_UI_SCREENSHOTS, 'cleanup-review.png') });
+      const bounds = await page.locator('#confirm').boundingBox(); assert(bounds.y >= 0 && bounds.y + bounds.height <= 800);
+      await page.setViewportSize({ width: 1500, height: 1100 });
+    }
     assert.equal(previewIds.length, 69); assert.equal(new Set(previewIds).size, 69);
     assert(previewIds.every(id => id.includes('linkedin.com')));
     await page.getByRole('button', { name: 'Back to selection', exact: true }).click();

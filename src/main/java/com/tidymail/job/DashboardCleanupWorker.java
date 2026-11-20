@@ -21,14 +21,15 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 @Component
 public class DashboardCleanupWorker {
     private static final org.slf4j.Logger log=LoggerFactory.getLogger(DashboardCleanupWorker.class);
+    private final com.tidymail.service.MailDestinationService destinations;
     private final DashboardJobService jobs;
     private final UserAccountRepository accounts;
     private final Map<String,MailProvider> providers;
     private final OutlookMailService outlook;
     private final ScheduledExecutorService executor=Executors.newSingleThreadScheduledExecutor(r->{var t=new Thread(r,"dashboard-cleanup");t.setDaemon(true);return t;});
     private final AtomicBoolean running=new AtomicBoolean();
-    public DashboardCleanupWorker(DashboardJobService jobs,UserAccountRepository accounts,Map<String,MailProvider> providers,OutlookMailService outlook) {
-        this.jobs=jobs;this.accounts=accounts;this.providers=providers;this.outlook=outlook;
+    public DashboardCleanupWorker(DashboardJobService jobs,UserAccountRepository accounts,Map<String,MailProvider> providers,OutlookMailService outlook,com.tidymail.service.MailDestinationService destinations) {
+        this.destinations=destinations;this.jobs=jobs;this.accounts=accounts;this.providers=providers;this.outlook=outlook;
     }
     @Value("${app.cleanup.worker.enabled:${spring.task.scheduling.enabled:true}}") private boolean enabled;
     @Value("${app.cleanup.poll-ms:1000}") private long pollMs;
@@ -60,6 +61,11 @@ public class DashboardCleanupWorker {
             reader=claim.outlook() ? ids -> outlook.getCurrentMetadata(account, ids)
                 : ids -> ((MailboxSyncProvider)gmail).getCleanupMetadata(account, ids);
         } catch(RuntimeException error){diagnose(claim,"before dispatch",error);jobs.defer(claim,error);return true;}
+        if(claim.action().equals("ORGANIZE") && jobs.destinationId(claim)==null) {
+            if(!jobs.destinationIntent(claim)){jobs.destinationFailed(claim);return true;}
+            try {jobs.destinationReady(claim,destinations.prepare(claim.account(),jobs.destination(claim)));}
+            catch(RuntimeException error){diagnose(claim,"destination creation",error);jobs.destinationFailed(claim);return true;}
+        }
         if(claim.verification()) {
             Map<String,MailMessage> observations;RuntimeException failure=null;
             try{observations=read(reader,claim.targets());}
@@ -74,7 +80,11 @@ public class DashboardCleanupWorker {
         Map<String,CleanupResult> results=new HashMap<>();
         var ids=dispatch.targets().stream().map(Target::providerId).toList();
         try {
-            if(claim.outlook())results=outlook.cleanup(account,ids,dispatch.outlookReadIds(),BulkActionType.valueOf(claim.action()),
+            if(claim.action().equals("ORGANIZE")) {
+                if(claim.outlook())results=outlook.fileOnce(account,ids,jobs.destinationId(claim));
+                else gmail.fileOnce(account,ids,jobs.destinationId(claim),jobs.destination(claim).skipInbox());
+            }
+            else if(claim.outlook())results=outlook.cleanup(account,ids,dispatch.outlookReadIds(),BulkActionType.valueOf(claim.action()),
                 read->jobs.completeAcknowledged(dispatch,read,true));
             else if(claim.action().equals("MARK_READ"))gmail.markReadOnce(account,ids);
             else gmail.cleanupOnce(account,ids,BulkActionType.valueOf(claim.action()));

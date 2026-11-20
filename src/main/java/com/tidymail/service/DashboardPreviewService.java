@@ -18,19 +18,22 @@ public class DashboardPreviewService {
     private final DashboardRepository repository;
     private final ActionScopeHasher hasher;
     private final ObjectMapper json;
-    public DashboardPreviewService(DashboardRepository repository,ActionScopeHasher hasher,ObjectMapper json) {
-        this.repository=repository;this.hasher=hasher;this.json=json;
+    private final MailDestinationService destinations;
+    public DashboardPreviewService(DashboardRepository repository,ActionScopeHasher hasher,ObjectMapper json,MailDestinationService destinations) {
+        this.repository=repository;this.hasher=hasher;this.json=json;this.destinations=destinations;
     }
-    public record Request(DashboardFilter filter,List<UUID> ids,String action,long revision,Long classificationRevision) {
+    public record Request(DashboardFilter filter,List<UUID> ids,String action,long revision,Long classificationRevision,MailDestinationService.Choice destination) {
+        public Request(DashboardFilter filter,List<UUID> ids,String action,long revision,Long classificationRevision){this(filter,ids,action,revision,classificationRevision,null);}
         public Request(DashboardFilter filter,List<UUID> ids,String action,long revision){this(filter,ids,action,revision,null);}
     }
-    public record Preview(UUID id,String action,int selected,int effective,int skipped,int protectedCount,DashboardFilter filter,Map<String,Object> coverage,Instant expiresAt,long knownBytes,int unknownSizes,long effectiveBytes) {}
+    public record Preview(UUID id,String action,int selected,int effective,int skipped,int protectedCount,DashboardFilter filter,Map<String,Object> coverage,Instant expiresAt,long knownBytes,int unknownSizes,long effectiveBytes,MailDestinationService.Choice destination) {}
     public record Targets(List<Map<String,Object>> rows,long total,int page) {}
 
     @Transactional(isolation=Isolation.REPEATABLE_READ)
     public Preview create(long account,Request request) {
         if(request==null || request.filter()==null || request.ids()==null || request.ids().isEmpty()
             || !DashboardJobService.ACTIONS.contains(Objects.toString(request.action(),""))) throw bad("Choose messages and an action");
+        var destination="ORGANIZE".equals(request.action())?destinations.validate(account,request.destination()):null;
         var jdbc=repository.jdbc();
         jdbc.queryForObject("SELECT id FROM user_accounts WHERE id=:account FOR UPDATE",Map.of("account",account),Long.class);
         if(request.revision()!=repository.revision(account)) throw conflict("Grouping changed. Create a new preview.");
@@ -42,7 +45,7 @@ public class DashboardPreviewService {
         var targets=jdbc.queryForList(repository.filtered(account, request.filter().cleanupScope())+"""
           SELECT m.provider_message_id,m.dashboard_message_id,m.subject_header,m.size_estimate,
             COALESCE(m.dashboard_from_address,CASE WHEN NOT :bySenderAddress THEN m.from_address END,'Unknown sender') address,m.received_at,
-            f.id IS NOT NULL AS eligible,m.provider,
+            f.id IS NOT NULL AS eligible,m.provider,m.labels,m.outlook_folder_id,
             CASE WHEN m.provider='microsoft' THEN NOT('OUTLOOK_ARCHIVE'=ANY(m.labels)) ELSE 'INBOX'=ANY(m.labels) END can_archive,m.unread,
             EXISTS(SELECT 1 FROM protected_senders protected WHERE protected.account_id=m.account_id
               AND protected.sender_address=lower(COALESCE(m.dashboard_from_address,m.from_address,''))) protected
@@ -54,8 +57,13 @@ public class DashboardPreviewService {
         for(var target:targets) {
             boolean protectedTarget=Boolean.TRUE.equals(target.get("protected"));if(protectedTarget) protectedCount++;
             String archiveState="microsoft".equals(target.get("provider")) ? "in Archive" : "outside Inbox";
+            var labels=target.get("labels") instanceof java.sql.Array array?sqlLabels(array):List.<String>of();
+            boolean alreadyFiled=destination!=null && destination.mode().equals("EXISTING") &&
+                ("microsoft".equals(target.get("provider"))?destination.id().equals(target.get("outlook_folder_id")):
+                labels.contains(destination.id()) && (!destination.skipInbox() || !labels.contains("INBOX")));
             String reason=!Boolean.TRUE.equals(target.get("eligible")) ? "No longer matches these filters or received-mail eligibility"
                 : protectedTarget ? "Protected sender"
+                : alreadyFiled ? "Already in requested destination"
                 : request.action().equals("ARCHIVE") && !Boolean.TRUE.equals(target.get("can_archive")) ? "Already " + archiveState
                 : request.action().equals("MARK_READ") && !Boolean.TRUE.equals(target.get("unread")) ? "Already read"
                 : request.action().equals("MARK_READ_ARCHIVE") && !Boolean.TRUE.equals(target.get("unread"))
@@ -84,7 +92,9 @@ public class DashboardPreviewService {
           """,p);
         UUID id=UUID.randomUUID();Instant expires=Instant.now().plusSeconds(1800);
         var coverage=jdbc.queryForMap("SELECT count(*) indexed,min(received_at) oldest,max(received_at) newest,max(last_synced_at) as_of FROM message_metadata WHERE account_id=:account",p);
-        p.addValue("preview",id).addValue("revision",request.revision()).addValue("filter",encode(Map.of("filter",request.filter().firstPage(),"coverage",coverage)))
+        var snapshot=new LinkedHashMap<String,Object>();snapshot.put("filter",request.filter().firstPage());snapshot.put("coverage",coverage);
+        if(destination!=null)snapshot.put("destination",destination);
+        p.addValue("preview",id).addValue("revision",request.revision()).addValue("filter",encode(snapshot))
             .addValue("effective",effective).addValue("expires",DashboardRepository.timestamp(expires));
         jdbc.update("""
           INSERT INTO dashboard_previews(public_id,account_id,scope_id,grouping_revision,filter_snapshot,selected_count,effective_count,expires_at)
@@ -96,7 +106,7 @@ public class DashboardPreviewService {
           INSERT INTO dashboard_preview_targets(preview_id,account_id,ordinal,message_id,provider_message_id,subject_header,sender_address,received_at,effective,reason,size_estimate)
           VALUES(:preview,:account,:ordinal,:dashboard_message_id,:provider_message_id,:subject_header,:address,:received_at,:effective,:reason,:size_estimate)
           """,rows);
-        return new Preview(id,request.action(),targets.size(),effective,targets.size()-effective,protectedCount,request.filter().firstPage(),coverage,expires,knownBytes,unknownSizes,effectiveBytes);
+        return new Preview(id,request.action(),targets.size(),effective,targets.size()-effective,protectedCount,request.filter().firstPage(),coverage,expires,knownBytes,unknownSizes,effectiveBytes,destination);
     }
 
     @Transactional(readOnly=true,isolation=Isolation.REPEATABLE_READ)
@@ -111,6 +121,9 @@ public class DashboardPreviewService {
     @Transactional
     public void invalidate(long account,UUID preview) {
         repository.jdbc().update("UPDATE dashboard_previews SET invalidated_at=now() WHERE account_id=:account AND public_id=:preview",Map.of("account",account,"preview",preview));
+    }
+    private List<String> sqlLabels(java.sql.Array array) {
+        try{return Arrays.asList((String[])array.getArray());}catch(java.sql.SQLException e){throw new IllegalStateException(e);}
     }
     private String encode(Object value) {try{return json.writeValueAsString(value);}catch(JsonProcessingException error){throw new IllegalStateException(error);}}
     private static ResponseStatusException bad(String message) {return new ResponseStatusException(HttpStatus.BAD_REQUEST,message);}

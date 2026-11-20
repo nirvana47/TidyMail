@@ -19,8 +19,10 @@ import org.junit.jupiter.params.provider.CsvSource;
 import com.tidymail.mail.BulkActionType;
 
 class DashboardGmailDispatchTest {
-    @ParameterizedTest @CsvSource({"200,MARK_READ","401,MARK_READ","503,MARK_READ","200,ARCHIVE","401,ARCHIVE","503,ARCHIVE","200,TRASH","401,TRASH","503,TRASH","200,MARK_READ_ARCHIVE","503,MARK_READ_ARCHIVE"})
-    void exactCleanupRequestDisablesAutomaticReplayEvenWhenInitializerAllowsRetries(int status,BulkActionType action) throws Exception {
+    @ParameterizedTest @CsvSource({"200,MARK_READ","401,MARK_READ","503,MARK_READ","200,ARCHIVE","401,ARCHIVE","503,ARCHIVE","200,TRASH","401,TRASH","503,TRASH","200,MARK_READ_ARCHIVE","503,MARK_READ_ARCHIVE","200,FILING","503,FILING","200,FILING_ARCHIVE","503,FILING_ARCHIVE"})
+    void exactCleanupRequestDisablesAutomaticReplayEvenWhenInitializerAllowsRetries(int status,String actionName) throws Exception {
+        boolean filing=actionName.startsWith("FILING"), skipInbox=actionName.equals("FILING_ARCHIVE");
+        BulkActionType action=filing?null:BulkActionType.valueOf(actionName);
         var server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
         var calls=new AtomicInteger();var body=new AtomicReference<String>();var path=new AtomicReference<String>();
         server.createContext("/",exchange->{
@@ -37,12 +39,20 @@ class DashboardGmailDispatchTest {
             var factory=mock(GmailClientFactory.class);var account=new UserAccount();when(factory.buildFor(account)).thenReturn(gmail);
             var config=new GmailSyncConfigProperties();config.setApiConcurrency(2);config.setBatchDelayMs(0);var limiter=new GmailRateLimiter(config);limiter.init();
             var provider=new GmailMailService(factory,limiter,config);
-            if(status==200)provider.cleanupOnce(account,List.of("synthetic-one","synthetic-two"),action);
-            else assertThatThrownBy(()->provider.cleanupOnce(account,List.of("synthetic-one","synthetic-two"),action)).hasMessageContaining("verification");
+            org.assertj.core.api.ThrowableAssert.ThrowingCallable mutation=()->{
+                if(filing)provider.fileOnce(account,List.of("synthetic-one","synthetic-two"),"Label_42",skipInbox);
+                else provider.cleanupOnce(account,List.of("synthetic-one","synthetic-two"),action);
+            };
+            if(status==200)assertThatCode(mutation).doesNotThrowAnyException();else assertThatThrownBy(mutation).hasMessageContaining("verification");
             assertThat(calls.get()).isEqualTo(1);assertThat(path.get()).endsWith("/users/me/messages/batchModify");
             var request=new com.fasterxml.jackson.databind.ObjectMapper().readTree(body.get());
             assertThat(request.get("ids").toString()).isEqualTo("[\"synthetic-one\",\"synthetic-two\"]");
-            if(action==BulkActionType.TRASH){assertThat(request.get("addLabelIds").toString()).isEqualTo("[\"TRASH\"]");assertThat(request.has("removeLabelIds")).isFalse();}
+            if(filing) {
+                assertThat(request.path("addLabelIds").toString()).isEqualTo("[\"Label_42\"]");
+                if(skipInbox)assertThat(request.path("removeLabelIds").toString()).isEqualTo("[\"INBOX\"]");
+                else assertThat(request.has("removeLabelIds")).isFalse();
+            }
+            else if(action==BulkActionType.TRASH){assertThat(request.get("addLabelIds").toString()).isEqualTo("[\"TRASH\"]");assertThat(request.has("removeLabelIds")).isFalse();}
             else {assertThat(request.get("removeLabelIds").toString()).isEqualTo(switch (action) {
                 case ARCHIVE -> "[\"INBOX\"]";
                 case MARK_READ_ARCHIVE -> "[\"UNREAD\",\"INBOX\"]";

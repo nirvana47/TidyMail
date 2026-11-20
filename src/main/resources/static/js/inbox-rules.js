@@ -5,9 +5,8 @@
   const content = document.getElementById('inboxRuleContent');
   const error = document.getElementById('inboxRuleError');
   const title = document.getElementById('inboxRuleTitle');
-  const actionMap = { MARK_READ: 'READ', MARK_READ_ARCHIVE: 'READ_ARCHIVE', ARCHIVE: 'ARCHIVE', TRASH: 'TRASH' };
-  const actionNames = { READ: 'Mark as read', READ_ARCHIVE: 'Read and archive', ARCHIVE: 'Archive', TRASH: 'Move to Trash' };
-  let account, generation = 0, pending = false, opener;
+  const actionNames = { ORGANIZE: 'Organize', READ: 'Mark as read', READ_ARCHIVE: 'Read and archive', ARCHIVE: 'Archive', TRASH: 'Move to Trash' };
+  let account, generation = 0, pending = false, dirty = false, opener;
 
   function report(message) { error.textContent = message; error.hidden = false; }
   async function load(url, body, defaults) {
@@ -31,6 +30,8 @@
       const editor = html.getElementById('ruleEditorContent');
       if (!editor) throw new Error('The rule editor could not be loaded. Your inbox selection is unchanged.');
       content.replaceChildren(document.importNode(editor, true));
+      document.dispatchEvent(new Event('tidymail:rule-form-loaded'));
+      dirty = false;
       // Consent uses a separate tab so it does not discard the inbox or the saved draft.
       for (const link of content.querySelectorAll('a[href^="/rules/connect/"]')) { link.target = '_blank'; link.rel = 'noopener'; }
       if (defaults) {
@@ -40,7 +41,8 @@
       const result = content.querySelector('[data-inbox-rule-result]');
       title.textContent = result ? 'Rule status' : 'Create rule';
       const preview = content.querySelector('[data-rule-preview]');
-      if (preview) preview.scrollIntoView({ block: 'start' });
+      const focus = preview || content.querySelector('[name="name"]') || result;
+      if (focus) { if (focus.tagName !== 'INPUT') focus.tabIndex = -1; focus.focus({ preventScroll: true }); focus.scrollIntoView({ block: 'nearest' }); }
     } catch (failure) {
       if (request === generation && dialog.open) report(failure.message);
     } finally {
@@ -54,8 +56,8 @@
   document.addEventListener('tidymail:create-rule', event => {
     if (dialog.open || pending) return;
     const { senders, action, context } = event.detail;
-    account = event.detail.account; generation++; opener = document.activeElement;
-    const ruleAction = actionMap[action] || 'READ_ARCHIVE';
+    dirty = false; account = event.detail.account; generation++; opener = document.activeElement;
+    const ruleAction = 'ORGANIZE';
     title.textContent = 'Create rule';
     document.getElementById('inboxRuleContext').textContent = `${context} · ${senders.join(', ')}`;
     content.replaceChildren(document.createTextNode('Loading rule editor…'));
@@ -64,6 +66,7 @@
   });
   content.addEventListener('submit', event => {
     const form = event.target;
+    if (event.defaultPrevented) return;
     event.preventDefault();
     if (pending || !form.reportValidity()) return;
     load(form.getAttribute('action'), new URLSearchParams(new FormData(form)));
@@ -80,9 +83,24 @@
   // An edited form must be saved and previewed again before its native rule can be enabled.
   content.addEventListener('input', event => {
     if (!event.target.closest('form[action$="/rules/save"]')) return;
+    dirty = true;
     const preview = content.querySelector('[data-rule-preview]');
     if (preview) { preview.remove(); report('Your changes need a fresh preview. Save the draft to review them.'); }
   });
+  function reviewDiscard() {
+    report('This rule has unsaved changes. Discard them and return to your mailbox?');
+    const keep = document.createElement('button'); keep.type = 'button'; keep.textContent = 'Keep editing';
+    const discard = document.createElement('button'); discard.type = 'button'; discard.textContent = 'Discard changes'; discard.className = 'danger';
+    const actions = document.createElement('span'); actions.className = 'row'; actions.append(keep, discard); error.append(actions);
+    keep.onclick = () => { error.hidden = true; content.querySelector('[name="name"]')?.focus(); };
+    discard.onclick = () => { dirty = false; dialog.close(); };
+    keep.focus(); error.scrollIntoView({ block: 'nearest' });
+  }
+  dialog.addEventListener('click', event => {
+    if (dirty && event.target.closest('[data-close="inboxRule"], [data-inbox-rule-done]')) { event.preventDefault(); event.stopImmediatePropagation(); reviewDiscard(); }
+  }, true);
+  dialog.addEventListener('cancel', event => { if (dirty) { event.preventDefault(); reviewDiscard(); } });
+  window.addEventListener('beforeunload', event => { if (dialog.open && dirty) { event.preventDefault(); event.returnValue = ''; } });
   dialog.addEventListener('close', () => {
     generation++; pending = false; content.removeAttribute('aria-busy');
     if (opener?.isConnected) opener.focus({ preventScroll: true });

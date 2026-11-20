@@ -34,7 +34,7 @@ public class ActivityController {
      * Serves the full Activity page for the selected mailbox (or the user's
      * current account when none is specified).
      */
-    @GetMapping("/activity")
+    @GetMapping("/activity/sync")
     public String activity(
             @RequestParam(name = "account", required = false) String account,
             OAuth2AuthenticationToken authentication,
@@ -42,7 +42,7 @@ public class ActivityController {
         ActivityPageModel page = activity.pageModel(mvpEnabled ? "current" : account, authentication);
         model.addAttribute("page", page);
         model.addAttribute("mvpEnabled", mvpEnabled);
-        return "activity";
+        return "sync-activity";
     }
 
     /**

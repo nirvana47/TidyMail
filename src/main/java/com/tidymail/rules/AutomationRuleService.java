@@ -14,11 +14,12 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class AutomationRuleService {
+    private final RuleResults results;
     private final RuleStore store;private final UserAccountRepository accounts;private final ProviderDeepLinkService links;
     private final Map<String,RuleProvider> providers=new HashMap<>();
     private final ConcurrentHashMap<Long,Object> locks=new ConcurrentHashMap<>();
-    public AutomationRuleService(RuleStore store,UserAccountRepository accounts,ProviderDeepLinkService links,List<RuleProvider> providers){
-        this.store=store;this.accounts=accounts;this.links=links;providers.forEach(p->this.providers.put(p.provider(),p));
+    public AutomationRuleService(RuleStore store,UserAccountRepository accounts,ProviderDeepLinkService links,List<RuleProvider> providers,RuleResults results){
+        this.results=results;this.store=store;this.accounts=accounts;this.links=links;providers.forEach(p->this.providers.put(p.provider(),p));
     }
     private UserAccount account(long id){return accounts.findById(id).orElseThrow(()->new ResponseStatusException(HttpStatus.NOT_FOUND,"Mailbox not found."));}
     private RuleProvider provider(UserAccount a){var p=providers.get(a.getProvider());if(p==null)throw new IllegalStateException("Rules are unavailable for this provider.");return p;}
@@ -51,15 +52,30 @@ public class AutomationRuleService {
         return store.save(account,id,version,d);
     });}
     public RuleStore.Saved get(long account,UUID id){return store.get(account,id);}
+    public Map<String,Object> results(long account,UUID id){return serial(account,()->{
+        var r=store.get(account,id);var a=account(account);
+        if(r.definition().organize())results.observe(a,provider(a),r,false);
+        return results.summary(r);
+    });}
+    public void refreshResults(long account,UUID id){serial(account,()->{
+        var a=account(account);requirePermission(a);var r=store.get(account,id);
+        results.observe(a,provider(a),r,true);return null;
+    });}
     private List<String> protectedSenders(long account,RuleDefinition d){return store.jdbc().queryForList(
         "SELECT sender_address FROM protected_senders WHERE account_id=:account AND sender_address IN (:senders) ORDER BY sender_address",
         Map.of("account",account,"senders",d.senders()),String.class);}
 
+    private String localPhrasePredicate(List<String> phrases,String prefix,Map<String,Object> params) {
+        var clauses=new ArrayList<String>();
+        for(int i=0;i<phrases.size();i++){String key=prefix+i;params.put(key,phrases.get(i).toLowerCase(Locale.ROOT));clauses.add("position(:"+key+" in lower(COALESCE(subject_header,'')))>0");}
+        return clauses.isEmpty()?"true":"("+String.join(" OR ",clauses)+")";
+    }
     public Map<String,Object> preview(long id,UUID ruleId){return serial(id,()->{
         var a=account(id);var r=store.get(id,ruleId);var d=r.definition();var p=provider(a);
         var params=new HashMap<String,Object>();params.put("account",id);params.put("senders",d.senders());params.put("subject",d.subject().toLowerCase(Locale.ROOT));params.put("except",d.exceptSubject().toLowerCase(Locale.ROOT));
         boolean deployable=true;String matchingNote="";
-        String bucket="CASE WHEN :subject<>'' AND position(:subject in lower(COALESCE(subject_header,'')))=0 THEN 'other' WHEN :except<>'' AND position(:except in lower(COALESCE(subject_header,'')))>0 THEN 'excluded' ELSE 'match' END";
+        String include=localPhrasePredicate(d.subjects(),"include",params), exclude=localPhrasePredicate(d.exceptions(),"exclude",params);
+        String bucket="CASE WHEN NOT ("+include+") THEN 'other' WHEN "+(d.exceptions().isEmpty()?"false":exclude)+" THEN 'excluded' ELSE 'match' END";
         if(p instanceof GmailRuleProvider gmail&&(!d.subject().isEmpty()||!d.exceptSubject().isEmpty())){
             try{var matches=gmail.matching(a,d);
                 params.put("included",matches.included().isEmpty()?List.of("__no_matches__"):matches.included());
@@ -112,9 +128,12 @@ public class AutomationRuleService {
         for(var existing:inventory){
             if(existing.id().equals(r.remoteId())||!existing.enabled()||existing.compatible()==null)continue;
             if(!Collections.disjoint(existing.compatible().senders(),r.definition().senders())
-                &&!existing.compatible().action().equals(r.definition().action()))RuleStore.conflict("An existing rule handles this sender differently. Resolve that overlap in mailbox settings first.");
+                &&(!existing.compatible().action().equals(r.definition().action())
+                  ||!existing.compatible().destination().equals(r.definition().destination())))RuleStore.conflict("An existing rule handles this sender differently. Resolve that overlap in mailbox settings first.");
         }
         JsonNode payload=p.compile(a,r.definition(),inventory);
+        String destination=results.destination(r);
+        if(r.definition().organize()&&destination!=null)payload=p.useDestination(payload,destination);
         if(p.provider().equals("microsoft")&&r.remoteId()==null&&r.remoteSnapshot()!=null&&r.remoteSnapshot().has("sequence"))
             ((com.fasterxml.jackson.databind.node.ObjectNode)payload).set("sequence",r.remoteSnapshot().get("sequence"));
         if(r.remoteId()!=null){
@@ -123,9 +142,19 @@ public class AutomationRuleService {
             store.claim(r,"RESUME",nativeRule.raw());
             try{p.resume(a,r.remoteId());confirm(a,p,r,"RESUME");}catch(RuntimeException e){store.attention(r,"Resume needs verification. Refresh rules; do not recreate the rule.");}
         }else{
-            if(inventory.stream().anyMatch(n->p.behavior(n.raw()).equals(p.behavior(payload))||sameDefinition(n.compatible(),r.definition())))RuleStore.conflict("An equivalent rule already exists. Manage that rule instead of creating a duplicate.");
+            final JsonNode candidate=payload;
+            if(inventory.stream().anyMatch(n->p.behavior(n.raw()).equals(p.behavior(candidate))||sameDefinition(n.compatible(),r.definition())))RuleStore.conflict("An equivalent rule already exists. Manage that rule instead of creating a duplicate.");
             store.claim(r,"CREATE",payload);
-            try{String created=p.create(a,payload);store.recordCreated(r,created);confirm(a,p,r,"CREATE");}catch(RuntimeException e){store.attention(r,"Creation needs verification. Refresh rules before trying another operation.");}
+            try{
+                payload=p.prepare(a,payload);
+                // Persist the actual destination ID before dispatching a native rule; reconciliation needs this exact payload.
+                final JsonNode ready=payload;
+                if(inventory.stream().anyMatch(n->p.behavior(n.raw()).equals(p.behavior(ready))))
+                    throw new IllegalStateException("An equivalent native rule already exists. Inspect mailbox settings.");
+                store.prepared(r,payload);
+                results.baseline(a,p,r,payload);
+                String created=p.create(a,payload);store.recordCreated(r,created);confirm(a,p,r,"CREATE");
+            }catch(RuntimeException e){store.attention(r,"Creation needs verification. Refresh rules before trying another operation.");}
         }return null;
     });}
     public void manage(long account,UUID id,String action){serial(account,()->{
@@ -170,6 +199,7 @@ public class AutomationRuleService {
             final var pending=r;long matches=inventory.stream().filter(n->p.behavior(n.raw()).equals(p.behavior(pending.operation()))).count();
             if(matches!=0)RuleStore.conflict("Matching native rules still exist. Resolve their state in mailbox settings first.");
             store.settle(r,"DRAFT",null,null,"No native rule found; uncertain creation explicitly cleared");
+            store.jdbc().update("DELETE FROM automation_rule_results WHERE rule_id=:rule AND account_id=:account",Map.of("rule",id,"account",account));
         }else{
             var n=find(inventory,r.remoteId());
             if(n==null)store.settle(r,"PAUSED",null,null,"Native rule absence acknowledged");
@@ -177,7 +207,13 @@ public class AutomationRuleService {
             else RuleStore.conflict("The native definition changed. Restore or remove it in mailbox settings before resolving.");
         }return null;
     });}
-    public void refresh(long account){serial(account,()->{var a=account(account);requirePermission(a);var p=provider(a);reconcile(a,p,p.list(a));return null;});}
+    public void refresh(long account){refresh(account,true);}
+    private void refresh(long account,boolean manual){serial(account,()->{
+        var a=account(account);requirePermission(a);var p=provider(a);reconcile(a,p,p.list(a));
+        for(var r:store.list(account))if(r.definition().organize()&&r.pending()==null)
+            results.observe(a,p,r,manual||results.countDue(r));
+        return null;
+    });}
     private RuleProvider.NativeRule find(List<RuleProvider.NativeRule> list,String id){return list.stream().filter(n->n.id().equals(id)).findFirst().orElse(null);}
     private void confirm(UserAccount a,RuleProvider p,RuleStore.Saved r,String op){reconcileOne(a,p,store.get(a.getId(),r.id()),p.list(a));}
     private void reconcile(UserAccount a,RuleProvider p,List<RuleProvider.NativeRule> inventory){for(var r:store.list(a.getId()))reconcileOne(a,p,r,inventory);}
@@ -214,14 +250,15 @@ public class AutomationRuleService {
     }
     public void reconcileDue(){
         var due=store.jdbc().queryForList("SELECT DISTINCT account_id FROM automation_rules WHERE state<>'REMOVED' AND (remote_id IS NOT NULL OR pending_operation IS NOT NULL) AND (checked_at IS NULL OR checked_at<now()-interval '5 minutes')",Map.of(),Long.class);
-        for(long id:due)try{var a=account(id);if(permitted(a))refresh(id);}
+        for(long id:due)try{var a=account(id);if(permitted(a))refresh(id,false);}
             catch(RuntimeException unavailable){
                 for(var r:store.list(id))if(r.remoteId()!=null||r.pending()!=null)store.attention(r,"Provider state could not be checked. Native rules may still be running; refresh or inspect mailbox settings.");
             }
     }
     private boolean sameDefinition(RuleDefinition a,RuleDefinition b){
         return a!=null&&a.senders().equals(b.senders())&&a.subject().equalsIgnoreCase(b.subject())
-            &&a.exceptSubject().equalsIgnoreCase(b.exceptSubject())&&a.action().equals(b.action());
+            &&a.exceptSubject().equalsIgnoreCase(b.exceptSubject())&&a.action().equals(b.action())
+            &&a.destination().equalsIgnoreCase(b.destination())&&a.destinationId().equals(b.destinationId())&&a.skipInbox()==b.skipInbox();
     }
     private String inventoryFingerprint(List<RuleProvider.NativeRule> inventory){
         return fingerprint(inventory.stream().sorted(Comparator.comparing(RuleProvider.NativeRule::id)).map(RuleProvider.NativeRule::raw).toList());

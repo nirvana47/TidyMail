@@ -21,6 +21,9 @@ public interface MailProvider {
         if(action==BulkActionType.MARK_READ)markReadOnce(account,messageIds);
         else throw new UnsupportedOperationException("Durable cleanup unavailable for this provider");
     }
+    default void fileOnce(UserAccount account,List<String> ids,String label,boolean skipInbox) {
+        throw new UnsupportedOperationException("Manual filing unavailable");
+    }
     /**
      * Describes what this provider can report reliably; unknown by default.
      */

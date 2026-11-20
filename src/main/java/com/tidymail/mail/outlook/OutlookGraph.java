@@ -95,7 +95,7 @@ public class OutlookGraph {
                 .headers(headers -> headers.setBearerAuth(token))
                 .header("Prefer", "IdType=\"ImmutableId\", odata.maxpagesize=100");
             if (payload != null) request.contentType(MediaType.APPLICATION_JSON).body(payload);
-            if (method.equals(HttpMethod.GET) || uri.getPath().equals("/v1.0/$batch")) {
+            if (method.equals(HttpMethod.GET) || method.equals(HttpMethod.POST)) {
                 var body = request.retrieve().body(JsonNode.class);
                 if (uri.getPath().equals("/v1.0/$batch") && body != null) for (var response : body.path("responses")) {
                     var failure=failure(response);

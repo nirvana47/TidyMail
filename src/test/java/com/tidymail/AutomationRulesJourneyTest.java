@@ -40,6 +40,7 @@ class AutomationRulesJourneyTest extends PostgresJourneyTest {
 
     @BeforeEach void prepare(){
         nativeGmail.clear();creates=0;uncertain=false;
+        doReturn(List.of()).when(gmailRules).destinations(any());
         account=userAccounts.createAccount(EMAIL);
         var a=accounts.findById(account).orElseThrow();a.setScopes(List.of("https://www.googleapis.com/auth/gmail.settings.basic"));accounts.save(a);
         doAnswer(i->List.copyOf(nativeGmail)).when(gmailRules).list(any());
@@ -83,6 +84,99 @@ class AutomationRulesJourneyTest extends PostgresJourneyTest {
         rules.manage(account,id,"remove");assertThat(nativeGmail).isEmpty();assertThat(rules.get(account,id).state()).isEqualTo("REMOVED");
     }
 
+    @Test void multipleSubjectPhrasesKeepSenderScopeAndAnyExceptionWinsAcrossPreviewAndNativePayloads() throws Exception {
+        long outlook=userAccounts.createAccount("phrases@example.test","microsoft");
+        var a=accounts.findById(outlook).orElseThrow();a.setScopes(List.of("MailboxSettings.ReadWrite"));accounts.save(a);
+        when(graph.request(eq(a),eq(HttpMethod.GET),anyString(),isNull())).thenReturn(json.readTree("{\"value\":[]}"));
+        // Repository may return a separate account entity, so match the account ID.
+        when(graph.request(argThat(v->v.getId().equals(outlook)),eq(HttpMethod.GET),anyString(),isNull())).thenReturn(json.readTree("{\"value\":[]}"));
+        String[] subjects={"Weekly offers","Monthly sale","Weekly offers receipt","Monthly sale invoice","Unrelated"};
+        for(int i=0;i<subjects.length;i++)jdbc.update("INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,subject_header,received_at) VALUES(?,'microsoft',?,?,?,now())",outlook,"phrase-"+i,SENDER,subjects[i]);
+        jdbc.update("INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,subject_header,received_at) VALUES(?,'microsoft','other-sender','different@example.test','Weekly offers',now())",outlook);
+        var d=new RuleDefinition("Offers and sales",List.of(SENDER),"Weekly offers\nMonthly sale","receipt\ninvoice","READ");
+        UUID id=rules.save(outlook,null,0,d);var preview=rules.preview(outlook,id);
+        assertThat(((Map<?,?>)preview.get("counts")).get("matched")).isEqualTo(2L);
+        assertThat(((Map<?,?>)preview.get("counts")).get("excluded")).isEqualTo(2L);
+        assertThat(((Map<?,?>)preview.get("counts")).get("other")).isEqualTo(1L);
+        var nativeRule=new OutlookRuleProvider(graph,json).compile(a,d,List.of());
+        assertThat(nativeRule.path("conditions").path("subjectContains")).isEqualTo(json.readTree("[\"Weekly offers\",\"Monthly sale\"]"));
+        assertThat(nativeRule.path("exceptions").path("subjectContains")).hasSize(2);
+        var gmail=gmailRules.compile(accounts.findById(account).orElseThrow(),d,List.of());
+        assertThat(gmail.path("criteria").path("query").asText()).isEqualTo("{subject:\"Weekly offers\" subject:\"Monthly sale\"}");
+        assertThat(gmail.path("criteria").path("negatedQuery").asText()).isEqualTo("{subject:\"receipt\" subject:\"invoice\"}");
+        assertThat(rules.get(outlook,id).definition().subjects()).containsExactly("Weekly offers","Monthly sale");
+        verify(gmailRules,never()).create(any(),any());
+    }
+
+    @Test void existingGmailDeletionRuleCanBeConvertedThroughEditorAndRetainsResultsAfterMailMoves() throws Exception {
+        mockMvc.perform(get("/rules/new?action=TRASH").with(authenticatedAs(EMAIL)))
+            .andExpect(status().isOk()).andExpect(model().attribute("initialAction","ORGANIZE"));
+        doAnswer(i->gmailRules.useDestination(i.getArgument(1),"Label_results")).when(gmailRules).prepare(any(),any());
+        doReturn(12L).when(gmailRules).destinationCount(any(),eq("Label_results"));
+        var original=json.readTree("{\"id\":\"existing-trash\",\"criteria\":{\"from\":\"offers@example.test\"},\"action\":{\"addLabelIds\":[\"TRASH\"]}}");
+        nativeGmail.add(new RuleProvider.NativeRule("existing-trash","Gmail filter",true,false,original,
+            new RuleDefinition("Imported deletion rule",List.of(SENDER),"","","TRASH"),""));
+        UUID adopted=rules.adopt(account,"existing-trash",rules.fingerprint(original));
+        mockMvc.perform(get("/rules/"+adopted).with(authenticatedAs(EMAIL))).andExpect(status().isOk());
+        rules.manage(account,adopted,"pause");assertThat(nativeGmail).isEmpty();
+        var saved=mockMvc.perform(post("/rules/save").with(authenticatedAs(EMAIL)).with(csrfToken())
+            .param("account",""+account).param("id",adopted.toString()).param("version",""+rules.get(account,adopted).version())
+            .param("name","Organize offers").param("senders",SENDER)
+            .param("action","ORGANIZE").param("destination","TidyMail - Offers"))
+            .andExpect(status().is3xxRedirection()).andReturn();
+        UUID id=UUID.fromString(saved.getResponse().getRedirectedUrl().split("/")[2].split("\\?")[0]);
+        UUID preview=preview(account,id);
+        assertThat(creates).isZero();verify(gmailRules,never()).prepare(any(),any());
+        rules.enable(account,id,preview,true);
+        assertThat(rules.get(account,id).state()).isEqualTo("ACTIVE");
+        assertThat(nativeGmail.getFirst().raw().path("action").path("addLabelIds").get(0).asText()).isEqualTo("Label_results");
+        assertThat(nativeGmail.getFirst().raw().path("action").has("removeLabelIds")).isFalse();
+        // One new message, one historical message manually labeled: only new mail is observed.
+        jdbc.update("INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,labels,received_at) VALUES(?,'google','new-1',?,ARRAY['Label_results'],now()+interval '1 second')",account,SENDER);
+        jdbc.update("UPDATE message_metadata SET labels=ARRAY['Label_results'],received_at=now()-interval '1 day' WHERE account_id=? AND provider_message_id='mail-1'",account);
+        assertThat(rules.results(account,id).get("observed")).isEqualTo(1L);
+        assertThat(rules.results(account,id).get("week_count")).isEqualTo(1L);
+        assertThat(rules.results(account,id).get("baseline_count")).isEqualTo(12L);
+        jdbc.update("UPDATE message_metadata SET labels=ARRAY['INBOX'] WHERE account_id=?",account);
+        assertThat(rules.results(account,id).get("observed")).isEqualTo(1L);
+        mockMvc.perform(get("/rules/"+id).with(authenticatedAs(EMAIL)))
+            .andExpect(status().isOk()).andExpect(content().string(org.hamcrest.Matchers.containsString("Gmail label results")));
+        doThrow(new IllegalStateException("Provider unavailable")).when(gmailRules).destinationCount(any(),anyString());
+        rules.refresh(account);
+        assertThat(rules.get(account,id).state()).isEqualTo("ACTIVE");
+        assertThat(rules.results(account,id).get("count_error")).isEqualTo(true);
+        assertThat(rules.results(account,id).get("current_count")).isEqualTo(12L);
+        doReturn(13L).when(gmailRules).destinationCount(any(),anyString());
+        mockMvc.perform(post("/rules/"+id+"/results/refresh").with(authenticatedAs(EMAIL)).with(csrfToken())
+            .param("account",""+account).param("inbox","true")).andExpect(redirectedUrl("/rules/"+id+"?inbox=true&result=true"));
+        assertThat(rules.results(account,id).get("current_count")).isEqualTo(13L);
+        rules.manage(account,id,"pause");
+        rules.enable(account,id,preview(account,id),true);
+        assertThat(rules.results(account,id).get("baseline_count")).isEqualTo(12L);
+        assertThat(rules.results(account,id).get("observed")).isEqualTo(1L);
+        assertThat(nativeGmail.getFirst().raw().path("action").path("addLabelIds").get(0).asText()).isEqualTo("Label_results");
+        long foreign=userAccounts.createAccount("foreign-results@example.test");
+        assertThatThrownBy(()->rules.results(foreign,id)).isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+    }
+
+    @Test void failedDestinationPreparationNeverDispatchesRuleAndLostNativeResponseStillReconciles(){
+        var d=new RuleDefinition("Organize offers",List.of(SENDER),"","","ORGANIZE","TidyMail - Offers",true);
+        UUID id=rules.save(account,null,0,d);
+        doThrow(new IllegalStateException("Destination response lost")).when(gmailRules).prepare(any(),any());
+        rules.enable(account,id,preview(account,id),true);
+        assertThat(creates).isZero();assertThat(rules.get(account,id).pending()).isEqualTo("CREATE");
+        rules.refresh(account);assertThat(creates).isZero();
+        UUID second=rules.save(account,null,0,d);
+        doAnswer(i->gmailRules.useDestination(i.getArgument(1),"Label_results")).when(gmailRules).prepare(any(),any());
+        doReturn(0L).when(gmailRules).destinationCount(any(),anyString());uncertain=true;
+        rules.enable(account,second,preview(account,second),true);
+        assertThat(creates).isEqualTo(1);
+        assertThat(rules.get(account,second).pending()).isEqualTo("CREATE");
+        rules.refresh(account);assertThat(rules.get(account,second).state()).isEqualTo("ACTIVE");
+        assertThat(creates).isEqualTo(1);
+        assertThat(nativeGmail.getFirst().raw().path("action").path("removeLabelIds").get(0).asText()).isEqualTo("INBOX");
+    }
+
     @Test void lostCreationResponseRecoversWithoutDuplicatesAndExternalChangesAreNotOverwritten(){
         UUID id=draft(account);uncertain=true;
         rules.enable(account,id,preview(account,id),true);
@@ -105,6 +199,33 @@ class AutomationRulesJourneyTest extends PostgresJourneyTest {
         jdbc.update("INSERT INTO protected_senders(account_id,sender_address,source) VALUES(?,?,'USER')",account,SENDER);
         assertThatThrownBy(()->rules.enable(account,id,(UUID)p.get("id"),true)).hasMessageContaining("protected");assertThat(creates).isZero();
         mockMvc.perform(get("/rules/"+id+"?preview=true").with(authenticatedAs(EMAIL))).andExpect(status().isOk());
+    }
+
+    @Test void outlookOrganizeUsesNativeFolderAndReportsObservedMailWithoutChangingOldMessages(){
+        long outlook=userAccounts.createAccount("outlook-organize@example.test","microsoft");
+        var a=accounts.findById(outlook).orElseThrow();a.setScopes(List.of("MailboxSettings.ReadWrite"));accounts.save(a);
+        var inventory=new LinkedHashMap<String,JsonNode>();
+        when(graph.request(any(),any(),anyString(),nullable(Object.class))).thenAnswer(i->{
+            HttpMethod method=i.getArgument(1);String path=i.getArgument(2);Object payload=i.getArgument(3);
+            if(path.equals("/v1.0/me/mailFolders")&&method==HttpMethod.POST)return json.createObjectNode().put("id","offers-folder");
+            if(path.contains("offers-folder?$select=totalItemCount"))return json.createObjectNode().put("totalItemCount",3);
+            if(path.contains("mailFolders/archive"))return json.createObjectNode().put("id","archive-folder");
+            if(method==HttpMethod.GET){var page=json.createObjectNode();var values=page.putArray("value");
+                if(path.contains("messageRules"))inventory.values().forEach(values::add);return page;}
+            if(method==HttpMethod.PATCH){((ObjectNode)inventory.get("native-organize")).put("isEnabled",(Boolean)((Map<?,?>)payload).get("isEnabled"));return null;}
+            JsonNode created=((JsonNode)payload).deepCopy();((ObjectNode)created).put("id","native-organize");inventory.put("native-organize",created);return created;
+        });
+        UUID id=rules.save(outlook,null,0,new RuleDefinition("Organize offers",List.of(SENDER),"","","ORGANIZE","TidyMail - Offers",false));
+        UUID review=preview(outlook,id);
+        verify(graph,never()).request(any(),eq(HttpMethod.POST),anyString(),any());
+        rules.enable(outlook,id,review,true);
+        assertThat(rules.get(outlook,id).state()).isEqualTo("ACTIVE");
+        assertThat(inventory.get("native-organize").path("actions").path("moveToFolder").asText()).isEqualTo("offers-folder");
+        jdbc.update("INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,outlook_folder_id,received_at) VALUES(?,'microsoft','outlook-new',?,'offers-folder',now()+interval '1 second')",outlook,SENDER);
+        assertThat(rules.results(outlook,id).get("observed")).isEqualTo(1L);
+        assertThat(rules.results(outlook,id).get("baseline_count")).isEqualTo(3L);
+        rules.manage(outlook,id,"pause");rules.enable(outlook,id,preview(outlook,id),true);
+        assertThat(inventory).hasSize(1);assertThat(rules.get(outlook,id).state()).isEqualTo("ACTIVE");
     }
 
     @Test void existingOutlookReadArchiveRuleCanBeAdoptedPausedEditedAndReenabledWithoutLosingNativeSettings() throws Exception {

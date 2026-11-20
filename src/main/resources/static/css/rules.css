@@ -1,17 +1,245 @@
-.rules-page{max-width:1120px}.rules-page h1{margin:12px 0 6px}.rules-page .surface{margin:24px 0;padding:24px}.rule-form{display:grid;gap:18px;max-width:780px}.rule-form fieldset{border:0;padding:0;display:grid;gap:16px}.rule-form label{display:grid;gap:8px;font-weight:600}.rule-form input,.rule-form textarea,.rule-form select{width:100%;box-sizing:border-box;padding:10px;font:inherit}.rule-form input[type=checkbox]{width:auto}.rule-form label.row{display:flex;align-items:center;font-weight:400}.rule-form button{justify-self:start}.rule-columns{display:grid;grid-template-columns:1fr 1fr;gap:20px}.rule-alert{padding:14px 18px;background:#fff4dd;color:#694100;border-left:3px solid #c78c26;border-radius:6px}.native-rule{border-top:1px solid #ddd;padding:18px 0}.native-rule pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:300px;overflow:auto;font-size:13px}.rule-actions{display:flex;gap:12px;flex-wrap:wrap;align-items:center}.rules-page td{vertical-align:top}.rules-page td p{margin:7px 0;max-width:540px}.rules-page table{width:100%}.rules-page a.button{display:inline-block;padding:10px 16px;border:1px solid #c4c9d3;border-radius:8px;text-decoration:none}.rules-page small{font-weight:400}@media(max-width:700px){.rule-columns{grid-template-columns:1fr}.rules-page .surface{padding:14px}}
+.rules-page {
+    max-width:1200px!important
+}
+.rules-page>h1 {
+    margin:24px 0 6px
+}
+.rules-page>.muted {
+    margin-bottom:18px
+}
+.rules-page>.surface {
+    margin:12px 0;
+    padding:16px
+}
+.rules-page>.surface>h2 {
+    font-size:18px
+}
+.rules-page p {
+    margin:6px 0
+}
+.rules-page>.row {
+    margin-top:16px
+}
+.rules-page .app-header h1 {
+    margin:0 0 4px
+}
+.rules-page .app-header p {
+    margin:0;
+    font-size:12px
+}
+.rule-form {
+    display:grid;
+    gap:10px;
+    max-width:780px
+}
+.rule-form fieldset {
+    border:0;
+    padding:0;
+    display:grid;
+    gap:10px
+}
+.rule-form label {
+    display:grid;
+    gap:7px;
+    font-weight:550;
+    font-size:13px
+}
+.rule-form input,.rule-form textarea,.rule-form select {
+    width:100%;
+    box-sizing:border-box;
+    font:inherit
+}
+.rule-form textarea {
+    resize:vertical;
+    min-height:64px
+}
+.rule-form input[type=checkbox] {
+    width:17px
+}
+.rule-form label.row {
+    display:flex;
+    align-items:flex-start;
+    font-weight:400
+}
+.rule-form button {
+    justify-self:start
+}
+.rule-columns {
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:10px
+}
+.rule-alert {
+    font-size:13px
+}
+.native-rule {
+    border-top:1px solid var(--line);
+    padding:10px 0
+}
+.native-rule pre {
+    white-space:pre-wrap;
+    overflow-wrap:anywhere;
+    max-height:250px;
+    overflow:auto;
+    font-size:12px;
+    background:#f6f8fc;
+    border-radius:7px;
+    padding:12px
+}
+.rule-actions {
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    align-items:center
+}
+.rule-actions button,.rule-actions a {
+    font-size:12px
+}
+.rules-page td {
+    vertical-align:top;
+    white-space:normal;
+    overflow-wrap:anywhere
+}
+.rules-page td p {
+    margin:6px 0;
+    max-width:480px;
+    font-size:12px
+}
+.rules-page table {
+    width:100%
+}
+.rule-table {
+    overflow:auto
+}
+.rule-table td:first-child {
+    min-width:220px
+}
+.rule-table td:last-child {
+    min-width:200px
+}
+.rules-page small {
+    font-weight:400
+}
+.rule-example-group {
+    margin:10px 0;
+    border:1px solid var(--line);
+    border-radius:8px;
+    overflow:auto
+}
+.rule-example-group summary {
+    font-weight:550;
+    padding:12px;
+    background:#f7f9fd
+}
+.rule-example-group table {
+    font-size:12px
+}
+.rule-example-group td {
+    max-width:280px
+}
+.preview-counts {
+    padding:12px 0;
+    color:var(--muted);
+    font-size:13px
+}
+.preview-counts strong {
+    color:var(--blue)
+}
+.matching-help {
+    font-size:12px
+}
+.matching-help p,.preview-coverage p {
+    font-size:12px
+}
+.preview-coverage {
+    margin:12px 0
+}
+.rules-page [data-rule-preview]>.rule-form {
+    margin-top:20px;
+    padding-top:16px;
+    border-top:1px solid var(--line)
+}
+/* The same editor is used in the contextual drawer and on its own page. */
+dialog#inboxRule {
+    width:min(680px,calc(100% - 40px));
+    max-width:680px;
+    padding:20px 24px
+}
+#inboxRuleContent .app {
+    padding:0;
+    max-width:100%;
+    margin:0
+}
+#inboxRuleContent .rules-page>h1,#inboxRuleContent .rules-page>.info-callout,#inboxRuleContent .rules-page>.muted {
+    display:none
+}
+#inboxRuleContent .surface {
+    padding:0;
+    margin:20px 0;
+    border:0;
+    border-radius:0;
+    box-shadow:none
+}
+#inboxRuleContent .rule-form {
+    max-width:100%;
+    gap:12px
+}
+#inboxRuleContent .rule-columns {
+    gap:14px
+}
+#inboxRuleContent label {
+    margin:0
+}
+#inboxRuleContent .surface p {
+    margin:6px 0;
+    font-size:12px
+}
+#inboxRuleContent [aria-busy=true] {
+    opacity:.7
+}
+#inboxRuleContext {
+    font-size:12px;
+    color:var(--muted);
+    overflow-wrap:anywhere
+}
+#inboxRule>details {
+    font-size:12px
+}
+#inboxRuleContent [data-rule-preview] {
+    border-top:1px solid var(--line);
+    padding-top:20px
+}
+#inboxRuleContent [data-rule-preview]>.rule-form {
+    position:sticky;
+    bottom:-20px;
+    background:white;
+    padding:14px 0;
+    z-index:2
+}
+#inboxRuleContent .rule-example-group {
+    max-height:280px;
+    overflow:auto
+}
+@media(max-width:900px) {
+    .rule-columns {
+        grid-template-columns:1fr
+    }
+    .rules-page>.surface {
+        padding:16px
+    }
+}
+@media(max-width:800px) {
+    dialog#inboxRule {
+        width:100%;
+        padding:18px
+    }
+    #inboxRuleContent [data-rule-preview]>.rule-form {
+        bottom:-18px
+    }
+}
 
-.rule-example-group{margin:18px 0}.rule-example-group summary{font-weight:600;cursor:pointer}.rule-example-group table{margin-top:12px}
-
-/* Contextual creation stays over the mailbox, using the same server-rendered editor. */
-dialog#inboxRule{width:min(760px,100%);max-width:760px;padding:20px 24px;box-sizing:border-box}
-#inboxRuleContent .app{padding:0;max-width:100%}
-#inboxRuleContent .rules-page>h1{display:none}
-#inboxRuleContent .surface{padding:16px;margin:16px 0;box-shadow:none}
-#inboxRuleContent .rule-form{max-width:100%;gap:12px}
-#inboxRuleContent .rule-columns{gap:14px}
-#inboxRuleContent label{margin:0}
-#inboxRuleContent table{font-size:13px}
-#inboxRuleContent .surface p{margin:10px 0}
-#inboxRuleContent [aria-busy=true]{opacity:.7}
-#createSenderRule{margin-top:8px}
-.message-text>button{margin-top:8px}
+/* Keep editable phrase lists compact at desktop drawer widths. */
+[data-phrase-rows] { display:grid; gap:6px; margin:6px 0; }
+[data-phrase-rows] > .row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:6px; align-items:center; }
+.rule-form [data-phrase-rows] input { min-width:0; }
+.rule-form [data-phrase-rows] button { margin:0; padding:7px 9px; }

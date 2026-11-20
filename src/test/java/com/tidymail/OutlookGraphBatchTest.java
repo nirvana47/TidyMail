@@ -95,6 +95,23 @@ class OutlookGraphBatchTest {
         } finally {release.countDown();endpoint.stop(0);}
     }
 
+    @Test void folderAndRuleCreationReturnTheirResponseIdentities() {
+        var manager=mock(OAuth2AuthorizedClientManager.class);
+        var registration=ClientRegistration.withRegistrationId("microsoft").clientId("fixture")
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE).redirectUri("http://localhost/callback")
+            .authorizationUri("https://login.example/authorize").tokenUri("https://login.example/token").build();
+        var token=new OAuth2AccessToken(OAuth2AccessToken.TokenType.BEARER,"fixture-token",Instant.now(),Instant.now().plusSeconds(3600));
+        when(manager.authorize(any(OAuth2AuthorizeRequest.class))).thenReturn(new OAuth2AuthorizedClient(registration,"fixture",token));
+        var graph=new OutlookGraph(manager);var builder=RestClient.builder();
+        var server=MockRestServiceServer.bindTo(builder).build();ReflectionTestUtils.setField(graph,"rest",builder.build());
+        var account=new UserAccount();account.setId(7L);account.setProvider("microsoft");account.setProviderAccountId("fixture");account.setOauthStatus(UserAccount.OAuthStatus.ACTIVE);
+        for(String path:java.util.List.of("/v1.0/me/mailFolders","/v1.0/me/mailFolders/inbox/messageRules"))
+            server.expect(requestTo("https://graph.microsoft.com"+path)).andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(org.springframework.http.HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON).body("{\"id\":\"created-id\"}"));
+        assertThat(graph.request(account,HttpMethod.POST,"/v1.0/me/mailFolders",Map.of("displayName","Fixture")).path("id").asText()).isEqualTo("created-id");
+        assertThat(graph.request(account,HttpMethod.POST,"/v1.0/me/mailFolders/inbox/messageRules",Map.of()).path("id").asText()).isEqualTo("created-id");server.verify();
+    }
+
     @Test void transientAuthorizationFailureCanRetryBecauseNoGraphRequestWasSent() {
         var manager=mock(OAuth2AuthorizedClientManager.class);
         when(manager.authorize(any(OAuth2AuthorizeRequest.class))).thenThrow(

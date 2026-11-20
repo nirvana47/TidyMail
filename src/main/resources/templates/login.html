@@ -4,52 +4,19 @@
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>TidyMail — Sign in</title>
-        <style>
-            * { box-sizing: border-box; margin: 0; padding: 0; }
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: #0f172a; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; color: #1a202c; }
-            .shell { width: min(100%, 980px); display: grid; grid-template-columns: 1.15fr 0.85fr; overflow: hidden; border-radius: 24px; background: white; box-shadow: 0 30px 90px rgba(15, 23, 42, 0.35); }
-            .intro { padding: 56px 52px; color: #e2e8f0; background: radial-gradient(circle at 15% 10%, #4f46e5 0, transparent 43%), linear-gradient(145deg, #172554, #0f172a 72%); }
-            .eyebrow { display: inline-flex; padding: 6px 10px; border-radius: 999px; background: rgba(255,255,255,0.12); color: #c7d2fe; font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
-            .intro h1 { color: white; font-size: clamp(32px, 4vw, 46px); letter-spacing: -0.04em; margin: 20px 0 16px; }
-            .intro-copy { max-width: 460px; color: #cbd5e1; font-size: 17px; line-height: 1.6; }
-            .promise-list { display: grid; gap: 16px; margin-top: 36px; list-style: none; }
-            .promise-list li { display: grid; grid-template-columns: 30px 1fr; gap: 12px; font-size: 14px; line-height: 1.45; color: #cbd5e1; }
-            .promise-icon { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; background: rgba(129, 140, 248, 0.22); color: #c7d2fe; font-weight: 700; }
-            .card { padding: 48px 40px; width: 100%; }
-            .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 42px; }
-            .brand-logo { width: 40px; height: 40px; border-radius: 10px; background: linear-gradient(135deg, #4f46e5, #7c3aed); display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 20px; letter-spacing: -0.5px; }
-            .brand-name { font-size: 22px; font-weight: 700; color: #111827; }
-            h1 { font-size: 26px; font-weight: 700; color: #111827; margin-bottom: 8px; line-height: 1.2; }
-            .subtitle { font-size: 14px; color: #6b7280; margin-bottom: 32px; line-height: 1.5; }
-            .providers { display: flex; flex-direction: column; gap: 12px; }
-            .oauth-btn { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; padding: 14px 20px; border-radius: 10px; border: 1px solid #e5e7eb; background: white; font-size: 15px; font-weight: 600; color: #111827; cursor: pointer; text-decoration: none; transition: all 0.15s ease; }
-            .oauth-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); border-color: #d1d5db; }
-            .oauth-btn.google { border-color: #dadce0; }
-            .oauth-btn.google:hover { border-color: #c1c6cc; background: #fafafa; }
-            .oauth-btn.microsoft { background: #0078d4; color: white; border-color: #0078d4; }
-            .oauth-btn.microsoft:hover { background: #106ebe; border-color: #106ebe; }
-            .oauth-icon { width: 22px; height: 22px; flex-shrink: 0; }
-            .warning { background: #fff7ed; border-left: 4px solid #f59e0b; padding: 16px; border-radius: 8px; margin-bottom: 24px; }
-            .warning-title { font-weight: 700; color: #92400e; margin-bottom: 6px; font-size: 14px; }
-            .warning-text { font-size: 13px; color: #78350f; line-height: 1.5; }
-            .warning-text code { background: #fef3c7; padding: 2px 6px; border-radius: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
-            .divider { height: 1px; background: #e5e7eb; margin: 28px 0; }
-            .privacy-note { font-size: 12px; color: #64748b; text-align: left; line-height: 1.6; }
-            .privacy-note strong { color: #334155; }
-            @media (max-width: 720px) { body { padding: 0; } .shell { min-height: 100vh; border-radius: 0; grid-template-columns: 1fr; } .intro { padding: 40px 28px; } .card { padding: 36px 28px; } .promise-list { margin-top: 24px; } }
-            @media (max-width: 480px) { .intro h1 { font-size: 31px; } .card { padding: 28px 20px; } h1 { font-size: 22px; } }
-        </style>
+        <link rel="stylesheet" th:href="@{/static/css/ui.css}">
+        <link rel="stylesheet" th:href="@{/static/css/login.css}">
     </head>
     <body>
         <main class="shell">
             <section class="intro">
                 <span class="eyebrow">Inbox cleanup, on your terms</span>
                 <h1>Clear the mail you no longer need.</h1>
-                <p class="intro-copy">TidyMail groups your inbox by sender so you can make deliberate, high-impact cleanup decisions without an AI deciding what matters to you.</p>
+                <p class="intro-copy">See your inbox by sender, inspect the details, and choose what to keep or clear.</p>
                 <ul class="promise-list">
                     <li><span class="promise-icon">1</span><span><strong>See the pattern.</strong><br>Review senders, message counts, and clear signals before choosing anything.</span></li>
-                    <li><span class="promise-icon">2</span><span><strong>Build a review list.</strong><br>Actions stay queued until you review and apply them together.</span></li>
-                    <li><span class="promise-icon">3</span><span><strong>Keep control.</strong><br>TidyMail reads only the headers it needs to organize your inbox, never message bodies.</span></li>
+                    <li><span class="promise-icon">2</span><span><strong>Build a review list.</strong><br>Review the exact emails before confirming a cleanup action.</span></li>
+                    <li><span class="promise-icon">3</span><span><strong>Keep control.</strong><br>You choose cleanup actions. Optional email checks and classification explain their data access before you run them.</span></li>
                 </ul>
             </section>
             <section class="card">
@@ -89,7 +56,7 @@
 
             <div class="divider" th:if="${googleAvailable or microsoftAvailable}"></div>
             <p class="privacy-note" th:if="${googleAvailable or microsoftAvailable}">
-                <strong>Your mail stays yours.</strong> TidyMail never downloads email bodies. It uses sender and delivery headers to organize the inbox, and encrypts connection tokens before storing them locally.
+                <strong>Your mail stays yours.</strong> TidyMail starts with message metadata and encrypts connection tokens stored locally. Optional detail checks and classification have separate data-access explanations.
             </p>
             </section>
         </main>

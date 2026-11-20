@@ -1,10 +1,11 @@
 <!doctype html>
 <html lang="en" xmlns:th="http://www.thymeleaf.org">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TidyMail — Rules</title>
-<link rel="stylesheet" th:href="@{/static/css/dashboard.css}"><link rel="stylesheet" th:href="@{/static/css/rules.css}"></head>
-<body><main class="app rules-page">
-<header class="row spread"><div><a href="/dashboard">← Mailbox</a><h1>Rules</h1><p class="muted" th:text="${email}"></p></div><a class="button" href="/rules/new">Create rule</a></header>
-<p>Handle future incoming emails automatically. Drafts and previews do not change your mailbox.</p>
+<link rel="stylesheet" th:href="@{/static/css/dashboard.css}"><link rel="stylesheet" th:href="@{/static/css/rules.css}"><script defer th:src="@{/static/js/ui.js}"></script></head>
+<body class="tm-shell"><aside th:replace="~{fragments/app-sidebar :: sidebar('rules', ${email})}"></aside><main class="app rules-page">
+<header class="app-header row spread"><div><h1>Rules</h1><p class="muted" th:text="${email}"></p></div><a class="button primary" href="/rules/new">Create rule</a></header>
+<p th:text="${provider=='google'?'Organize future incoming email with Gmail labels. Archive and deletion are optional.':'Organize future incoming email with Outlook folders. Archive and deletion are optional.'}"></p>
+<p class="muted">To change an existing rule, open it, pause it, choose a different action, then preview and enable. Drafts and previews do not change your mailbox.</p>
 <p th:if="${error}" class="rule-alert" role="alert" th:text="${error}"></p><p th:if="${!data.error.isEmpty()}" class="rule-alert" role="alert" th:text="${data.error}"></p>
 <div class="row">
 <form th:action="@{/dashboard/accounts/switch}" method="post" th:if="${#lists.size(mailboxAccounts)>1}"><label>Mailbox <select name="account"><option th:each="a:${mailboxAccounts}" th:value="${a.id}" th:selected="${a.id==account}" th:text="${a.email}"></option></select></label><button>Switch mailbox</button></form>
@@ -15,20 +16,20 @@
 <div th:each="s:${suggestions}" class="native-rule"><strong th:text="${s.sender}"></strong><p th:text="${s.count+' recorded emails · '+s.actionLabel+' · '+s.available+' emails currently available for examples'}"></p><div class="row"><a th:href="@{/rules/new(sender=${s.sender},action=${s.action})}">Review a draft</a><form th:action="@{/rules/suggestions/dismiss}" method="post"><input type="hidden" name="account" th:value="${account}"><input type="hidden" name="sender" th:value="${s.sender}"><input type="hidden" name="action" th:value="${s.action}"><button>Dismiss suggestion</button></form></div></div><p class="muted">Dismissed suggestions return only after ten additional cleanup examples.</p></section>
 <section class="surface"><h2>Your rules</h2>
 <p th:if="${#lists.isEmpty(data.rules)}" class="muted">No saved rules yet. Start with a sender whose future emails you consistently want handled the same way.</p>
-<table th:unless="${#lists.isEmpty(data.rules)}"><thead><tr><th>Rule</th><th>Status</th><th>Last checked</th><th>Manage</th></tr></thead><tbody>
-<tr th:each="r:${data.rules}"><td><a th:href="@{/rules/{id}(id=${r.id})}" th:text="${r.definition.name}"></a><p class="muted" th:text="${r.definition.sentence()}"></p><p th:if="${r.detail}" class="muted" th:text="${r.detail}"></p></td>
-<td th:text="${r.state=='ATTENTION'?'Needs attention':#strings.capitalize(#strings.toLowerCase(r.state))}"></td><td th:text="${r.checked==null?'Not checked':#temporals.format(r.checked,'MMM d, HH:mm', 'America/Los_Angeles')}"></td>
-<td><div class="rule-actions"><a th:href="@{/rules/{id}(id=${r.id},preview=true)}" th:text="${r.state=='PAUSED'?'Review / resume':'Review'}"></a>
+<div class="rule-table"><table th:unless="${#lists.isEmpty(data.rules)}"><thead><tr><th>Rule</th><th>Status</th><th>Last checked</th><th>Manage</th></tr></thead><tbody>
+<tr th:each="r:${data.rules}"><td><a th:href="@{/rules/{id}(id=${r.id})}" th:text="${r.definition.name}"></a><p class="muted" th:text="${r.definition.sentence(provider)}"></p><p th:if="${r.detail}" class="muted" th:text="${r.detail}"></p></td>
+<td><span class="status-badge" th:attr="data-state=${r.state}" th:text="${r.state=='ATTENTION'?'Needs attention':#strings.capitalize(#strings.toLowerCase(r.state))}"></span></td><td th:text="${r.checked==null?'Not checked':#temporals.format(r.checked,'MMM d, HH:mm', 'America/Los_Angeles')}"></td>
+<td><div class="rule-actions"><a th:href="@{/rules/{id}(id=${r.id},preview=true)}" th:text="${r.state=='PAUSED'?'Review / resume':(r.definition.organize()?'Review / results':'Change action')}"></a>
 <form th:if="${r.remoteId!=null and r.pending==null and r.state=='ACTIVE'}" th:action="@{/rules/{id}/pause(id=${r.id})}" method="post"><input type="hidden" name="account" th:value="${account}"><button>Pause</button></form>
-<form th:if="${r.state=='ATTENTION'}" th:action="@{/rules/{id}/resolve(id=${r.id})}" method="post" onsubmit="return confirm('Accept the current mailbox state after checking native rules? This clears an uncertain operation only after a fresh provider check. It does not retry rule creation.')"><input type="hidden" name="account" th:value="${account}"><button>Resolve after checking mailbox</button></form>
-<form th:if="${r.pending==null}" th:action="@{/rules/{id}/remove(id=${r.id})}" method="post" onsubmit="return confirm('Remove this rule? Previously handled emails will stay as they are.')"><input type="hidden" name="account" th:value="${account}"><button>Remove</button></form></div></td></tr>
-</tbody></table></section>
+<form th:if="${r.state=='ATTENTION'}" th:action="@{/rules/{id}/resolve(id=${r.id})}" method="post" data-confirm="Accept the current mailbox state after checking native rules? This clears an uncertain operation only after a fresh provider check. It does not retry rule creation." data-confirm-title="Resolve rule status" data-confirm-action="Resolve status"><input type="hidden" name="account" th:value="${account}"><button>Resolve after checking mailbox</button></form>
+<form th:if="${r.pending==null}" th:action="@{/rules/{id}/remove(id=${r.id})}" method="post" data-confirm="Remove this rule from your mailbox? Previously handled emails will stay as they are." data-confirm-title="Remove rule" data-confirm-action="Remove rule" data-confirm-danger><input type="hidden" name="account" th:value="${account}"><button>Remove</button></form></div></td></tr>
+</tbody></table></div></section>
 <section class="surface" th:if="${data.permission}"><h2>Existing mailbox rules</h2><p class="muted">Rules already attached to a saved rule above are omitted here. Supported rules can be brought under management without recreating them. Other rules stay available in mailbox settings.</p>
 <p th:if="${#lists.isEmpty(data.nativeRules)}" class="muted">No native rules were returned by the provider.</p>
 <div th:each="n:${data.nativeRules}" th:unless="${data.bound.contains(n.id)}" class="native-rule"><div class="row spread"><strong th:text="${n.name}"></strong><span th:text="${n.enabled?'Enabled':'Disabled'}"></span></div>
-<p th:if="${n.compatible!=null}" th:text="${n.compatible.sentence()}"></p><p th:unless="${n.compatible!=null}" class="muted">This rule uses settings outside the shared editor.</p>
+<p th:if="${n.compatible!=null}" th:text="${n.compatible.sentence(provider)}"></p><p th:unless="${n.compatible!=null}" class="muted">This rule uses settings outside the shared editor.</p>
 <details><summary>Native rule details</summary><pre th:text="${n.raw.toPrettyString()}"></pre></details>
-<form th:if="${n.compatible!=null and !n.readOnly}" th:action="@{/rules/adopt}" method="post" onsubmit="return confirm('Manage this existing rule through TidyMail? Its current mailbox behavior will be preserved.')"><input type="hidden" name="account" th:value="${account}"><input type="hidden" name="remote" th:value="${n.id}"><input type="hidden" name="fingerprint" th:value="${fingerprints.fingerprint(n.raw)}"><button>Manage in TidyMail</button></form></div>
+<form th:if="${n.compatible!=null and !n.readOnly}" th:action="@{/rules/adopt}" method="post" data-confirm="Manage this existing rule through TidyMail? Its current mailbox behavior will be preserved." data-confirm-title="Manage existing rule" data-confirm-action="Manage rule"><input type="hidden" name="account" th:value="${account}"><input type="hidden" name="remote" th:value="${n.id}"><input type="hidden" name="fingerprint" th:value="${fingerprints.fingerprint(n.raw)}"><button>Manage in TidyMail</button></form></div>
 </section>
 <details th:unless="${#lists.isEmpty(data.events)}" class="surface"><summary>Recent rule activity</summary><table><thead><tr><th>Rule</th><th>Event</th><th>Time</th></tr></thead><tbody><tr th:each="e:${data.events}"><td th:text="${e.name}"></td><td th:text="${e.event}"></td><td th:text="${e.occurred_at}"></td></tr></tbody></table></details>
 <p class="muted">Enabled rules run at Gmail or Outlook, even when TidyMail is closed. Removing local TidyMail data does not remove native mailbox rules. Pause or remove rules here first if you want automation to stop.</p>

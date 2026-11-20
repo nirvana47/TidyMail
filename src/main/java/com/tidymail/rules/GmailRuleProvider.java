@@ -57,21 +57,68 @@ public class GmailRuleProvider implements RuleProvider {
         // A single address uses the native From field; multiple addresses use a bounded OR query.
         if(d.senders().size()==1)criteria.put("from",d.senders().getFirst());
         else criteria.put("from","{"+String.join(" ",d.senders())+"}");
-        if(!d.subject().isEmpty())criteria.put("subject","\""+d.subject()+"\"");
-        if(!d.exceptSubject().isEmpty())criteria.put("negatedQuery","subject:\""+d.exceptSubject()+"\"");
+        if(d.subjects().size()==1)criteria.put("subject","\""+d.subject()+"\"");
+        else if(!d.subjects().isEmpty())criteria.put("query",subjectQuery(d.subjects()));
+        if(!d.exceptSubject().isEmpty())criteria.put("negatedQuery",subjectQuery(d.exceptions()));
+        if(d.organize()) {
+            root.put("_destinationName",d.destination());root.put("_destinationMode",d.destinationMode());
+            if(!d.destinationId().isEmpty())root.put("_destinationId",d.destinationId());
+        }
         if(d.trash())action.putArray("addLabelIds").add("TRASH");
         ArrayNode remove=json.createArrayNode();
         if(d.archive())remove.add("INBOX");if(d.read())remove.add("UNREAD");
         if(!remove.isEmpty())action.set("removeLabelIds",remove);
         return root;
     }
+    public JsonNode prepare(UserAccount a,JsonNode payload){
+        if(!payload.has("_destinationName"))return payload;
+        String name=payload.path("_destinationName").asText();
+        if(payload.path("_destinationMode").asText().equals("EXISTING")) {
+            String id=payload.path("_destinationId").asText();
+            if(destinations(a).stream().noneMatch(d->d.id().equals(id)))throw new IllegalStateException("Selected label is unavailable.");
+            return useDestination(payload,id);
+        }
+        var labels=call(a,1,c->c.users().labels().list("me").execute()).getLabels();
+        var matches=labels==null?List.<Label>of():labels.stream().filter(l->name.equalsIgnoreCase(l.getName())).toList();
+        if(matches.size()>1)throw new IllegalStateException("Destination name is ambiguous.");
+        if(!matches.isEmpty()&&!"user".equals(matches.getFirst().getType()))
+            throw new IllegalStateException("Choose a custom label name rather than a Gmail system label.");
+        if(!matches.isEmpty() && payload.path("_destinationMode").asText().equals("NEW"))
+            throw new IllegalStateException("A label with this name already exists. Select it explicitly.");
+        String id=matches.isEmpty()?call(a,5,c->c.users().labels().create("me",new Label().setName(name)
+            .setLabelListVisibility("labelShow").setMessageListVisibility("show")).execute()).getId():matches.getFirst().getId();
+        if(id==null||id.isBlank())throw new IllegalStateException("Destination creation needs verification.");
+        ObjectNode ready=payload.deepCopy();ready.remove(List.of("_destinationName","_destinationMode","_destinationId"));
+        ((ObjectNode)ready.path("action")).putArray("addLabelIds").add(id);return ready;
+    }
+    public JsonNode useDestination(JsonNode payload,String id){
+        ObjectNode ready=payload.deepCopy();ready.remove(List.of("_destinationName","_destinationMode","_destinationId"));
+        ((ObjectNode)ready.path("action")).putArray("addLabelIds").add(id);return ready;
+    }
+    public String destinationId(JsonNode payload){
+        for(var id:payload.path("action").path("addLabelIds"))if(!id.asText().equals("TRASH"))return id.asText();
+        return null;
+    }
+    public long destinationCount(UserAccount a,String id){
+        Integer count=call(a,1,c->c.users().labels().get("me",id).execute()).getMessagesTotal();
+        if(count==null)throw new IllegalStateException("Destination count is unavailable.");return count;
+    }
     public record Matches(Set<String> included,Set<String> beforeException) {}
     public Matches matching(UserAccount a,RuleDefinition d){
         String query="from:{"+String.join(" ",d.senders())+"}";
-        if(!d.subject().isEmpty())query+=" subject:\""+d.subject()+"\"";
+        if(!d.subject().isEmpty())query+=" "+subjectQuery(d.subjects());
         Set<String> before=search(a,query);
-        Set<String> included=d.exceptSubject().isEmpty()?before:search(a,query+" -subject:\""+d.exceptSubject()+"\"");
+        Set<String> included=d.exceptSubject().isEmpty()?before:search(a,query+" -"+subjectQuery(d.exceptions()));
         return new Matches(included,before);
+    }
+    public static String subjectQuery(List<String> phrases) {
+        return "{"+String.join(" ",phrases.stream().map(p->"subject:\""+p+"\"").toList())+"}";
+    }
+    public record Destination(String id,String name) {}
+    public List<Destination> destinations(UserAccount a) {
+        var labels=call(a,1,c->c.users().labels().list("me").execute()).getLabels();
+        return labels==null?List.of():labels.stream().filter(l->"user".equals(l.getType()))
+            .map(l->new Destination(l.getId(),l.getName())).sorted(Comparator.comparing(Destination::name,String.CASE_INSENSITIVE_ORDER)).toList();
     }
     private Set<String> search(UserAccount a,String query){
         var ids=new HashSet<String>();String cursor=null;
@@ -86,6 +133,7 @@ public class GmailRuleProvider implements RuleProvider {
         return call(a,5,c->{var f=new Filter();
             var criteria=new FilterCriteria();var x=payload.path("criteria");
             if(x.has("from"))criteria.setFrom(x.get("from").asText());
+            if(x.has("query"))criteria.setQuery(x.get("query").asText());
             if(x.has("subject"))criteria.setSubject(x.get("subject").asText());
             if(x.has("negatedQuery"))criteria.setNegatedQuery(x.get("negatedQuery").asText());
             var action=new FilterAction();var y=payload.path("action");

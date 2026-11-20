@@ -33,6 +33,7 @@ public class RuleStore {
         else {p.put("id",id);p.put("version",version);
             int changed=jdbc.update("UPDATE automation_rules SET definition=CAST(:definition AS jsonb),version=version+1,updated_at=now(),state='DRAFT',remote_id=NULL,remote_snapshot=NULL,detail=NULL WHERE id=:id AND account_id=:account AND version=:version AND state IN ('DRAFT','PAUSED') AND remote_id IS NULL AND pending_operation IS NULL",p);
             if(changed!=1)conflict("Pause and remove the native rule before editing, or reload the newer draft.");}
+        jdbc.update("DELETE FROM automation_rule_results WHERE rule_id=:id AND account_id=:account",p);
         event(account,(UUID)p.get("id"),"Draft saved",d);return (UUID)p.get("id");});}
     private void idHolder(Map<String,Object> p){p.put("id",UUID.randomUUID());}
     void event(long account,UUID id,String event,RuleDefinition d){jdbc.update("INSERT INTO automation_rule_events(rule_id,account_id,event,definition) VALUES(:id,:account,:event,CAST(:definition AS jsonb))",Map.of("id",id,"account",account,"event",event,"definition",encode(d)));}
@@ -41,6 +42,10 @@ public class RuleStore {
         if(owned.isEmpty())conflict("Mailbox was removed before the rule operation started.");
         int n=jdbc.update("UPDATE automation_rules SET pending_operation=:op,operation_snapshot=CAST(:payload AS jsonb),state='ATTENTION',detail='Waiting for provider confirmation',updated_at=now() WHERE id=:id AND account_id=:account AND version=:version AND pending_operation IS NULL",Map.of("id",r.id(),"account",r.account(),"version",r.version(),"op",op,"payload",encode(payload)));
         if(n!=1)conflict("A rule operation is already pending. Refresh before trying again.");});}
+    public void prepared(Saved r,JsonNode payload){
+        int changed=jdbc.update("UPDATE automation_rules SET operation_snapshot=CAST(:payload AS jsonb) WHERE id=:id AND account_id=:account AND version=:version AND pending_operation='CREATE'",Map.of("id",r.id(),"account",r.account(),"version",r.version(),"payload",encode(payload)));
+        if(changed!=1)conflict("Rule changed while preparing its destination. Refresh before continuing.");
+    }
     public void recordCreated(Saved r,String remoteId){
         if(remoteId==null||remoteId.isBlank())conflict("Provider returned no rule identity. Refresh before retrying.");
         int n=jdbc.update("UPDATE automation_rules SET remote_id=:remote WHERE id=:id AND account_id=:account AND version=:version AND pending_operation='CREATE'",

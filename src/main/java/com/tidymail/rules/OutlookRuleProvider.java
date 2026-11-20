@@ -25,8 +25,9 @@ public class OutlookRuleProvider implements RuleProvider {
             if(out.size()>2000)throw new IllegalStateException("Too many Outlook rules to inspect safely.");
         }while(url!=null);
         String archive=null;
-        if(out.stream().anyMatch(n->n.raw().path("actions").hasNonNull("moveToFolder")))
+        if(out.stream().anyMatch(n->n.raw().path("actions").hasNonNull("moveToFolder")))try{
             archive=graph.request(a,HttpMethod.GET,"/v1.0/me/mailFolders/archive?$select=id",null).path("id").asText();
+        }catch(com.tidymail.mail.CleanupProviderException unavailable){if(unavailable.status()!=404)throw unavailable;}
         final String archiveId=archive;
         out.replaceAll(n->new NativeRule(n.id(),n.name(),n.enabled(),n.readOnly(),n.raw(),compatible(n.raw(),archiveId),n.explanation()));
         out.sort(Comparator.comparingInt(r->r.raw().path("sequence").asInt()));return out;
@@ -38,14 +39,15 @@ public class OutlookRuleProvider implements RuleProvider {
             ||extra(a,Set.of("delete","markAsRead","moveToFolder","stopProcessingRules")))return null;
         boolean archive=a.hasNonNull("moveToFolder")&&!a.path("moveToFolder").asText().isEmpty();
         if(archive&&!a.path("moveToFolder").asText().equals(archiveId))return null;
-        if(c.path("subjectContains").size()>1||ex.path("subjectContains").size()>1||!c.path("fromAddresses").isArray())return null;
+        if(!c.path("fromAddresses").isArray())return null;
         var senders=new ArrayList<String>();for(var from:c.path("fromAddresses"))senders.add(from.path("emailAddress").path("address").asText());
         boolean trash=a.path("delete").asBoolean(),read=a.path("markAsRead").asBoolean();
         if(trash&&archive||!trash&&!read&&!archive)return null;
-        try{return new RuleDefinition(r.path("displayName").asText(),senders,c.path("subjectContains").path(0).asText(""),
-            ex.path("subjectContains").path(0).asText(""),trash?(read?"READ_TRASH":"TRASH"):archive?(read?"READ_ARCHIVE":"ARCHIVE"):"READ");}
+        try{return new RuleDefinition(r.path("displayName").asText(),senders,phrases(c.path("subjectContains")),
+            phrases(ex.path("subjectContains")),trash?(read?"READ_TRASH":"TRASH"):archive?(read?"READ_ARCHIVE":"ARCHIVE"):"READ");}
         catch(RuntimeException unsupported){return null;}
     }
+    private String phrases(JsonNode node){var values=new ArrayList<String>();node.forEach(v->values.add(v.asText()));return String.join("\n",values);}
     private boolean extra(JsonNode n,Set<String> allowed){
         var fields=n.fields();while(fields.hasNext()){var f=fields.next();var v=f.getValue();
             boolean meaningful=!v.isNull()&&!(v.isArray()&&v.isEmpty())&&!(v.isBoolean()&&!v.asBoolean());
@@ -57,15 +59,61 @@ public class OutlookRuleProvider implements RuleProvider {
         r.put("sequence",inventory.stream().mapToInt(n->n.raw().path("sequence").asInt()).max().orElse(0)+1);
         var c=r.putObject("conditions");var from=c.putArray("fromAddresses");
         for(String sender:d.senders())from.addObject().putObject("emailAddress").put("address",sender);
-        if(!d.subject().isEmpty())c.putArray("subjectContains").add(d.subject());
-        if(!d.exceptSubject().isEmpty())r.putObject("exceptions").putArray("subjectContains").add(d.exceptSubject());
+        if(!d.subject().isEmpty())d.subjects().forEach(c.putArray("subjectContains")::add);
+        if(!d.exceptSubject().isEmpty())d.exceptions().forEach(r.putObject("exceptions").putArray("subjectContains")::add);
         var actions=r.putObject("actions");actions.put("stopProcessingRules",false);
         if(d.trash())actions.put("delete",true);if(d.read())actions.put("markAsRead",true);
-        if(d.archive()){
+        if(d.organize()) {
+            r.put("_destinationName",d.destination());r.put("_destinationMode",d.destinationMode());
+            if(!d.destinationId().isEmpty())r.put("_destinationId",d.destinationId());
+        }
+        if(d.archive()&&!d.organize()){
             var folder=graph.request(a,HttpMethod.GET,"/v1.0/me/mailFolders/archive?$select=id",null);
             if(folder.path("id").asText().isEmpty())throw new IllegalStateException("Outlook Archive folder is unavailable.");
             actions.put("moveToFolder",folder.path("id").asText());
         }return r;
+    }
+    public JsonNode prepare(UserAccount a,JsonNode payload){
+        if(!payload.has("_destinationName"))return payload;
+        String name=payload.path("_destinationName").asText();
+        if(payload.path("_destinationMode").asText().equals("EXISTING")) {
+            String id=payload.path("_destinationId").asText();
+            var folder=graph.request(a,HttpMethod.GET,"/v1.0/me/mailFolders/"+org.springframework.web.util.UriUtils.encodePathSegment(id,java.nio.charset.StandardCharsets.UTF_8)+"?$select=id",null);
+            if(!id.equals(folder.path("id").asText()))throw new IllegalStateException("Selected folder is unavailable.");
+            return useDestination(payload,id);
+        }
+        var matches=new ArrayList<String>();String url="/v1.0/me/mailFolders?$select=id,displayName&$top=100";int seen=0;
+        do {var page=graph.request(a,HttpMethod.GET,url,null);
+            for(var folder:page.path("value")){
+                if(++seen>2000)throw new IllegalStateException("Too many folders to resolve safely.");
+                if(name.equalsIgnoreCase(folder.path("displayName").asText()))matches.add(folder.path("id").asText());
+            }
+            url=page.path("@odata.nextLink").asText(null);
+        }while(url!=null);
+        if(matches.size()>1)throw new IllegalStateException("Destination name is ambiguous.");
+        if(!matches.isEmpty() && payload.path("_destinationMode").asText().equals("NEW"))
+            throw new IllegalStateException("A folder with this name already exists. Select it explicitly.");
+        String id=matches.isEmpty()?graph.request(a,HttpMethod.POST,"/v1.0/me/mailFolders",Map.of("displayName",name)).path("id").asText():matches.getFirst();
+        if(id.isBlank())throw new IllegalStateException("Destination creation needs verification.");
+        // Never reuse Inbox or another built-in destination under an organize action.
+        if(!matches.isEmpty())for(String system:List.of("inbox","deleteditems","junkemail","sentitems","drafts","outbox","archive")){
+            try{
+                var folder=graph.request(a,HttpMethod.GET,"/v1.0/me/mailFolders/"+system+"?$select=id",null);
+                if(id.equals(folder.path("id").asText()))throw new IllegalStateException("Choose a custom folder name rather than a built-in folder.");
+            }catch(com.tidymail.mail.CleanupProviderException unavailable){if(unavailable.status()!=404)throw unavailable;}
+        }
+        ObjectNode ready=payload.deepCopy();ready.remove(List.of("_destinationName","_destinationMode","_destinationId"));
+        ((ObjectNode)ready.path("actions")).put("moveToFolder",id);return ready;
+    }
+    public JsonNode useDestination(JsonNode payload,String id){
+        ObjectNode ready=payload.deepCopy();ready.remove(List.of("_destinationName","_destinationMode","_destinationId"));
+        ((ObjectNode)ready.path("actions")).put("moveToFolder",id);return ready;
+    }
+    public String destinationId(JsonNode payload){return payload.path("actions").path("moveToFolder").asText(null);}
+    public long destinationCount(UserAccount a,String id){
+        var folder=graph.request(a,HttpMethod.GET,"/v1.0/me/mailFolders/"+org.springframework.web.util.UriUtils.encodePathSegment(id,java.nio.charset.StandardCharsets.UTF_8)+"?$select=totalItemCount",null);
+        if(!folder.path("totalItemCount").canConvertToLong())throw new IllegalStateException("Destination count is unavailable.");
+        return folder.path("totalItemCount").asLong();
     }
     public String create(UserAccount a,JsonNode payload){return graph.request(a,HttpMethod.POST,BASE,payload).path("id").asText();}
     public void pause(UserAccount a,String id){graph.request(a,HttpMethod.PATCH,path(id),Map.of("isEnabled",false));}

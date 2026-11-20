@@ -182,9 +182,6 @@ class PersonalOutlookJourneyTest extends PostgresJourneyTest {
         drain();
         assertThat(detail(id("new")).sizeEstimate()).isEqualTo(1_500_000);
         assertThat(count(filter)).isEqualTo(3);
-        mockMvc.perform(get("/dashboard").with(authentication(outlookAuth(account))))
-            .andExpect(status().isOk())
-            .andExpect(content().string(org.hamcrest.Matchers.containsString("id=\"suggestionsView\" aria-pressed=\"false\"")));
     }
 
     @Test void calendarFilterMatchesNativeMeetingsAndGoogleInvites() {
@@ -254,6 +251,25 @@ class PersonalOutlookJourneyTest extends PostgresJourneyTest {
         assertThat(jobs.get(accountId, archive).changed()).isEqualTo(1);
         assertThat(detail(id("move")).outlookFolder()).isEqualTo("Archive");
         assertThat(fixture.writes).containsExactly("POST:comment", "PATCH:move", "POST:move");
+    }
+
+    @Autowired MailDestinationService destinations;
+    @Test void manualFolderFilingUsesReviewedNestedDestinationAndReconcilesLostAcknowledgement() {
+        importMailbox();
+        assertThat(destinations.list(accountId)).anySatisfy(d->{assertThat(d.id()).isEqualTo("sub");assertThat(d.name()).isEqualTo("Projects / Nested");});
+        var choice=new MailDestinationService.Choice("EXISTING","sub","Wrong browser label",false);
+        var preview=previews.create(accountId,new DashboardPreviewService.Request(ALL,List.of(id("move"),id("gone"),id("comment")),"ORGANIZE",dashboard.revision(accountId),null,choice));
+        assertThat(preview.destination().name()).isEqualTo("Projects / Nested");assertThat(preview.effective()).isEqualTo(2);
+        assertThat(fixture.writes).isEmpty();
+        UUID job=jobs.confirm(accountId,preview.id()).id();
+        fixture.omitLastResponse=true;
+        cleanup.runOnce();
+        assertThat(jobs.get(accountId,job).changed()).isEqualTo(1);assertThat(jobs.get(accountId,job).unresolved()).isEqualTo(1);
+        jdbc.update("UPDATE cleanup_jobs SET next_attempt_at=now() WHERE public_id=?",job);cleanup.runOnce();
+        assertThat(jobs.get(accountId,job).changed()).isEqualTo(2);
+        assertThat(fixture.writes).containsExactlyInAnyOrder("POST:move","POST:gone");
+        assertThat(detail(id("move")).outlookFolder()).isEqualTo("Projects / Nested");
+        assertThat(fixture.messages.get("move").path("isRead").asBoolean()).isFalse();
     }
 
     @Test void bulkAcknowledgementsUseTwentyItemBatchesWithoutReadsAndRetainCancellation() {
@@ -462,7 +478,7 @@ class PersonalOutlookJourneyTest extends PostgresJourneyTest {
                 }
                 if (rejectMove) { rejectMove=false; throw new CleanupProviderException(403,null); }
                 String destination = ((Map<?,?>)payload).get("destinationId").toString();
-                move(id,wellKnown.get(destination));
+                move(id,wellKnown.getOrDefault(destination,destination));
                 afterMove=true;
                 if (loseMoveResponse) throw new CleanupProviderException(0,null);
                 return message.deepCopy();
@@ -499,7 +515,7 @@ class PersonalOutlookJourneyTest extends PostgresJourneyTest {
             }
             var parts=path.substring((ME+"mailFolders/").length()).split("/");
             String folder=parts[0];
-            if(parts.length==1)return json.createObjectNode().put("id",wellKnown.get(folder));
+            if(parts.length==1)return json.createObjectNode().put("id",wellKnown.getOrDefault(folder,folder));
             if(parts.length==2)return page(in(folder),null,null);
             String completed = ROOT + "mailFolders/" + folder + "/messages/delta?$deltatoken=" + round;
             if (round==1 && folder.equals("in")) {

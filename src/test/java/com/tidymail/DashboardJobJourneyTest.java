@@ -63,6 +63,26 @@ class DashboardJobJourneyTest extends PostgresJourneyTest {
         return p;
     }
     Map<String,MailMessage> before(Claim claim) {Map<String,MailMessage> result=new HashMap<>();claim.targets().forEach(t->result.put(t.providerId(),mail(t.providerId(),true)));return result;}
+    @Test void activityDashboardPagesAllJobsAndCountsOnlyConfirmedChanges() throws Exception {
+        preview(31);
+        var ids=jdbc.queryForList("SELECT dashboard_message_id FROM message_metadata WHERE account_id=? ORDER BY provider_message_id",UUID.class,account);
+        for (var id:ids) {
+            var p=previews.create(account,new DashboardPreviewService.Request(new DashboardFilter("inbox","","","","UTC",0),List.of(id),"MARK_READ",0));
+            var job=jobs.confirm(account,p.id());
+            jdbc.update("UPDATE cleanup_job_targets SET state='CHANGED' WHERE job_id=?",job.id());
+        }
+        String first=mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/activity").with(authenticatedAs(OWNER)))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(first).contains("31 jobs", "Page 1 of 2", "href=\"/activity?page=1\"", "<strong>31</strong>");
+        String second=mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/activity").param("page","1").with(authenticatedAs(OWNER)))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(second).contains("Page 2 of 2", "href=\"/activity?page=0\"");
+        long other=userAccounts.createAccount("other-activity@example.test");
+        String foreign=mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/activity").with(authenticatedAs("other-activity@example.test")))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(foreign).contains("No cleanup activity yet").doesNotContain("31 jobs");
+    }
+
     @Test void fiveHundredAndOneTargetsRunInBoundedBatchesAndRestoreProgressWithoutBrowser() {
         var preview=preview(501);var job=jobs.confirm(account,preview.id());
         for(int i=0;i<11;i++){ready(job.id());worker.runOnce();invariant(job.id());}

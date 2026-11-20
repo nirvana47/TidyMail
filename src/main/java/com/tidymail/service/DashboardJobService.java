@@ -21,7 +21,7 @@ import org.springframework.web.server.ResponseStatusException;
 /** Short database transactions only. No provider calls, waits, or mailbox identifiers in responses. */
 @Service
 public class DashboardJobService {
-    static final Set<String> ACTIONS = Set.of("MARK_READ", "ARCHIVE", "TRASH", "MARK_READ_ARCHIVE");
+    static final Set<String> ACTIONS = Set.of("MARK_READ", "ARCHIVE", "TRASH", "MARK_READ_ARCHIVE", "ORGANIZE");
     public static final int BATCH_SIZE=50;
     public static final int MAX_READ_ATTEMPTS=6;
     public static final int RESPONSE_BATCH_SIZE=1000;
@@ -38,7 +38,7 @@ public class DashboardJobService {
         this.repository=repository;this.jdbc=repository.jdbc();this.scopes=scopes;this.json=json;this.tx=new TransactionTemplate(manager);this.outlook=outlook;
     }
     public record Progress(UUID id,String action,String status,int total,int changed,int failed,int skipped,
-        int unresolved,int cancelled,int remaining,boolean cancelRequested,Instant createdAt,long version,String retryReason,boolean verificationPending,String executionMode,int partialRead) {}
+        int unresolved,int cancelled,int remaining,boolean cancelRequested,Instant createdAt,long version,String retryReason,boolean verificationPending,String executionMode,int partialRead,String destinationName) {}
     public record Target(int ordinal,String providerId,UUID messageId,boolean preChangeObserved) {}
     public record Claim(UUID job,long account,UUID worker,long generation,DashboardFilter filter,List<Target> targets,boolean verification,String action,String executionMode) {
         public boolean responseBased(){return "RESPONSE".equals(executionMode);}
@@ -193,6 +193,46 @@ public class DashboardJobService {
         return jdbc.query("SELECT ordinal,provider_message_id,message_id,pre_change_observed FROM cleanup_job_targets WHERE job_id=:job AND state=:state AND (state<>'AWAITING_VERIFICATION' OR verification_attempts<6) ORDER BY observed_at NULLS FIRST,ordinal LIMIT "+limit,
             Map.of("job",job,"state",state),(r,n)->new Target(r.getInt(1),r.getString(2),r.getObject(3,UUID.class),r.getBoolean(4)));
     }
+    public MailDestinationService.Choice destination(Claim claim) {return destination(claim.account(),claim.job());}
+    private MailDestinationService.Choice destination(long account,UUID job) {
+        var snapshot=jdbc.queryForObject("SELECT snapshot::text FROM cleanup_jobs WHERE account_id=:account AND public_id=:job",params(account,job),String.class);
+        try {return json.treeToValue(json.readTree(snapshot).get("destination"),MailDestinationService.Choice.class);}
+        catch(Exception e){throw new IllegalStateException("Destination unavailable",e);}
+    }
+    public String destinationId(Claim claim) {return destinationId(claim.job());}
+    private String destinationId(UUID job) {
+        var ids=jdbc.queryForList("SELECT destination_id FROM cleanup_job_destinations WHERE job_id=:job AND state='READY'",Map.of("job",job),String.class);
+        return ids.isEmpty()?null:ids.getFirst();
+    }
+    /** Commit before provider creation. An abandoned intent is never replayed. */
+    public boolean destinationIntent(Claim claim) {
+        return transaction(()->{
+            var row=lock(claim.account(),claim.job());if(!owns(row,claim)||row.get("cancel_requested_at")!=null)return false;
+            return jdbc.update("INSERT INTO cleanup_job_destinations(job_id,state) VALUES(:job,'INTENT') ON CONFLICT DO NOTHING",Map.of("job",claim.job()))==1;
+        });
+    }
+    public void destinationReady(Claim claim,String id) {
+        if(id==null || id.isBlank())throw new IllegalStateException("Missing destination identity");
+        transaction(()->{
+            if(!owns(lock(claim.account(),claim.job()),claim))return null;
+            jdbc.update("UPDATE cleanup_job_destinations SET state='READY',destination_id=:id WHERE job_id=:job AND state='INTENT'",Map.of("job",claim.job(),"id",id));
+            if(claim.outlook()) {
+                var choice=destination(claim);
+                jdbc.update("INSERT INTO outlook_folders(account_id,folder_id,folder_path,role) VALUES(:account,:id,:name,'MAIL') ON CONFLICT(account_id,folder_id) DO NOTHING",
+                    Map.of("account",claim.account(),"id",id,"name",choice.name()));
+            }
+            return null;
+        });
+    }
+    public void destinationFailed(Claim claim) {
+        transaction(()->{
+            if(!owns(lock(claim.account(),claim.job()),claim))return null;
+            jdbc.update("UPDATE cleanup_job_destinations SET state='UNKNOWN' WHERE job_id=:job AND state='INTENT'",Map.of("job",claim.job()));
+            jdbc.update("UPDATE cleanup_job_targets SET state='FAILED',reason='Destination could not be confirmed; check mailbox destinations before retrying' WHERE job_id=:job AND state='QUEUED'",Map.of("job",claim.job()));
+            release(claim);settle(claim.account(),claim.job());
+            jdbc.update("UPDATE cleanup_jobs SET retry_reason='Destination could not be confirmed. Check mailbox destinations before retrying.' WHERE public_id=:job",Map.of("job",claim.job()));event(claim.account(),claim.job());return null;
+        });
+    }
     private boolean owns(Map<String,Object> row,Claim claim) {
         return claim.worker().equals(row.get("worker_id"))&&claim.generation()==((Number)row.get("generation")).longValue()
             &&((java.sql.Timestamp)row.get("lease_expires_at")).toInstant().isAfter(Instant.now());
@@ -206,9 +246,14 @@ public class DashboardJobService {
             lockMetadata(claim.account(),claim.targets());
             var dispatchFilter = claim.filter().withoutComposition().cleanupScope();
             var p=repository.parameters(claim.account(),dispatchFilter).addValue("ids",claim.targets().stream().map(Target::messageId).toList()).addValue("action",claim.action());
+            if(claim.action().equals("ORGANIZE")) {
+                var choice=destination(claim);p.addValue("destination",destinationId(claim)).addValue("skipInbox",choice.skipInbox());
+            } else p.addValue("destination","").addValue("skipInbox",false);
             Set<UUID> eligible=new HashSet<>(jdbc.queryForList(repository.filtered(claim.account(), dispatchFilter)+"""
                 SELECT dashboard_message_id FROM filtered f WHERE dashboard_message_id IN (:ids)
                 AND (:action<>'MARK_READ' OR unread)
+                AND (:action<>'ORGANIZE' OR CASE WHEN provider='microsoft' THEN outlook_folder_id IS DISTINCT FROM :destination
+                  ELSE NOT(:destination=ANY(labels)) OR (:skipInbox AND 'INBOX'=ANY(labels)) END)
                 AND (:action NOT IN ('ARCHIVE','MARK_READ_ARCHIVE') OR (:action='MARK_READ_ARCHIVE' AND unread)
                   OR CASE WHEN provider='microsoft' THEN NOT('OUTLOOK_ARCHIVE'=ANY(labels)) ELSE 'INBOX'=ANY(labels) END)
                 AND NOT EXISTS(SELECT 1 FROM protected_senders s WHERE s.account_id=f.account_id
@@ -225,14 +270,14 @@ public class DashboardJobService {
             for(var target:claim.targets()) {
                 var observed=observations.get(target.providerId());
                 String reason=!eligible.contains(target.messageId())?"No longer eligible or protected":claim.acknowledged()?null:observed==null?"Message missing before dispatch":
-                    desired(claim.action(),observed)?"Already in requested state before dispatch":!received(observed,claim.filter(),recipients)?"Provider labels no longer eligible":null;
+                    desired(claim.job(),claim.action(),observed)?"Already in requested state before dispatch":!received(observed,claim.filter(),recipients)?"Provider labels no longer eligible":null;
                 if(reason==null) {
                     sending.add(new Target(target.ordinal(),target.providerId(),target.messageId(),true));
                     if (unread.contains(target.providerId()))
                         jdbc.update("UPDATE cleanup_job_targets SET outlook_read_required=true WHERE job_id=:job AND ordinal=:ordinal",
                             params(claim.account(),claim.job()).addValue("ordinal",target.ordinal()));
                 }
-                else {outcome(claim,target,"SKIPPED",reason);if(observed!=null&&desired(claim.action(),observed))reconcile(claim.account(),observed,claim.action());}
+                else {outcome(claim,target,"SKIPPED",reason);if(observed!=null&&desired(claim.job(),claim.action(),observed))reconcile(claim.account(),claim.job(),observed,claim.action());}
             }
             if(sending.isEmpty()){release(claim);settle(claim.account(),claim.job());return null;}
             UUID batch=UUID.randomUUID();p=params(claim.account(),claim.job()).addValue("batch",batch).addValue("generation",claim.generation());
@@ -285,7 +330,7 @@ public class DashboardJobService {
                 states.computeIfAbsent(state,ignored->new ArrayList<>()).add(target.ordinal());
                 if(result.accepted())accepted.put(target.providerId(),result.revision());
             }
-            applyLocal(claim.account(),readStep?"MARK_READ":claim.action(),accepted,true);
+            applyLocal(claim.account(),claim.job(),readStep?"MARK_READ":claim.action(),accepted,true);
             for(var state:states.entrySet()) {
                 var p=params(claim.account(),claim.job()).addValue("ordinals",state.getValue())
                     .addValue("state",state.getKey()).addValue("readStep",readStep);
@@ -321,9 +366,11 @@ public class DashboardJobService {
     }
 
     /** Shared label/read projection for acknowledgements and revision-fenced Gmail recovery. One SQL update per batch. */
-    private void applyLocal(long account,String action,Map<String,BigInteger> revisions,boolean acknowledged) {
+    private void applyLocal(long account,UUID job,String action,Map<String,BigInteger> revisions,boolean acknowledged) {
         if(revisions.isEmpty())return;
+        var choice="ORGANIZE".equals(action)?destination(account,job):null;
         var p=new MapSqlParameterSource("account",account).addValue("action",action).addValue("ack",acknowledged)
+            .addValue("destination",choice==null?"":destinationId(job)).addValue("skipInbox",choice!=null&&choice.skipInbox())
             .addValue("ids",new SqlArrayValue("text",revisions.keySet().toArray()))
             .addValue("revisions",new SqlArrayValue("numeric",revisions.values().stream()
                 .map(r->r==null?null:new java.math.BigDecimal(r)).toArray()))
@@ -338,11 +385,14 @@ public class DashboardJobService {
             )
             UPDATE message_metadata m SET
               unread=CASE WHEN :action IN ('MARK_READ','MARK_READ_ARCHIVE') THEN false ELSE m.unread END,
-              labels=CASE WHEN :action='MARK_READ' THEN c.labels
+              labels=CASE WHEN :action='ORGANIZE' THEN
+                CASE WHEN c.provider='microsoft' THEN array_remove(array_remove(c.labels,'INBOX'),'OUTLOOK_ARCHIVE')
+                ELSE array_append(array_remove(CASE WHEN :skipInbox THEN array_remove(c.labels,'INBOX') ELSE c.labels END,:destination),:destination) END
+                WHEN :action='MARK_READ' THEN c.labels
                 WHEN c.provider='microsoft' THEN array_append(array_remove(array_remove(c.labels,'INBOX'),'OUTLOOK_ARCHIVE'),:role)
                 WHEN :action='TRASH' THEN CASE WHEN 'TRASH'=ANY(c.labels) THEN c.labels ELSE array_append(c.labels,'TRASH') END
                 ELSE array_remove(c.labels,'INBOX') END,
-              outlook_folder_id=CASE WHEN c.provider='microsoft' AND :action<>'MARK_READ' THEN COALESCE(
+              outlook_folder_id=CASE WHEN c.provider='microsoft' AND :action='ORGANIZE' THEN :destination WHEN c.provider='microsoft' AND :action<>'MARK_READ' THEN COALESCE(
                 (SELECT folder_id FROM outlook_folders WHERE account_id=:account AND role=:role LIMIT 1),m.outlook_folder_id) ELSE m.outlook_folder_id END,
               provider_revision=GREATEST(m.provider_revision,c.revision),
               cleanup_updated_at=CASE WHEN :ack THEN clock_timestamp() ELSE m.cleanup_updated_at END
@@ -448,8 +498,8 @@ public class DashboardJobService {
     /** One observation path for cleanup recovery and the existing Outlook background sync. */
     private boolean observe(long account,UUID job,String action,MailMessage message,boolean save) {
         if(message==null)return false;
-        boolean changed=desired(action,message);
-        if(save && (changed || "microsoft".equals(message.provider())))reconcile(account,message,action);
+        boolean changed=desired(job,action,message);
+        if(save && (changed || "microsoft".equals(message.provider())))reconcile(account,job,message,action);
         var p=params(account,job).addValue("id",message.id());
         if(!message.isUnread())jdbc.update("""
             UPDATE cleanup_job_targets SET outlook_read_completed=true
@@ -463,8 +513,14 @@ public class DashboardJobService {
         return changed;
     }
 
-    private static boolean desired(String action,MailMessage observed) {
+    private boolean desired(UUID job,String action,MailMessage observed) {
         if(observed.labelIds()==null)return false;
+        if(action.equals("ORGANIZE")) {
+            String id=destinationId(job);if(id==null)return false;
+            if("microsoft".equals(observed.provider()))return observed.outlook()!=null&&id.equals(observed.outlook().folderId());
+            var choice=jdbc.queryForObject("SELECT (snapshot->'destination'->>'skipInbox')::boolean FROM cleanup_jobs WHERE public_id=:job",Map.of("job",job),Boolean.class);
+            return observed.labelIds().contains(id)&&(!Boolean.TRUE.equals(choice)||!observed.labelIds().contains("INBOX"));
+        }
         boolean archived = "microsoft".equals(observed.provider())
             ? observed.labelIds().contains("OUTLOOK_ARCHIVE") : !observed.labelIds().contains("INBOX");
         return switch(action){case "MARK_READ"->!observed.isUnread();case "ARCHIVE"->archived;case "MARK_READ_ARCHIVE"->!observed.isUnread()&&archived;case "TRASH"->observed.labelIds().contains("TRASH");default->false;};
@@ -482,7 +538,7 @@ public class DashboardJobService {
         jdbc.queryForList("SELECT id FROM message_metadata WHERE account_id=:account AND provider_message_id IN (:ids) ORDER BY provider_message_id FOR UPDATE",
             new MapSqlParameterSource("account",account).addValue("ids",targets.stream().map(Target::providerId).toList()),Long.class);
     }
-    private void reconcile(long account,MailMessage observed,String action) {
+    private void reconcile(long account,UUID job,MailMessage observed,String action) {
         if ("microsoft".equals(observed.provider())) {
             // The target already exists or was removed by sync. Never recreate a missing cleanup target.
             var p = new MapSqlParameterSource("account", account).addValue("id", observed.id());
@@ -492,7 +548,7 @@ public class DashboardJobService {
         }
         Map<String,BigInteger> revisions=new HashMap<>();
         revisions.put(observed.id(),observed.providerRevision());
-        applyLocal(account,action,revisions,false);
+        applyLocal(account,job,action,revisions,false);
     }
     private void release(Claim claim) {
         jdbc.update("UPDATE cleanup_jobs SET worker_id=NULL,lease_expires_at=NULL,next_attempt_at=now()+interval '10 seconds' WHERE public_id=:job",Map.of("job",claim.job()));
@@ -531,8 +587,12 @@ public class DashboardJobService {
                 String status=r.getString("status");
                 if(r.getInt("remaining")==0 && r.getInt("unresolved")>0 && !verificationPending)
                     status=r.getTimestamp("cancel_requested_at")!=null?"CANCELLED":"COMPLETED_WITH_EXCEPTIONS";
-                return new Progress(job,r.getString("action_type"),status,total,r.getInt("changed"),r.getInt("failed"),r.getInt("skipped"),r.getInt("unresolved"),r.getInt("cancelled"),r.getInt("remaining"),r.getTimestamp("cancel_requested_at")!=null,r.getTimestamp("created_at").toInstant(),r.getLong("version"),r.getString("retry_reason"),verificationPending,storedMode(r.getString("snapshot")),r.getInt("partial_read"));
+                return new Progress(job,r.getString("action_type"),status,total,r.getInt("changed"),r.getInt("failed"),r.getInt("skipped"),r.getInt("unresolved"),r.getInt("cancelled"),r.getInt("remaining"),r.getTimestamp("cancel_requested_at")!=null,r.getTimestamp("created_at").toInstant(),r.getLong("version"),r.getString("retry_reason"),verificationPending,storedMode(r.getString("snapshot")),r.getInt("partial_read"),destinationName(r.getString("snapshot")));
             });
+    }
+    private String destinationName(String snapshot) {
+        try{return json.readTree(snapshot).path("destination").path("name").asText("");}
+        catch(Exception e){throw new IllegalStateException("Invalid job snapshot",e);}
     }
     private void event(long account,UUID job) {
         var p=progress(account,job);String counts;

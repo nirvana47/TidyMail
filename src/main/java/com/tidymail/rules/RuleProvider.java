@@ -12,6 +12,11 @@ public interface RuleProvider {
     String settingsUrl();
     List<NativeRule> list(UserAccount account);
     JsonNode compile(UserAccount account, RuleDefinition definition, List<NativeRule> inventory);
+    // Destination creation happens only after durable CREATE intent is stored, never during preview.
+    default JsonNode prepare(UserAccount account, JsonNode payload) { return payload; }
+    default JsonNode useDestination(JsonNode payload,String id) { return payload; }
+    default String destinationId(JsonNode payload) { return null; }
+    default long destinationCount(UserAccount account,String id) { throw new UnsupportedOperationException(); }
     String create(UserAccount account, JsonNode payload);
     void pause(UserAccount account, String id);
     void resume(UserAccount account, String id);

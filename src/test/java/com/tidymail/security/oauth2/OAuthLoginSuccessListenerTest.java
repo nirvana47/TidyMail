@@ -105,6 +105,7 @@ class OAuthLoginSuccessListenerTest {
                 .OAuth2AuthenticationToken.class);
         MockHttpServletRequest request = new MockHttpServletRequest();
         MockHttpServletResponse response = new MockHttpServletResponse();
+        when(authentication.getAuthorizedClientRegistrationId()).thenReturn("google");
         when(sessions.initializeLogin(request, authentication))
             .thenReturn(new AccountSession("owner:google", 42L));
         when(states.findByAccountId(42L)).thenReturn(Optional.of(state));

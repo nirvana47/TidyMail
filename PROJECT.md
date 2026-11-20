@@ -103,3 +103,21 @@ saving, previewing and enabling stay in that drawer. Inbox selection and filters
 remain intact. The separate `/rules` page is the management surface. The drawer
 explicitly distinguishes future rule conditions from current inbox filters and
 from a one-time cleanup action.
+
+## Desktop UI polish — 2026-11-17
+
+The first implementation follows the reviewed mailbox, cleanup-review and rule-drawer
+concepts. Mailbox, Rules and sync details share a compact sidebar and visual
+foundations. Mailbox filters open in a dialog with removable active-filter chips;
+message evidence and secondary actions are disclosed within the detail pane.
+The selection bar uses an action selector and a counted review button. Cleanup
+review retains exact targets, protection/skipping accounting and background-job
+semantics. Account controls, local-data deletion and label tools are available
+through Account & settings. Existing selection and provider behavior are retained.
+
+Rules uses the same editor in its drawer and standalone page, with clearer preview
+hierarchy, state badges, app confirmation dialogs for management operations, and
+unsaved-edit protection. Sign-in and retained workspace pages use related styling.
+The full surface inventory and remaining deeper tool/legacy work are recorded in
+`docs/UI-POLISH-PLAN.md`; this initial pass is not a claim that every state has been
+visually audited. Verification uses synthetic providers and isolated test data.
