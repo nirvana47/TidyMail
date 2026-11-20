@@ -44,44 +44,58 @@ class RecommendationDashboardJourneyTest extends PostgresJourneyTest {
         for(int i=0;i<30;i++) {processing.runOnce();if(processing.status(account).historyComplete() && processing.status(account).queued()==0)return;}
         fail("Local history build did not finish");
     }
-    @Test void allIndexedMailIncludesUnassessedAndExcludedFoldersWithoutExpandingCleanup() throws Exception {
+    @Test void allIndexedMailIncludesUnassessedButExcludesSpamAndTrashWithoutExpandingCleanup() throws Exception {
         var ids=new ArrayList<UUID>();
         for(int i=0;i<12;i++)ids.add(mail("indexed-inbox-"+i,"{INBOX}",1000,null));
         ids.add(mail("indexed-archive","{}",1000,null));
-        for(String label:List.of("SENT","SPAM","TRASH","DRAFT"))ids.add(mail("indexed-"+label,"{"+label+"}",1000,null));
+        for(String label:List.of("SENT","DRAFT"))ids.add(mail("indexed-"+label,"{"+label+"}",1000,null));
+        var excluded=List.of(mail("indexed-SPAM","{INBOX,SPAM}",1000,null),
+            mail("indexed-TRASH","{INBOX,TRASH}",1000,null));
         UUID unknown=mail("indexed-unknown","{}",1000,null);ids.add(unknown);
         jdbc.update("UPDATE message_metadata SET label_evidence_known=false WHERE dashboard_message_id=?",unknown);
         var indexed=new DashboardFilter("indexed","","","","UTC",0);
         var before=jdbc.queryForObject("SELECT jsonb_agg(to_jsonb(m) ORDER BY id)::text FROM message_metadata m",String.class);
         assertThat(count(filter("","",""))).isEqualTo(13);
         var page=dashboard.page(account,indexed);
-        assertThat(page.summary()).containsEntry("messages",18L);
-        assertThat(page.coverage()).containsEntry("indexed",18L);
+        assertThat(page.summary()).containsEntry("messages",16L);
+        assertThat(page.coverage()).containsEntry("indexed",16L);
         var group=page.groups().getFirst().id();
         assertThat(dashboard.details(account,indexed,group,0).messages()).hasSize(10);
-        assertThat(dashboard.details(account,indexed,group,1).messages()).hasSize(8);
+        assertThat(dashboard.details(account,indexed,group,1).messages()).hasSize(6);
         assertThat(dashboard.selection(account,indexed,List.of(group),null)).extracting(DashboardRepository.Selected::id)
             .containsExactlyInAnyOrderElementsOf(ids);
         mockMvc.perform(get("/dashboard/api/page").param("scope","indexed").param("recommendation","PENDING")
-            .with(authenticatedAs(OWNER))).andExpect(status().isOk()).andExpect(jsonPath("$.summary.messages").value(18));
+            .with(authenticatedAs(OWNER))).andExpect(status().isOk()).andExpect(jsonPath("$.summary.messages").value(16));
         mockMvc.perform(get("/dashboard/api/page").param("scope","indexed").param("category","UNCLASSIFIED")
-            .with(authenticatedAs(OWNER))).andExpect(status().isOk()).andExpect(jsonPath("$.summary.messages").value(18));
+            .with(authenticatedAs(OWNER))).andExpect(status().isOk()).andExpect(jsonPath("$.summary.messages").value(16));
         userAccounts.createAccount("indexed-other@example.test");
         mockMvc.perform(get("/dashboard/api/page").param("scope","indexed").with(authenticatedAs("indexed-other@example.test")))
             .andExpect(status().isOk()).andExpect(jsonPath("$.summary.messages").value(0));
         assertThat(jdbc.queryForObject("SELECT jsonb_agg(to_jsonb(m) ORDER BY id)::text FROM message_metadata m",String.class)).isEqualTo(before);
         var preview=previews.create(account,new DashboardPreviewService.Request(indexed,ids,"TRASH",page.revision()));
-        assertThat(preview.selected()).isEqualTo(18);
+        assertThat(preview.selected()).isEqualTo(16);
         assertThat(preview.effective()).isEqualTo(13);
-        assertThat(preview.skipped()).isEqualTo(5);
+        assertThat(preview.skipped()).isEqualTo(3);
+        var targets=new ArrayList<Map<String,Object>>(previews.targets(account,preview.id(),0).rows());
+        targets.addAll(previews.targets(account,preview.id(),1).rows());
+        assertThat(targets).extracting(t->(UUID)t.get("message_id")).containsExactlyInAnyOrderElementsOf(ids);
+        assertThat(targets).filteredOn(t->Boolean.TRUE.equals(t.get("effective")))
+            .extracting(t->(UUID)t.get("message_id")).containsExactlyInAnyOrderElementsOf(ids.subList(0,13));
+        // Even explicitly supplied excluded IDs must stay ineligible, without substituting other mail.
+        var excludedPreview=previews.create(account,new DashboardPreviewService.Request(indexed,excluded,"TRASH",page.revision()));
+        assertThat(excludedPreview.selected()).isEqualTo(2);
+        assertThat(excludedPreview.effective()).isZero();
+        assertThat(excludedPreview.skipped()).isEqualTo(2);
+        assertThat(previews.targets(account,excludedPreview.id(),0).rows()).extracting(t->(UUID)t.get("message_id"))
+            .containsExactlyInAnyOrderElementsOf(excluded);
         recommendations.recompute(account,List.of(ids.getFirst()));
-        assertThat(count(indexed)).isEqualTo(18);
+        assertThat(count(indexed)).isEqualTo(16);
         mockMvc.perform(get("/dashboard/api/page").param("scope","indexed").param("recommendation","PENDING")
-            .with(authenticatedAs(OWNER))).andExpect(status().isOk()).andExpect(jsonPath("$.summary.messages").value(17));
+            .with(authenticatedAs(OWNER))).andExpect(status().isOk()).andExpect(jsonPath("$.summary.messages").value(15));
         jdbc.update("UPDATE message_metadata SET size_estimate=2000 WHERE dashboard_message_id=?",ids.getFirst());
         mockMvc.perform(get("/dashboard/api/page").param("scope","indexed").param("recommendation","STALE")
             .with(authenticatedAs(OWNER))).andExpect(status().isOk()).andExpect(jsonPath("$.summary.messages").value(1));
-        assertThat(count(indexed)).isEqualTo(18);
+        assertThat(count(indexed)).isEqualTo(16);
         verifyNoInteractions(classifier,reader,gmailProvider,outlookProvider);
     }
 

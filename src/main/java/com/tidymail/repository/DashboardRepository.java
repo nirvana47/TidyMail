@@ -54,8 +54,10 @@ public class DashboardRepository {
             + com.tidymail.service.JevClassifier.VERSION
             + "' THEN m.classification_category END,'UNCLASSIFIED'),'UNCERTAIN','OTHER')";
     private static final String REQUESTED_SEMANTIC_MATCH="(requested.label=ANY(sl.labels) AND sl.input_hash="+RecommendationSql.SEMANTIC_HASH+")";
-    private static final String LABELING_CATEGORY="COALESCE(m.classification_override,CASE WHEN sl.input_hash="+RecommendationSql.SEMANTIC_HASH
-        +" THEN NULLIF(sl.purpose,'UNKNOWN') END,"+CATEGORY+")";
+    // Normalize the final category, including saved overrides and semantic purposes.
+    // Keep the stored UNCERTAIN evidence intact while presenting it under Other.
+    private static final String LABELING_CATEGORY="replace(COALESCE(m.classification_override,CASE WHEN sl.input_hash="+RecommendationSql.SEMANTIC_HASH
+        +" THEN NULLIF(sl.purpose,'UNKNOWN') END,"+CATEGORY+"),'UNCERTAIN','OTHER')";
     private static final String LOCAL_CURRENT = "(saved.local_rules_version='"
             +com.tidymail.service.LocalMailLabels.VERSION+"' AND saved.metadata_revision=COALESCE(v.revision,0))";
     private static final String LOCAL_LABEL = "(" + LOCAL_CURRENT + " AND jsonb_exists(saved.local_label_reasons,requested.label))";

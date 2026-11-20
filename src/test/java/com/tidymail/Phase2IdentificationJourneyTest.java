@@ -57,15 +57,35 @@ class Phase2IdentificationJourneyTest extends PostgresJourneyTest {
         verifyNoInteractions(classifier,gmailProvider);
     }
     @Test void stableNamesReadAllReceivedEvidenceAndOtherFilterIncludesUncertainty() {
-        mail("a","person@gmail.com","one","Alpha","OTHER");
-        mail("b","person@gmail.com","two","Zulu","UNCERTAIN");
-        assertThat(dashboard.page(account,filter("one","")).groups().getFirst().label()).isEqualTo("person@gmail.com");
-        assertThat(dashboard.page(account,filter("two","")).groups().getFirst().label()).isEqualTo("person@gmail.com");
+        UUID first=mail("a","person@gmail.com","one","Alpha","OTHER");
+        UUID second=mail("b","person@gmail.com","two","Zulu","UNCERTAIN");
+        var unfiltered=dashboard.page(account,filter("","")).groups().getFirst();
+        assertThat(unfiltered.label()).isEqualTo("Alpha"); // Saved-name mode, with alphabetical ties.
+        for(String query:List.of("one","two")) {
+            var group=dashboard.page(account,filter(query,"")).groups().getFirst();
+            assertThat(group.id()).isEqualTo(unfiltered.id());
+            assertThat(group.label()).isEqualTo(unfiltered.label());
+            assertThat(group.address()).isEqualTo("person@gmail.com");
+            assertThat(dashboard.selection(account,filter(query,""),List.of(group.id()),null))
+                .extracting(DashboardRepository.Selected::id).containsExactly(query.equals("one")?first:second);
+        }
         var other=dashboard.page(account,filter("","OTHER"));
         assertThat(other.summary()).containsEntry("messages",2L);
-        assertThat(dashboard.selection(account,filter("","OTHER"),List.of(other.groups().getFirst().id()),null)).hasSize(2);
-        assertThat(dashboard.details(account,filter("","OTHER"),other.groups().getFirst().id(),0).messages()).allMatch(m->m.category().equals("OTHER"));
+        for(var sameCategory:List.of(filter("","UNCERTAIN"),DashboardFilter.from(Map.of("scope","all","labels","OTHER")))) {
+            assertThat(dashboard.selection(account,sameCategory,List.of(unfiltered.id()),null))
+                .extracting(DashboardRepository.Selected::id).containsExactlyInAnyOrder(first,second);
+        }
+        assertThat(other.groups().getFirst().label()).isEqualTo(unfiltered.label());
+        assertThat(dashboard.selection(account,filter("","OTHER"),List.of(unfiltered.id()),null))
+            .extracting(DashboardRepository.Selected::id).containsExactlyInAnyOrder(first,second);
+        assertThat(dashboard.details(account,filter("","OTHER"),unfiltered.id(),0).messages())
+            .allSatisfy(m->{assertThat(m.category()).isEqualTo("OTHER");assertThat(m.address()).isEqualTo("person@gmail.com");})
+            .extracting(DashboardRepository.Message::displayName).containsExactlyInAnyOrder("Alpha","Zulu");
         assertThat(jdbc.queryForObject("SELECT classification_override FROM message_metadata WHERE provider_message_id='b'",String.class)).isEqualTo("UNCERTAIN");
+        mail("same-name","different@gmail.com","three","Alpha","OTHER");
+        assertThat(dashboard.page(account,filter("","OTHER")).groups()).hasSize(2)
+            .extracting(DashboardRepository.Group::address).containsExactlyInAnyOrder("person@gmail.com","different@gmail.com");
+        verifyNoInteractions(reader,classifier,gmailProvider,outlookProvider);
     }
     @Test void reviewedReuseIsScopedExplicitInspectableAndInvalidatedByChangedEvidence() throws Exception {
         UUID source=mail("source","orders@amazon.com","Order 123456 confirmed","Amazon","RECEIPT");

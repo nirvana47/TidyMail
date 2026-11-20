@@ -81,13 +81,15 @@ class Phase9WorkspaceShellTest {
     }
 
     @Test
-    void allFiveRoutesRenderTruthfulSharedShellWithoutProviderCalls() throws Exception {
+    void workspaceRoutesRenderTruthfulNavigationWithoutProviderCalls() throws Exception {
         UserAccount account = account(EMAIL, "google");
         OAuth2AuthenticationToken authentication = auth(EMAIL, "google");
 
         for (WorkspaceRoute route : WorkspaceRoute.values()) {
             reset(gmailProvider, outlookProvider);
-            String body = perform(route.path(), null, authentication).getResponse().getContentAsString();
+            // Sync moved to its own page; Activity now has the dashboard sidebar.
+            String path = route == WorkspaceRoute.ACTIVITY ? "/activity/sync" : route.path();
+            String body = perform(path, String.valueOf(account.getId()), authentication).getResponse().getContentAsString();
 
             assertThat(body)
                 .contains("href=\"#workspace-main\"")
@@ -125,12 +127,23 @@ class Phase9WorkspaceShellTest {
                 }
             }
             assertThat(body)
-                .contains("aria-current=\"page\"")
-                .contains(">" + navLabel(route) + "</span>");
+                .containsPattern("(?s)<a[^>]*href=\"" + (route == WorkspaceRoute.REVIEW ? "/review\\?view=history[^\"]*" : route.path())
+                    + "\"[^>]*aria-current=\"page\"[^>]*>\\s*<span>" + navLabel(route) + "</span>");
             assertThat(count(body, "<main")).isEqualTo(1);
             assertThat(count(body, "<h1")).isEqualTo(1);
             verifyNoInteractions(gmailProvider, outlookProvider);
         }
+
+        String activity = perform("/activity", null, authentication).getResponse().getContentAsString();
+        assertThat(activity)
+            .contains("href=\"#activity-main\"", "id=\"activity-main\"", "<h1>Activity</h1>", account.getEmail())
+            .contains("aria-label=\"Primary\"", "href=\"/dashboard\"", "href=\"/rules\"", "href=\"/activity/sync\"")
+            .containsPattern("<a[^>]*href=\"/activity\"[^>]*aria-current=\"page\"[^>]*>")
+            .contains("Cleanup history", "No cleanup activity yet", "Storage saved: unavailable")
+            .doesNotContain("sample@example.com", "href=\"#\"");
+        assertThat(count(activity, "<main")).isEqualTo(1);
+        assertThat(count(activity, "<h1")).isEqualTo(1);
+        verifyNoInteractions(gmailProvider, outlookProvider);
     }
 
     @Test
@@ -145,7 +158,7 @@ class Phase9WorkspaceShellTest {
             .contains("aria-label=\"Switch account\"")
             .contains(">" + EMAIL + "</button>")
             .doesNotContain("All linked accounts")
-            .doesNotContain("<option value=\"" + microsoft.getId() + "\"")
+            .doesNotContain("value=\"" + microsoft.getId() + "\"")
             .doesNotContain("foreign@example.com");
 
         mockMvc.perform(get("/senders").param("account", "all")
@@ -165,8 +178,15 @@ class Phase9WorkspaceShellTest {
             .andExpect(status().isOk())
             .andReturn().getResponse().getContentAsString();
         assertThat(microsoftShell)
-            .contains(EMAIL)
-            .doesNotContain("(Outlook)", "(Gmail)");
+            .contains(EMAIL, "value=\"" + microsoft.getId() + "\"")
+            .doesNotContain("value=\"" + owned.getId() + "\"", "foreign@example.com", "(Outlook)", "(Gmail)");
+        mockMvc.perform(get("/senders").param("account", String.valueOf(owned.getId()))
+                .with(authentication(auth(EMAIL, "microsoft"))))
+            .andExpect(status().isNotFound());
+        // Matching email alone must never authenticate an unknown Microsoft subject.
+        mockMvc.perform(get("/senders")
+                .with(authentication(auth(EMAIL, "microsoft", "unconnected-subject"))))
+            .andExpect(status().isUnauthorized());
         verifyNoInteractions(gmailProvider, outlookProvider);
     }
 
@@ -498,10 +518,14 @@ class Phase9WorkspaceShellTest {
     }
 
     private static OAuth2AuthenticationToken auth(String email, String registrationId) {
+        return auth(email, registrationId, registrationId + "-" + email);
+    }
+
+    private static OAuth2AuthenticationToken auth(String email, String registrationId, String subject) {
         Map<String, Object> attributes = new LinkedHashMap<>();
         attributes.put("email", email);
         attributes.put("name", "Workspace Owner");
-        attributes.put("sub", "subject-" + email);
+        attributes.put("sub", subject);
         List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_USER"));
         DefaultOAuth2User user = new DefaultOAuth2User(authorities, attributes, "sub");
         return new OAuth2AuthenticationToken(user, authorities, registrationId);
