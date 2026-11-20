@@ -513,6 +513,10 @@ public class DashboardRepository {
         if (!filter.bySenderAddress()) requireGroup(p);
         String inGroup=" FROM filtered WHERE group_public_id=:group"+" AND (CAST(:address AS text) IS NULL OR address=:address)" + (unreadOnly ? " AND unread" : "");
         String filtered = filtered(account, filter);
+        // A single group can contain many sender units. The ordinary Gmail join
+        // can rescan the entire Inbox once per unit when fetching full message
+        // rows. Keep the existing keyed lookup for this drilldown on both providers.
+        if (BASIC_FILTERED.equals(filtered)) filtered = KEYED_BASIC_FILTERED;
         long total = jdbc.queryForObject(filtered + "SELECT count(*)" + inGroup, p, Long.class);
         List<Message> messages = jdbc.query(
                 filtered + """

@@ -59,6 +59,7 @@
     }
   }
   let filterEpoch = 0, listRequest = 0, listLoading = false, detailRequest = 0, detailLoad = null, detailRefreshPending = false, selectionBusy = 0, correctionDraft = null, correctionGroups = [], correctionRequest = 0;
+  let detailError = null;
   const fmt = number => Number(number).toLocaleString();
   function node(tag, text, className) { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (className) e.className = className; return e; }
   function notice(text, activity = false) {
@@ -383,7 +384,7 @@
       const hadSelection = selected.size > 0;
       clearSelection(hadSelection ? 'Sender group changed. Previous message selection was cleared.' : undefined);
     }
-    state.address = address; state.focused = g; state.messagePage = 0; state.details = null; $('detail').hidden = false; renderGroups(); renderDetail(); return loadDetails(); }
+    state.address = address; state.focused = g; state.messagePage = 0; state.details = null; detailError = null; $('detail').hidden = false; renderGroups(); renderDetail(); return loadDetails(); }
   function loadDetails(refresh = false) {
     if (!state.focused) return Promise.resolve();
     const group = state.focused.id, epoch = filterEpoch, tab = state.tab;
@@ -392,6 +393,10 @@
     if (!refresh && detailLoad?.key === key && !detailLoad.controller.signal.aborted) return detailLoad.promise;
     detailLoad?.controller.abort();
     const controller = new AbortController(), request = ++detailRequest;
+    detailError = null;
+    renderDetail();
+    let timedOut = false;
+    const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, 15000);
     const promise = (async () => {
       try {
         let details;
@@ -410,8 +415,13 @@
           if (state.messagePage > lastPage) { state.messagePage = lastPage; return loadDetails(); }
         }
         state.details = details; renderDetail();
-      } catch (error) { if (!controller.signal.aborted && request === detailRequest && epoch === filterEpoch) notice(error.message); }
-      finally { if (detailLoad?.controller === controller) detailLoad = null; }
+      } catch (error) {
+        if ((!controller.signal.aborted || timedOut) && request === detailRequest && epoch === filterEpoch
+            && group === state.focused?.id && tab === state.tab) {
+          detailError = timedOut ? 'Indexed details took too long to load. Try again.' : error.message;
+          renderDetail();
+        }
+      } finally { clearTimeout(timeout); if (detailLoad?.controller === controller) detailLoad = null; }
     })();
     detailLoad = { key, controller, promise };
     return promise;
@@ -431,6 +441,12 @@
     const content = $('detailContent'), restore = rememberFocus(content);
     const expandedLabels = new Set([...content.querySelectorAll('details[data-message-labels][open]')].map(el => el.dataset.messageLabels));
     content.replaceChildren(); const detail = state.details;
+    if (detailError) {
+      const error = node('p', detailError, 'evidence'); error.setAttribute('role', 'alert');
+      const retry = node('button', 'Retry loading details'); retry.type = 'button'; retry.onclick = () => loadDetails(true);
+      content.append(error, retry);
+      if (!detail) return;
+    }
     if (!detail) { content.append(node('p', 'Loading indexed details…', 'evidence')); return; }
     if (state.address) { const back=node('button','All messages in this group'); back.onclick=()=>focusGroup(state.focused); content.append(node('p',state.address,'evidence'),back); }
     if (state.tab === 'messages') {

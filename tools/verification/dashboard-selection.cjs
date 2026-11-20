@@ -17,7 +17,7 @@ const messages = [[inmail, 36, 'linkedin'], [invitations, 33, 'linkedin'], ['new
   })));
 // A fully expanded group must be taller than the viewport to expose focus scrolling.
 for (let i = 0; i < 20; i++) messages.push({ ...messages[0], id: `extra-${i}`, address: `extra${i}@linkedin.com` });
-let previewIds = [], delaySelection = null, selectionStarted = null;
+let previewIds = [], delaySelection = null, selectionStarted = null, detailFailure = false, delayDetails = null, detailsStarted = null;
 (async () => {
   const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
   try {
@@ -64,6 +64,8 @@ let previewIds = [], delaySelection = null, selectionStarted = null;
           address, messages: rows.filter(m => m.address === address).length,
           displayName: address === inmail ? 'Vashu Walia' : ''
         })) });
+        if (detailFailure) { detailFailure = false; return route.fulfill({ status: 503, json: { message: 'Indexed details are temporarily unavailable.' } }); }
+        if (delayDetails) { const wait = delayDetails; delayDetails = null; detailsStarted?.(); await wait; }
         const filtered = rows.filter(m => (!url.searchParams.get('address') || m.address === url.searchParams.get('address')) && (url.searchParams.get('unreadOnly') !== 'true' || m.unread));
         const offset = Number(url.searchParams.get('messagePage')) * 10;
         return send({ revision: 1, messages: filtered.slice(offset, offset + 10), total: filtered.length, recommendations: [] });
@@ -102,6 +104,21 @@ let previewIds = [], delaySelection = null, selectionStarted = null;
     await page.keyboard.press('Escape');
     await page.locator('#detailClose').click();
     await expect(page.locator('#detail')).toBeHidden();
+    // A failed or stalled details request must leave a usable retry in the pane.
+    detailFailure = true;
+    await page.locator('[data-focus-key=sender-linkedin]').click();
+    await expect(page.locator('#detailContent [role=alert]')).toHaveText('Indexed details are temporarily unavailable.');
+    await expect(page.locator('#detailContent')).not.toContainText('Loading indexed details');
+    await page.getByRole('button', { name: 'Retry loading details', exact: true }).click();
+    await expect(page.locator('#detailContent .message-row')).toHaveCount(10);
+    let releaseDetails;
+    delayDetails = new Promise(resolve => { releaseDetails = resolve; });
+    const stalled = new Promise(resolve => { detailsStarted = resolve; });
+    await page.locator('[data-focus-key=sender-target]').click(); await stalled;
+    await expect(page.locator('#detailContent [role=alert]')).toHaveText('Indexed details took too long to load. Try again.', { timeout: 20000 });
+    await page.getByRole('button', { name: 'Retry loading details', exact: true }).click();
+    await expect(page.locator('#detailContent .message-row')).toHaveCount(4);
+    releaseDetails();
     await page.locator('[data-focus-key=sender-linkedin]').click();
     await expect(page.locator('#detail')).toBeVisible();
     if (process.env.TIDYMAIL_UI_SCREENSHOTS) {
@@ -204,6 +221,6 @@ let previewIds = [], delaySelection = null, selectionStarted = null;
     await page.locator('#search').fill('changed');
     await expect(page.locator('#selectionRow')).toBeHidden();
     assert.deepEqual(errors, []);
-    console.log('PASS: stable scroll position and checkbox focus in a 22-address group, address/message synchronization, additive selection, paging, collapse, group boundary, exact Trash preview, unread scope, filter reset, stale response rejection, and inline rule action/sender transfer with validation and selection preservation.');
+    console.log('PASS: details failure/timeout and retry recovery, stable scroll position and checkbox focus in a 22-address group, address/message synchronization, additive selection, paging, collapse, group boundary, exact Trash preview, unread scope, filter reset, stale response rejection, and inline rule action/sender transfer with validation and selection preservation.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
