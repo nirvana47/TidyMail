@@ -8,12 +8,15 @@
       const sync = () => {
         const organize = form.querySelector('[name="action"]')?.value === 'ORGANIZE';
         destination.hidden = !organize;
+        const warning=form.querySelector('[data-domain-warning]');
+        if(warning)warning.hidden=!form.querySelector('[name="senders"]').value.split(/[,;\n]/).some(v=>v.trim().startsWith('@')||v.trim()&&!v.includes('@')&&v.includes('.'));
         if (organize && !picker) {
           const initial = destination.dataset.initialName ? { mode: destination.dataset.initialMode, id: destination.dataset.initialId, name: destination.dataset.initialName, skipInbox: destination.dataset.initialSkip === 'true' } : null;
           picker = new window.TidyMailDestinationPicker(destination.querySelector('[data-destination-picker]'), { provider: destination.dataset.provider, commitment: 'enable the rule', initial });
         }
       };
       form.querySelector('[name="action"]').addEventListener('change', sync);
+      form.querySelector('[name="senders"]').addEventListener('input', sync);
       form.addEventListener('submit', async event => {
         const errorBox = destination.querySelector('[data-destination-error]'); errorBox.textContent = '';
         try {

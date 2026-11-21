@@ -25,16 +25,12 @@ public class RuleExistingMailService {
         if(!Set.of("inbox","all","indexed").contains(scope))RuleDefinition.fail("Choose Inbox or All mailbox.");
         // Exactly the standard mailbox action scope: received mail, excluding Spam/Trash/Drafts.
         var filter=new DashboardFilter(scope,"","","","UTC",0).cleanupScope();
-        var matching=rules.matching(account,id);
+        var matching=rules.matching(account,id,senders);
         if(!matching.deployable())RuleStore.conflict("Matching existing emails could not be checked. Try again before applying the rule.");
         var params=dashboard.parameters(account,filter);matching.params().forEach(params::addValue);
-        if(!senders.isEmpty()){
-            if(!rule.definition().senders().containsAll(senders))RuleDefinition.fail("Choose addresses already included in this rule.");
-            params.addValue("senders",senders);
-        }
         var rows=dashboard.jdbc().queryForList(dashboard.filtered(account,filter)+"""
             SELECT dashboard_message_id,unread,'INBOX'=ANY(labels) in_inbox FROM filtered
-            WHERE lower(COALESCE(dashboard_from_address,from_address,'')) IN (:senders)
+            WHERE """+matching.senderPredicate()+"""
             AND ("""+matching.bucket()+"""
             )='match' ORDER BY received_at DESC NULLS LAST,id DESC LIMIT 10001
             """,params);

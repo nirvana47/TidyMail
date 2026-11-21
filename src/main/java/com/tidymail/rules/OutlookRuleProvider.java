@@ -35,12 +35,20 @@ public class OutlookRuleProvider implements RuleProvider {
     private RuleDefinition compatible(JsonNode r,String archiveId){
         if(r.path("isReadOnly").asBoolean()||r.path("hasError").asBoolean()||r.path("actions").path("stopProcessingRules").asBoolean())return null;
         var c=r.path("conditions");var ex=r.path("exceptions");var a=r.path("actions");
-        if(extra(c,Set.of("fromAddresses","subjectContains"))||extra(ex,Set.of("subjectContains"))
+        if(extra(c,Set.of("fromAddresses","senderContains","subjectContains"))||extra(ex,Set.of("subjectContains"))
             ||extra(a,Set.of("delete","markAsRead","moveToFolder","stopProcessingRules")))return null;
         boolean archive=a.hasNonNull("moveToFolder")&&!a.path("moveToFolder").asText().isEmpty();
         if(archive&&!a.path("moveToFolder").asText().equals(archiveId))return null;
-        if(!c.path("fromAddresses").isArray())return null;
-        var senders=new ArrayList<String>();for(var from:c.path("fromAddresses"))senders.add(from.path("emailAddress").path("address").asText());
+        if(!c.path("fromAddresses").isEmpty()&&!c.path("senderContains").isEmpty())return null; // Native AND cannot be imported as our OR list.
+        var senders=new ArrayList<String>();
+        if(!c.path("senderContains").isEmpty()){
+            for(var entry:c.path("senderContains")){
+                String value=entry.asText();
+                try{if(!RuleDefinition.senderEntry(value).equalsIgnoreCase(value))return null;}catch(RuntimeException unsupported){return null;}
+                senders.add(value);
+            }
+            if(senders.stream().noneMatch(v->v.startsWith("@")))return null; // Do not change arbitrary text matching into exact-address matching.
+        }else for(var from:c.path("fromAddresses"))senders.add(from.path("emailAddress").path("address").asText());
         boolean trash=a.path("delete").asBoolean(),read=a.path("markAsRead").asBoolean();
         if(trash&&archive||!trash&&!read&&!archive)return null;
         try{return new RuleDefinition(r.path("displayName").asText(),senders,phrases(c.path("subjectContains")),
@@ -57,8 +65,9 @@ public class OutlookRuleProvider implements RuleProvider {
     public JsonNode compile(UserAccount a,RuleDefinition d,List<NativeRule> inventory){
         ObjectNode r=json.createObjectNode();r.put("displayName",d.name());r.put("isEnabled",true);
         r.put("sequence",inventory.stream().mapToInt(n->n.raw().path("sequence").asInt()).max().orElse(0)+1);
-        var c=r.putObject("conditions");var from=c.putArray("fromAddresses");
-        for(String sender:d.senders())from.addObject().putObject("emailAddress").put("address",sender);
+        var c=r.putObject("conditions");
+        if(d.hasDomains())d.senders().forEach(c.putArray("senderContains")::add);
+        else {var from=c.putArray("fromAddresses");for(String sender:d.senders())from.addObject().putObject("emailAddress").put("address",sender);}
         if(!d.subject().isEmpty())d.subjects().forEach(c.putArray("subjectContains")::add);
         if(!d.exceptSubject().isEmpty())d.exceptions().forEach(r.putObject("exceptions").putArray("subjectContains")::add);
         var actions=r.putObject("actions");actions.put("stopProcessingRules",false);
@@ -116,8 +125,13 @@ public class OutlookRuleProvider implements RuleProvider {
         return folder.path("totalItemCount").asLong();
     }
     public JsonNode withSenders(JsonNode raw,List<String> senders){
-        ObjectNode payload=raw.deepCopy();var from=((ObjectNode)payload.path("conditions")).putArray("fromAddresses");
-        for(String sender:senders)from.addObject().putObject("emailAddress").put("address",sender);return payload;
+        ObjectNode payload=raw.deepCopy();var conditions=(ObjectNode)payload.path("conditions");
+        if(senders.stream().anyMatch(v->v.startsWith("@"))){
+            conditions.putArray("fromAddresses");senders.forEach(conditions.putArray("senderContains")::add);
+        }else{
+            conditions.putArray("senderContains");var from=conditions.putArray("fromAddresses");
+            for(String sender:senders)from.addObject().putObject("emailAddress").put("address",sender);
+        }return payload;
     }
     public void updateSenders(UserAccount a,String id,JsonNode payload){
         graph.request(a,HttpMethod.PATCH,path(id),Map.of("conditions",payload.path("conditions")));

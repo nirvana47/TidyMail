@@ -26,17 +26,18 @@
 <details><summary>Currently included senders</summary><p th:text="${#strings.listJoin(r.definition.senders,', ')}"></p></details>
 <p class="info-callout" th:text="${d.sentence(provider)}"></p>
 <p>The action, destination, subject conditions and exceptions stay the same.</p>
+<p class="muted" th:if="${!addition.matchingNote.isEmpty()}" th:text="${addition.matchingNote}"></p>
 <p th:if="${r.state=='ACTIVE' and provider=='google'}" class="muted">Gmail requires a replacement filter. The current filter stays active until its replacement is verified; they may briefly overlap.</p>
 <p th:if="${r.state=='PAUSED'}">This rule will stay paused.</p><p th:if="${r.state=='DRAFT'}">This rule will remain a draft.</p>
 <a th:href="@{/rules/{id}(id=${r.id})}" target="_blank" rel="noopener">Edit full rule ↗</a>
 <h3>Recent emails from the added addresses</h3>
 <p class="muted">These examples use indexed mail and do not predict future volume. Subject conditions still apply, including to the email you started from.</p>
 <table><thead><tr><th>Sender</th><th>Subject</th><th>Would match?</th></tr></thead><tbody>
-<tr th:each="e:${addition.examples}" th:if="${#lists.contains(addition.added,e.sender)}" th:attr="data-addition-extra=${e.rn>3}" th:hidden="${e.rn>3}"><td th:text="${e.sender}"></td><td th:text="${e.subject_header}"></td><td th:text="${e.bucket=='match'?'Yes':(e.bucket=='excluded'?'No · subject exception':'No · required subject phrase missing')}"></td></tr>
+<tr th:each="e:${addition.examples}" th:attr="data-addition-extra=${e.rn>3}" th:hidden="${e.rn>3}"><td th:text="${e.sender}"></td><td th:text="${e.subject_header}"></td><td th:text="${e.bucket=='match'?'Yes':(e.bucket=='excluded'?'No · subject exception':'No · required subject phrase missing')}"></td></tr>
 </tbody></table><button th:if="${addition.counts.matched>3 or addition.counts.excluded>3 or addition.counts.other>3}" type="button" data-addition-more>Show more examples</button><p th:if="${addition.counts.matched==0}" class="muted">No matching examples found. The sender will still need to meet this rule’s subject conditions.</p>
 <p th:if="${!#lists.isEmpty(addition.protected)}" class="rule-alert">A sender is protected. Resolve the protection before adding it.</p>
 <p th:if="${!addition.inventoryError.isEmpty()}" class="rule-alert" th:text="${addition.inventoryError}"></p>
-<p th:unless="${addition.deployable}" class="rule-alert">Subject matching could not be verified. Review again before updating.</p>
+<p th:unless="${addition.deployable}" class="rule-alert">Sender/domain or subject matching could not be verified. Review again before updating.</p>
 <p th:if="${!addition.permission and r.remoteId!=null}" class="rule-alert">Connect rule permissions in Rules, then review the addition again.</p>
 <section th:replace="~{fragments/rule-interactions :: interactions(${addition.interactions},${addition.id},${r.id},${#lists.size(d.senders)})}"></section>
 <form th:action="@{/rules/{id}/senders/add(id=${r.id})}" method="post" class="rule-review-actions">

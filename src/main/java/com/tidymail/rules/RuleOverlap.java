@@ -13,8 +13,9 @@ public final class RuleOverlap {
     }
     public static Assessment assess(RuleDefinition draft,RuleProvider.NativeRule rule){
         if(rule.compatible()!=null){
-            var senders=draft.senders().stream().filter(rule.compatible().senders()::contains).map(s->new Sender(s,s)).toList();
-            return new Assessment(senders,"These addresses are listed in both rules. Other conditions still need to match.",false);
+            boolean contains=!rule.raw().has("criteria")&&rule.compatible().hasDomains();
+            var senders=senderCandidates(draft,rule.compatible().senders(),contains);
+            return new Assessment(senders,"These sender entries can overlap. Other conditions still need to match.",false);
         }
         var raw=rule.raw();
         if(raw.has("criteria")){
@@ -23,18 +24,34 @@ public final class RuleOverlap {
                 "This filter has no separate From restriction. Its search or other conditions may narrow which senders qualify.",false);
             // Only positive OR lists are safe to narrow locally. Names, AND, negation and search operators need provider evaluation.
             var terms=Arrays.stream(from.replaceAll("[{}()\\\",|]"," ").split("\\s+")).filter(t->!t.isBlank()&&!t.equals("or")).toList();
-            if(terms.isEmpty()||terms.stream().anyMatch(t->!t.matches("[a-z0-9][a-z0-9._%+@\\-]*\\.[a-z]{2,63}")||t.startsWith("-")))
+            if(terms.isEmpty()||terms.stream().anyMatch(t->!t.matches("[@a-z0-9][a-z0-9._%+@\\-]*\\.[a-z]{2,63}")||t.startsWith("-")))
                 return new Assessment(List.of(),"This filter uses a complex From condition. The affected addresses have not been identified; check all selected senders below.",true);
-            var senders=draft.senders().stream().map(s->new Sender(s,String.join(" OR ",terms.stream().filter(t->t.contains("@")?s.equals(t):s.contains(t)).toList())))
-                .filter(s->!s.condition().isEmpty()).toList();
+            var senders=new ArrayList<Sender>();
+            for(String entry:draft.senders()){
+                var matches=terms.stream().filter(t->t.startsWith("@")||entry.startsWith("@")?RuleDefinition.entriesOverlap(entry,t,false):t.contains("@")?entry.equals(t):entry.contains(t)).toList();
+                if(!matches.isEmpty())senders.add(new Sender(entry,String.join(" OR ",matches)));
+            }
+            if(senders.isEmpty()&&draft.hasDomains()&&terms.stream().anyMatch(t->!t.contains("@")))return new Assessment(List.of(),"This From condition may match changing sender names or prefixes within the selected domain. Check the full filter below.",true);
             return new Assessment(senders,"These addresses contain a term from the filter’s From condition. This is a possible sender overlap, not a full-rule match.",false);
+        }
+        var contains=raw.path("conditions").path("senderContains");
+        if(!contains.isEmpty()){
+            if(!raw.path("conditions").path("fromAddresses").isEmpty())return new Assessment(List.of(),"This Outlook rule combines sender conditions with AND. Review both conditions below.",true);
+            var terms=new ArrayList<String>();contains.forEach(v->terms.add(v.asText().toLowerCase(Locale.ROOT)));
+            var senders=senderCandidates(draft,terms,true);
+            if(senders.isEmpty()&&draft.hasDomains())return new Assessment(List.of(),"This sender-text condition may match changing prefixes within the selected domain. Review the full conditions below.",true);
+            return new Assessment(senders,"Outlook uses sender address includes. These sender terms can overlap; other conditions and exceptions still need to match.",false);
         }
         var from=raw.path("conditions").path("fromAddresses");
         if(from.isEmpty())return new Assessment(draft.senders().stream().map(s->new Sender(s,"No sender restriction")).toList(),
             "This rule has no sender restriction. Its other conditions and exceptions still need to match.",false);
         var addresses=new HashSet<String>();for(var sender:from)addresses.add(sender.path("emailAddress").path("address").asText().toLowerCase(Locale.ROOT));
-        return new Assessment(draft.senders().stream().filter(addresses::contains).map(s->new Sender(s,s)).toList(),
+        return new Assessment(senderCandidates(draft,new ArrayList<>(addresses),false),
             "These addresses are listed in both rules. Other conditions and exceptions still need to match.",false);
+    }
+    private static List<Sender> senderCandidates(RuleDefinition draft,List<String> terms,boolean contains){
+        return draft.senders().stream().map(entry->new Sender(entry,String.join(" OR ",terms.stream().filter(t->RuleDefinition.entriesOverlap(entry,t,contains)).toList())))
+            .filter(sender->!sender.condition().isEmpty()).toList();
     }
     public static List<Condition> conditions(JsonNode raw){
         var out=new ArrayList<Condition>();
@@ -44,7 +61,7 @@ public final class RuleOverlap {
         }else{
             for(String section:List.of("conditions","exceptions"))raw.path(section).fields().forEachRemaining(f->{
                 var v=f.getValue();if(v.isNull()||v.isArray()&&v.isEmpty()||v.isBoolean()&&!v.asBoolean())return;
-                String name=switch(f.getKey()){case "fromAddresses"->"From";case "subjectContains"->"Subject contains any";case "bodyContains"->"Body contains any";case "bodyOrSubjectContains"->"Body or subject contains any";case "hasAttachments"->"Has attachments";default->f.getKey();};
+                String name=switch(f.getKey()){case "fromAddresses"->"From";case "senderContains"->"Sender address includes any";case "subjectContains"->"Subject contains any";case "bodyContains"->"Body contains any";case "bodyOrSubjectContains"->"Body or subject contains any";case "hasAttachments"->"Has attachments";default->f.getKey();};
                 out.add(new Condition((section.equals("exceptions")?"Except: ":"")+name,display(v)));
             });
         }

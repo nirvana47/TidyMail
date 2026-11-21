@@ -35,15 +35,38 @@ public record RuleDefinition(String name, List<String> senders, String subject, 
         subject = Objects.toString(subject, "").strip();
         exceptSubject = Objects.toString(exceptSubject, "").strip();
         if(name.isEmpty() || name.length()>100) fail("Give the rule a name (up to 100 characters).");
-        if(senders == null || senders.isEmpty()) fail("Choose at least one exact sender address.");
-        senders = senders.stream().map(s -> s.strip().toLowerCase(Locale.ROOT)).distinct().sorted().toList();
-        for(String sender : senders)
-            if(!sender.matches("[a-z0-9][a-z0-9._%+\\-]*@[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\\.[a-z]{2,63}") || sender.length()>320)
-                fail("Enter email addresses, separated by commas. Display names and domains alone are not supported.");
+        if(senders == null || senders.isEmpty()) fail("Choose at least one sender address or @domain.");
+        senders = senders.stream().map(RuleDefinition::senderEntry).distinct().sorted().toList();
         // Restrict to plain words; prevent native search operators from changing the sender/subject scope.
         subject = cleanPhrases(subject);
         exceptSubject = cleanPhrases(exceptSubject);
         if(!ACTIONS.containsKey(action)) fail("Choose a supported action.");
+    }
+    private static boolean validDomain(String domain){
+        return domain.length()<=253&&domain.matches("[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\\.[a-z]{2,63}");
+    }
+    public static String senderEntry(String input){
+        String value=Objects.toString(input,"").strip().toLowerCase(Locale.ROOT);
+        if(!value.contains("@")&&validDomain(value))value="@"+value;
+        if(value.startsWith("@")&&validDomain(value.substring(1)))return value;
+        int at=value.indexOf('@');
+        if(at>0&&value.length()<=320&&value.substring(0,at).matches("[a-z0-9][a-z0-9._%+\\-]*")&&validDomain(value.substring(at+1)))return value;
+        fail("Enter complete email addresses or @domains, separated by commas. Wildcards and search operators are not supported.");return "";
+    }
+    public boolean hasDomains(){return senders.stream().anyMatch(v->v.startsWith("@"));}
+    /** Provider domain conditions are sender-text matches, not a promise of a strict DNS boundary. */
+    public boolean matchesSender(String address,String provider){
+        String value=Objects.toString(address,"").toLowerCase(Locale.ROOT);
+        boolean contains=hasDomains()&&"microsoft".equals(provider);
+        return senders.stream().anyMatch(entry->matchesEntry(entry,value,contains));
+    }
+    public static boolean matchesEntry(String entry,String address,boolean contains){
+        String value=Objects.toString(address,"").toLowerCase(Locale.ROOT);
+        return entry.startsWith("@")||contains?value.contains(entry):value.equals(entry);
+    }
+    public static boolean entriesOverlap(String first,String second,boolean contains){
+        return first.equals(second)||((first.startsWith("@")||contains)&&second.contains(first))
+            ||((second.startsWith("@")||contains)&&first.contains(second));
     }
     private static String cleanPhrases(String text) {
         var phrases=Arrays.stream(text.split("\\R")).map(String::strip).filter(v->!v.isEmpty()).distinct().toList();
@@ -66,7 +89,7 @@ public record RuleDefinition(String name, List<String> senders, String subject, 
     }
     public String sentence() {return sentence("google");}
     public String sentence(String provider) {
-        return (organize()?"Organize into “"+destination+"”"+(skipInbox?" and skip the Inbox":""):actionLabel(provider))+" for incoming email from "+String.join(", ",senders)
+        return (organize()?"Organize into “"+destination+"”"+(skipInbox?" and skip the Inbox":""):actionLabel(provider))+(hasDomains()?("microsoft".equals(provider)?" for incoming mail whose sender address includes any of: ":" for incoming mail matching any From entry: "):" for incoming email from ")+String.join(", ",senders)
             +(subject.isEmpty()?"":" with any subject phrase “"+String.join("”, “",subjects())+"”")
             +(exceptSubject.isEmpty()?"":" except any subject phrase “"+String.join("”, “",exceptions())+"”")+".";
     }

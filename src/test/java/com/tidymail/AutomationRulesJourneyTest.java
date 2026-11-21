@@ -219,6 +219,71 @@ class AutomationRulesJourneyTest extends PostgresJourneyTest {
         verifyNoInteractions(gmailRules,graph);
     }
 
+    @Test void gmailDomainRuleRoundTripsAndPreviewsChangingAddressesWithExceptionsAndProtections() throws Exception {
+        String[][] messages={{"domain-1","prefix-one@relay.example.test","Weekly update"},{"domain-2","prefix-two@relay.example.test","Weekly invoice"},{"domain-3","alerts@fixed.example.test","Weekly update"},{"domain-other","outside@other.example.test","Weekly update"}};
+        for(var m:messages)jdbc.update("INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,dashboard_from_address,dashboard_unit_kind,dashboard_unit_key,subject_header,labels,label_evidence_known,received_at) VALUES(?,'google',?,?,?,'ADDRESS',?,?,ARRAY['INBOX'],true,now())",account,m[0],m[1],m[1],m[1],m[2]);
+        doReturn(new GmailRuleProvider.Matches(Set.of("domain-1","domain-3"),Set.of("domain-1","domain-2","domain-3"))).when(gmailRules).matching(any(),any());
+        doReturn(List.of(new GmailRuleProvider.Destination("Label_domain","Domain mail"))).when(gmailRules).destinations(any());
+        doAnswer(i->gmailRules.useDestination(i.getArgument(1),"Label_domain")).when(gmailRules).prepare(any(),any());
+        doReturn(0L).when(gmailRules).destinationCount(any(),anyString());
+        var response=mockMvc.perform(post("/rules/save").with(authenticatedAs(EMAIL)).with(csrfToken())
+            .param("account",""+account).param("name","Domain mail").param("senders","@relay.example.test, alerts@fixed.example.test")
+            .param("subject","Weekly").param("exceptSubject","invoice").param("action","ORGANIZE").param("destination","Domain mail").param("destinationId","Label_domain").param("destinationMode","EXISTING"))
+            .andExpect(status().is3xxRedirection()).andReturn().getResponse();
+        UUID id=UUID.fromString(response.getRedirectedUrl().split("/rules/")[1].split("\\?")[0]);
+        assertThat(rules.get(account,id).definition().hasDomains()).isTrue();
+        var review=rules.preview(account,id);assertThat(((Map<?,?>)review.get("counts")).get("matched")).isEqualTo(2L);assertThat(((Map<?,?>)review.get("counts")).get("excluded")).isEqualTo(1L);
+        jdbc.update("INSERT INTO protected_senders(account_id,sender_address,source) VALUES(?,?,'USER')",account,"important@relay.example.test");
+        assertThat((List<String>)rules.preview(account,id).get("protected")).contains("important@relay.example.test");
+        assertThatThrownBy(()->rules.enable(account,id,(UUID)review.get("id"),true)).hasMessageContaining("protected sender");assertThat(creates).isZero();
+        jdbc.update("DELETE FROM protected_senders WHERE account_id=?",account);
+        rules.enable(account,id,preview(account,id),true);
+        var nativeRule=nativeGmail.getFirst().raw();assertThat(nativeRule.path("criteria").path("from").asText()).isEqualTo("{@relay.example.test alerts@fixed.example.test}");
+        assertThat(nativeRule.path("criteria").path("negatedQuery").asText()).contains("invoice");
+        assertThat(existingMail.matches(account,id,"inbox").total()).isEqualTo(2);
+        assertThat(existingMail.matches(account,id,"inbox",List.of("alerts@fixed.example.test")).total()).isEqualTo(1);
+        jdbc.update("INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,dashboard_from_address,dashboard_unit_kind,dashboard_unit_key,subject_header,labels,label_evidence_known,received_at) VALUES(?,'google','domain-new','prefix-new@relay.example.test','prefix-new@relay.example.test','ADDRESS','prefix-new@relay.example.test','Weekly update',ARRAY['INBOX'],true,now())",account);
+        doReturn(new GmailRuleProvider.Matches(Set.of("domain-1","domain-3","domain-new"),Set.of("domain-1","domain-2","domain-3","domain-new"))).when(gmailRules).matching(any(),any());
+        assertThat(existingMail.matches(account,id,"inbox").total()).isEqualTo(3);assertThat(creates).isEqualTo(1);
+        rules.manage(account,id,"pause");
+        mockMvc.perform(get("/rules/"+id).with(authenticatedAs(EMAIL))).andExpect(status().isOk()).andExpect(content().string(org.hamcrest.Matchers.containsString("@relay.example.test")));
+        var add=rules.reviewSenders(account,id,List.of("added@other.example.test"));rules.addSenders(account,id,(UUID)add.get("id"),true);
+        assertThat(rules.get(account,id).definition().senders()).contains("@relay.example.test");assertThat(rules.get(account,id).state()).isEqualTo("PAUSED");
+        var domainOnly=new RuleDefinition("Domain only",List.of("relay.example.test"),"","","READ");
+        assertThat(domainOnly.senders()).containsExactly("@relay.example.test");assertThat(gmailRules.compile(accounts.findById(account).orElseThrow(),domainOnly,List.of()).path("criteria").path("from").asText()).isEqualTo("@relay.example.test");
+        assertThatThrownBy(()->new RuleDefinition("Unsafe",List.of("@relay.example.test OR from:anywhere"),"","","READ")).isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+    }
+
+    @Test void outlookDomainAndAddressUseOneOrListAndPreserveDomainsThroughPauseAddAndResume() throws Exception {
+        long outlook=userAccounts.createAccount("domain-outlook@example.test","microsoft");
+        var a=accounts.findById(outlook).orElseThrow();a.setScopes(List.of("MailboxSettings.ReadWrite"));accounts.save(a);
+        String[][] messages={{"d-1","changed-prefix@relay.example.test","Weekly update"},{"d-2","alerts@fixed.example.test","Weekly update"},{"d-3","other@relay.example.test","Weekly invoice"},{"d-4","outside@elsewhere.example.test","Weekly update"}};
+        for(var m:messages)jdbc.update("INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,subject_header,received_at) VALUES(?,'microsoft',?,?,?,now())",outlook,m[0],m[1],m[2]);
+        var inventory=new LinkedHashMap<String,JsonNode>();
+        when(graph.request(any(),any(),anyString(),nullable(Object.class))).thenAnswer(i->{
+            HttpMethod method=i.getArgument(1);Object payload=i.getArgument(3);
+            if(method==HttpMethod.GET){var page=json.createObjectNode();var values=page.putArray("value");inventory.values().forEach(values::add);return page;}
+            if(method==HttpMethod.PATCH){var changes=(Map<?,?>)payload;var nativeRule=(ObjectNode)inventory.get("domain-rule");
+                if(changes.containsKey("isEnabled"))nativeRule.put("isEnabled",(Boolean)changes.get("isEnabled"));
+                if(changes.containsKey("conditions"))nativeRule.set("conditions",((JsonNode)changes.get("conditions")).deepCopy());return null;}
+            var created=((JsonNode)payload).deepCopy();((ObjectNode)created).put("id","domain-rule");inventory.put("domain-rule",created);return created;
+        });
+        var d=new RuleDefinition("Domain OR fixed address",List.of("@relay.example.test","alerts@fixed.example.test"),"Weekly","invoice","TRASH");UUID id=rules.save(outlook,null,0,d);
+        var review=rules.preview(outlook,id);assertThat(((Map<?,?>)review.get("counts")).get("matched")).isEqualTo(2L);assertThat(((Map<?,?>)review.get("counts")).get("excluded")).isEqualTo(1L);
+        assertThat(review.get("matchingNote").toString()).contains("sender address includes","alternatives");
+        rules.enable(outlook,id,(UUID)review.get("id"),true);
+        var nativeRule=inventory.get("domain-rule");assertThat(nativeRule.path("conditions").path("senderContains")).isEqualTo(json.readTree("[\"@relay.example.test\",\"alerts@fixed.example.test\"]"));assertThat(nativeRule.path("conditions").path("fromAddresses").isEmpty()).isTrue();
+        assertThat(new OutlookRuleProvider(graph,json).list(a).getFirst().compatible().senders()).containsExactlyElementsOf(d.senders());
+        var originalActions=nativeRule.path("actions").deepCopy();int sequence=nativeRule.path("sequence").asInt();
+        rules.manage(outlook,id,"pause");var add=rules.reviewSenders(outlook,id,List.of("added@other.example.test"));rules.addSenders(outlook,id,(UUID)add.get("id"),true);
+        assertThat(rules.get(outlook,id).state()).isEqualTo("PAUSED");assertThat(rules.get(outlook,id).definition().senders()).contains("@relay.example.test");
+        assertThat(inventory.get("domain-rule").path("actions")).isEqualTo(originalActions);assertThat(inventory.get("domain-rule").path("sequence").asInt()).isEqualTo(sequence);
+        rules.enable(outlook,id,preview(outlook,id),true);assertThat(rules.get(outlook,id).state()).isEqualTo("ACTIVE");assertThat(inventory).hasSize(1);
+        // Native AND conditions must never be adopted as the editor's OR list.
+        ((ObjectNode)inventory.get("domain-rule").path("conditions")).putArray("fromAddresses").addObject().putObject("emailAddress").put("address","someone@relay.example.test");
+        assertThat(new OutlookRuleProvider(graph,json).list(a).getFirst().compatible()).isNull();
+    }
+
     @Test void overlapIdentifiesOnlySharedAddressesAndBatchChecksFullFilterWithoutMovingMail() throws Exception {
         var senders=new ArrayList<String>();senders.add(SENDER);senders.add("not-"+SENDER);
         java.util.stream.IntStream.range(0,40).mapToObj(i->"selected"+i+"@example.test").forEach(senders::add);

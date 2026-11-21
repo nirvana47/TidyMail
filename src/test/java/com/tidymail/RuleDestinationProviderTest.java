@@ -47,7 +47,7 @@ class RuleDestinationProviderTest {
                             assertThat(submitted.path("action").path("addLabelIds").get(0).asText()).isEqualTo("Label_42");
                             body="{\"id\":\"filter-42\"}";
                         }
-                        else if(url.endsWith("/settings/filters"))body="{\"filter\":[{\"id\":\"existing-trash\",\"criteria\":{\"from\":\"offers@example.test\"},\"action\":{\"addLabelIds\":[\"TRASH\"]}}]}";
+                        else if(url.endsWith("/settings/filters"))body="{\"filter\":[{\"id\":\"existing-trash\",\"criteria\":{\"from\":\"offers@example.test\"},\"action\":{\"addLabelIds\":[\"TRASH\"]}},{\"id\":\"domain-or\",\"criteria\":{\"from\":\"{@relay.example.test alerts@fixed.example.test}\"},\"action\":{\"addLabelIds\":[\"TRASH\"]}},{\"id\":\"unsafe-import\",\"criteria\":{\"from\":\"one@example.test two@example.test\"},\"action\":{\"addLabelIds\":[\"TRASH\"]}}]}";
                         else if(url.endsWith("/labels")&&method.equals("POST")){
                             assertThat(json.readTree(getContentAsString()).path("name").asText()).isEqualTo("TidyMail - Offers");
                             existing[0]=true;body="{\"id\":\"Label_42\",\"name\":\"TidyMail - Offers\"}";
@@ -71,7 +71,10 @@ class RuleDestinationProviderTest {
         assertThat(calls.stream().filter(c->c.startsWith("POST")).count()).isEqualTo(1);
         assertThat(provider.create(account,ready)).isEqualTo("filter-42");
         assertThat(provider.destinationCount(account,"Label_42")).isEqualTo(17);
-        assertThat(provider.list(account).getFirst().compatible().action()).isEqualTo("TRASH");
+        var inventory=provider.list(account);
+        assertThat(inventory.getFirst().compatible().action()).isEqualTo("TRASH");
+        assertThat(inventory.get(1).compatible().senders()).containsExactly("@relay.example.test","alerts@fixed.example.test");
+        assertThat(inventory.get(2).compatible()).isNull();
     }
 
     @Test void existingRuleDefinitionsStillLoadWithoutDestinationFields() throws Exception {

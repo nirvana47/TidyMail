@@ -61,32 +61,54 @@ public class AutomationRuleService {
         var a=account(account);requirePermission(a);var r=store.get(account,id);
         results.observe(a,provider(a),r,true);return null;
     });}
-    private List<String> protectedSenders(long account,RuleDefinition d){return store.jdbc().queryForList(
-        "SELECT sender_address FROM protected_senders WHERE account_id=:account AND sender_address IN (:senders) ORDER BY sender_address",
-        Map.of("account",account,"senders",d.senders()),String.class);}
+    private List<String> protectedSenders(long account,RuleDefinition d){
+        String provider=account(account).getProvider();
+        return store.jdbc().queryForList("SELECT sender_address FROM protected_senders WHERE account_id=:account ORDER BY sender_address",Map.of("account",account),String.class)
+            .stream().filter(sender->d.matchesSender(sender,provider)).toList();
+    }
+    private String senderPredicate(UserAccount a,RuleDefinition d,List<String> entries,Map<String,Object> params,String prefix){
+        String address="lower(COALESCE(dashboard_from_address,from_address,''))";
+        var exact=new ArrayList<String>();var clauses=new ArrayList<String>();
+        boolean contains=d.hasDomains()&&"microsoft".equals(a.getProvider());
+        for(String entry:entries){
+            if(entry.startsWith("@")||contains){String key=prefix+clauses.size();params.put(key,entry);clauses.add("position(:"+key+" in "+address+")>0");}
+            else exact.add(entry);
+        }
+        if(!exact.isEmpty()){params.put(prefix+"Exact",exact);clauses.add(address+" IN (:"+prefix+"Exact)");}
+        return clauses.isEmpty()?"false":"("+String.join(" OR ",clauses)+")";
+    }
 
     private String localPhrasePredicate(List<String> phrases,String prefix,Map<String,Object> params) {
         var clauses=new ArrayList<String>();
         for(int i=0;i<phrases.size();i++){String key=prefix+i;params.put(key,phrases.get(i).toLowerCase(Locale.ROOT));clauses.add("position(:"+key+" in lower(COALESCE(subject_header,'')))>0");}
         return clauses.isEmpty()?"true":"("+String.join(" OR ",clauses)+")";
     }
-    public record Matching(String bucket,Map<String,Object> params,boolean deployable,String note) {}
+    public record Matching(String bucket,String senderPredicate,Map<String,Object> params,boolean deployable,String note) {}
     public Matching matching(long account,UUID ruleId) {var a=account(account);return matching(a,store.get(account,ruleId).definition());}
+    public Matching matching(long account,UUID ruleId,List<String> entries){
+        var a=account(account);var d=store.get(account,ruleId).definition();var m=matching(a,d);
+        if(entries.isEmpty())return m;
+        if(!d.senders().containsAll(entries))RuleDefinition.fail("Choose sender entries already included in this rule.");
+        return new Matching(m.bucket(),"("+m.senderPredicate()+") AND ("+senderPredicate(a,d,entries,m.params(),"selectedSender")+")",m.params(),m.deployable(),m.note());
+    }
     private Matching matching(UserAccount a,RuleDefinition d) {
         var p=provider(a);
         var params=new HashMap<String,Object>();params.put("account",a.getId());params.put("senders",d.senders());params.put("subject",d.subject().toLowerCase(Locale.ROOT));params.put("except",d.exceptSubject().toLowerCase(Locale.ROOT));
+        String senderPredicate=senderPredicate(a,d,d.senders(),params,"sender");
         boolean deployable=true;String matchingNote="";
         String include=localPhrasePredicate(d.subjects(),"include",params), exclude=localPhrasePredicate(d.exceptions(),"exclude",params);
         String bucket="CASE WHEN NOT ("+include+") THEN 'other' WHEN "+(d.exceptions().isEmpty()?"false":exclude)+" THEN 'excluded' ELSE 'match' END";
-        if(p instanceof GmailRuleProvider gmail&&(!d.subject().isEmpty()||!d.exceptSubject().isEmpty())){
+        if(p instanceof GmailRuleProvider gmail&&(d.hasDomains()||!d.subject().isEmpty()||!d.exceptSubject().isEmpty())){
             try{var matches=gmail.matching(a,d);
                 params.put("included",matches.included().isEmpty()?List.of("__no_matches__"):matches.included());
                 params.put("before",matches.beforeException().isEmpty()?List.of("__no_matches__"):matches.beforeException());
                 bucket="CASE WHEN provider_message_id IN (:included) THEN 'match' WHEN provider_message_id IN (:before) THEN 'excluded' ELSE 'other' END";
-                matchingNote="Subject matches were checked with Gmail search. Only examples retained in TidyMail are shown.";
-            }catch(RuntimeException unavailable){deployable=false;matchingNote="Gmail subject matching could not be verified. These are approximate local examples; native activation is unavailable until a fresh preview succeeds.";}
+                if(d.hasDomains())senderPredicate="("+senderPredicate+" OR provider_message_id IN (:before))";
+                matchingNote="Sender/domain and subject matches were checked with Gmail search. Only examples retained in TidyMail are shown.";
+            }catch(RuntimeException unavailable){deployable=false;matchingNote="Gmail sender/domain or subject matching could not be verified. These are approximate local examples; native activation is unavailable until a fresh preview succeeds.";}
         }else if(!d.subject().isEmpty()||!d.exceptSubject().isEmpty())matchingNote="Outlook subject conditions match text within the subject, ignoring case.";
-        return new Matching(bucket,params,deployable,matchingNote);
+        if("microsoft".equals(a.getProvider())&&d.hasDomains())matchingNote="Outlook uses sender address includes for all entries in a domain rule. Entries are alternatives; matching is text-based rather than a strict domain boundary. "+matchingNote;
+        return new Matching(bucket,senderPredicate,params,deployable,matchingNote);
     }
     public String destination(long account,UUID ruleId) {return results.destination(store.get(account,ruleId));}
     public record Interaction(String name,String action,List<RuleOverlap.Sender> senders,String reason,boolean uncertain,
@@ -109,14 +131,15 @@ public class AutomationRuleService {
     });}
     private Map<String,Object> previewDefinition(long id,RuleStore.Saved r,RuleDefinition d,List<String> sampleSenders){
         UUID ruleId=r.id();var a=account(id);var p=provider(a);
-        var matching=matching(a,d);var params=matching.params();boolean deployable=matching.deployable();String matchingNote=matching.note(),bucket=matching.bucket();params.put("sampleSenders",sampleSenders);
+        var matching=matching(a,d);var params=matching.params();boolean deployable=matching.deployable();String matchingNote=matching.note(),bucket=matching.bucket();
+        String samplePredicate=sampleSenders.equals(d.senders())?matching.senderPredicate():senderPredicate(a,d,sampleSenders,params,"sample");
         String source="""
             WITH evidence AS (
               SELECT m.*,%s AS bucket
               FROM message_metadata m WHERE m.account_id=:account
-              AND lower(COALESCE(m.dashboard_from_address,m.from_address,'')) IN (:sampleSenders)
+              AND %s
             )
-            """.formatted(bucket);
+            """.formatted(bucket,samplePredicate);
         var counts=store.jdbc().queryForMap(source+"SELECT count(*) FILTER(WHERE bucket='match') matched,count(*) FILTER(WHERE bucket='excluded') excluded,count(*) FILTER(WHERE bucket='other') other,min(received_at) oldest,max(received_at) newest,max(last_synced_at) synced FROM evidence",params);
         var examples=store.jdbc().queryForList(source+"SELECT * FROM (SELECT provider_message_id,provider_thread_id,subject_header,received_at,outlook_web_link,bucket,COALESCE(dashboard_from_address,from_address) sender,row_number() OVER(PARTITION BY bucket ORDER BY received_at DESC NULLS LAST,id DESC) rn FROM evidence) sample WHERE rn<=10 ORDER BY bucket,rn",params);
         for(var e:examples){String url="";
@@ -153,11 +176,11 @@ public class AutomationRuleService {
         Set<String> matches;
         try{matches=gmail.matchingInbox(a,existing.raw(),d.senders());}
         catch(IllegalStateException unavailable){throw new ResponseStatusException(HttpStatus.CONFLICT,"The full Gmail conditions could not be checked. No partial result is treated as verified. Review this filter in Gmail or try again.");}
-        var params=new HashMap<String,Object>();params.put("account",account);params.put("senders",d.senders());params.put("ids",matches.isEmpty()?Set.of("__no_matches__"):matches);
-        var indexed=store.jdbc().queryForList("SELECT provider_message_id,COALESCE(dashboard_from_address,from_address) sender,subject_header,received_at,provider_thread_id FROM message_metadata WHERE account_id=:account AND provider_message_id IN (:ids) AND lower(COALESCE(dashboard_from_address,from_address,'')) IN (:senders) ORDER BY received_at DESC NULLS LAST,id DESC",params);
+        var params=new HashMap<String,Object>();params.put("account",account);String checkSenders=senderPredicate(a,d,d.senders(),params,"checkSender");params.put("ids",matches.isEmpty()?Set.of("__no_matches__"):matches);
+        var indexed=store.jdbc().queryForList("SELECT provider_message_id,COALESCE(dashboard_from_address,from_address) sender,subject_header,received_at,provider_thread_id FROM message_metadata WHERE account_id=:account AND provider_message_id IN (:ids) AND "+checkSenders+" ORDER BY received_at DESC NULLS LAST,id DESC",params);
         var senderRows=new ArrayList<Map<String,Object>>();
         for(String sender:d.senders()){
-            long count=indexed.stream().filter(m->sender.equalsIgnoreCase(Objects.toString(m.get("sender"),""))).count();
+            long count=indexed.stream().filter(m->RuleDefinition.matchesEntry(sender,Objects.toString(m.get("sender"),""),false)).count();
             senderRows.add(Map.of("address",sender,"matches",count));
         }
         senderRows.sort(Comparator.<Map<String,Object>>comparingLong(m->((Number)m.get("matches")).longValue()).reversed());
@@ -166,7 +189,7 @@ public class AutomationRuleService {
             "url",links.gmail(a.getProvider(),a.getEmail(),(String)m.get("provider_thread_id"),(String)m.get("provider_message_id")).orElse("")));
         String explanation=matches.isEmpty()?"Gmail found no current Inbox messages from these addresses satisfying this filter’s full conditions. Sharing a sender condition alone does not establish a message match.":
             "Gmail currently finds Inbox messages satisfying this filter’s conditions. That confirms a current match, not that this filter ran when they arrived. Gmail does not provide filter creation time or a per-message execution history here; the emails may predate the filter or have been restored to Inbox. The cause is not established.";
-        return Map.of("checkedAt",Instant.now().toString(),"selectedAddresses",d.senders().size(),"currentInboxMatches",matches.size(),"indexedMatches",indexed.size(),
+        return Map.of("checkedAt",Instant.now().toString(),"selectedAddresses",d.senders().size(),"hasDomains",d.hasDomains(),"currentInboxMatches",matches.size(),"indexedMatches",indexed.size(),
             "unindexedMatches",Math.max(0,matches.size()-indexed.size()),"senders",senderRows,"examples",examples,"explanation",explanation);
     });}
     public void enable(long account,UUID id,UUID preview,boolean reviewedInventory){serial(account,()->{
@@ -183,7 +206,7 @@ public class AutomationRuleService {
         if(!interacting(r.definition(),inventory.stream().filter(n->!n.id().equals(r.remoteId())).toList()).isEmpty()&&!reviewedInventory)RuleStore.conflict("Review the existing mailbox rules before enabling this rule.");
         for(var existing:inventory){
             if(existing.id().equals(r.remoteId())||!existing.enabled()||existing.compatible()==null)continue;
-            if(!Collections.disjoint(existing.compatible().senders(),r.definition().senders())
+            if(RuleOverlap.assess(r.definition(),existing).possible()
                 &&(!existing.compatible().action().equals(r.definition().action())
                   ||!existing.compatible().destination().equals(r.definition().destination())))RuleStore.conflict("An existing rule handles this sender differently. Resolve that overlap in mailbox settings first.");
         }

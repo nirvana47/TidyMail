@@ -48,7 +48,14 @@ public class GmailRuleProvider implements RuleProvider {
         if(!Set.of("TRASH").containsAll(add)||!Set.of("UNREAD","INBOX").containsAll(remove))return null;
         boolean trash=add.contains("TRASH"),archive=remove.contains("INBOX"),read=remove.contains("UNREAD");
         if(trash&&archive||!trash&&!archive&&!read)return null;
-        try { return new RuleDefinition("Imported Gmail filter",List.of(c.getFrom()),"","",
+        try {
+            String from=c.getFrom().strip();
+            boolean orList=from.startsWith("{")&&from.endsWith("}");
+            if(orList)from=from.substring(1,from.length()-1);
+            var entries=Arrays.stream(from.split("\\s+")).toList();
+            if(entries.size()>1&&!orList)return null;
+            for(String entry:entries)if(!RuleDefinition.senderEntry(entry).equalsIgnoreCase(entry))return null;
+            return new RuleDefinition("Imported Gmail filter",entries,"","",
             trash?(read?"READ_TRASH":"TRASH"):archive?(read?"READ_ARCHIVE":"ARCHIVE"):"READ"); }
         catch(RuntimeException unsupported){return null;}
     }

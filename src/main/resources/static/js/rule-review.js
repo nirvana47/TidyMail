@@ -11,7 +11,7 @@
       result.replaceChildren();
       const heading=document.createElement('h4');heading.textContent=`Gmail check: ${data.currentInboxMatches} current Inbox messages match this filter`;
       const explanation=document.createElement('p');explanation.textContent=data.explanation;
-      const coverage=document.createElement('p');coverage.className='muted';coverage.textContent=`Checked ${new Date(data.checkedAt).toLocaleString()}. All ${data.selectedAddresses} selected addresses checked together. ${data.indexedMatches} matching messages can be identified in TidyMail; ${data.unindexedMatches} are not currently indexed here. No mail was moved.`;
+      const coverage=document.createElement('p');coverage.className='muted';coverage.textContent=`Checked ${new Date(data.checkedAt).toLocaleString()}. All ${data.selectedAddresses} selected ${data.hasDomains?'addresses or domains':'addresses'} checked together. ${data.indexedMatches} matching messages can be identified in TidyMail; ${data.unindexedMatches} are not currently indexed here. No mail was moved.`;
       result.append(heading,explanation,coverage);
       const wrap=document.createElement('div');wrap.className='rule-overlap-senders';wrap.tabIndex=0;wrap.setAttribute('role','region');wrap.setAttribute('aria-label','Verified matches by selected sender');
       const table=document.createElement('table'), head=table.createTHead().insertRow();

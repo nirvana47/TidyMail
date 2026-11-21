@@ -5,10 +5,10 @@
 <p class="muted">Shared sender conditions are shown below. This does not prove your emails matched the full rule or that the rule ran.</p>
 <section th:each="n:${items}" class="rule-overlap">
 <h4 th:text="${n.name}"></h4><p><strong th:text="${n.action}"></strong></p>
-<p th:unless="${n.uncertain}" th:text="${#lists.size(n.senders)+' of '+selectedCount+' selected addresses have a possible sender overlap.'}"></p>
+<p th:unless="${n.uncertain}" th:text="${#lists.size(n.senders)+' of '+selectedCount+' selected addresses or domains have a possible sender overlap.'}"></p>
 <p th:text="${n.reason}"></p>
 <div th:unless="${#lists.isEmpty(n.senders)}" class="rule-overlap-senders" tabindex="0" role="region" aria-label="Addresses involved in this overlap">
-<table><thead><tr><th>Your selected address</th><th>Existing sender condition</th></tr></thead><tbody>
+<table><thead><tr><th>Your selected address / domain</th><th>Existing sender condition</th></tr></thead><tbody>
 <tr th:each="s:${n.senders}"><td th:text="${s.address}"></td><td th:text="${s.condition}"></td></tr>
 </tbody></table></div>
 <details><summary>Full conditions of this existing rule</summary><dl class="rule-overlap-conditions">

@@ -53,9 +53,20 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
         org.mockito.Mockito.doReturn(0L).when(ruleLabels).destinationCount(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.anyString());
         org.mockito.Mockito.doAnswer(i->{var raw=((com.fasterxml.jackson.databind.JsonNode)i.getArgument(1)).deepCopy();String id="fixture-rule-"+ruleIds.incrementAndGet();((com.fasterxml.jackson.databind.node.ObjectNode)raw).put("id",id);nativeRules.add(new com.tidymail.rules.RuleProvider.NativeRule(id,"Synthetic rule",true,false,raw,null,""));return id;}).when(ruleLabels).create(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any());
         org.mockito.Mockito.doAnswer(i->{nativeRules.removeIf(r->r.id().equals(i.getArgument(1)));return null;}).when(ruleLabels).pause(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.anyString());
-        org.mockito.Mockito.doAnswer(i->{var ids=new java.util.HashSet<>(jdbc.queryForList("SELECT provider_message_id FROM message_metadata WHERE account_id=?",String.class,account));return new com.tidymail.rules.GmailRuleProvider.Matches(ids,ids);}).when(ruleLabels).matching(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any());
+        org.mockito.Mockito.doAnswer(i->{
+            var definition=(com.tidymail.rules.RuleDefinition)i.getArgument(1);var included=new java.util.HashSet<String>();var before=new java.util.HashSet<String>();
+            for(var row:jdbc.queryForList("SELECT provider_message_id,from_address,subject_header FROM message_metadata WHERE account_id=?",account)){
+                String subject=java.util.Objects.toString(row.get("subject_header"),"").toLowerCase(java.util.Locale.ROOT);
+                if(!definition.matchesSender((String)row.get("from_address"),"google")||!definition.subjects().isEmpty()&&definition.subjects().stream().noneMatch(v->subject.contains(v.toLowerCase(java.util.Locale.ROOT))))continue;
+                String id=(String)row.get("provider_message_id");before.add(id);
+                if(definition.exceptions().stream().noneMatch(v->subject.contains(v.toLowerCase(java.util.Locale.ROOT))))included.add(id);
+            }
+            return new com.tidymail.rules.GmailRuleProvider.Matches(included,before);
+        }).when(ruleLabels).matching(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any());
         org.mockito.Mockito.doReturn(java.util.List.of(new com.tidymail.rules.GmailRuleProvider.Destination("Label_42","Offers"),new com.tidymail.rules.GmailRuleProvider.Destination("Label_43","Receipts"))).when(ruleLabels).destinations(org.mockito.ArgumentMatchers.any());
         org.mockito.Mockito.doAnswer(i->ruleLabels.useDestination(i.getArgument(1),"Label_42")).when(ruleLabels).prepare(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any());
+        for(String[] sample:java.util.List.of(new String[]{"domain-a","prefix-a@relay.example.test","Weekly update"},new String[]{"domain-b","prefix-b@relay.example.test","Weekly invoice"},new String[]{"domain-fixed","alerts@fixed.example.test","Weekly update"}))
+            jdbc.update("INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,dashboard_from_address,dashboard_unit_kind,dashboard_unit_key,subject_header,labels,label_evidence_known,received_at) VALUES(?,'google',?,?,?,'ADDRESS',?,?,ARRAY['INBOX'],true,now())",account,sample[0],sample[1],sample[1],sample[1],sample[2]);
         jdbc.update("UPDATE classification_budget SET owner_account=? WHERE id=1",account);
         classification.automatic(account,false);
         jdbc.update(
