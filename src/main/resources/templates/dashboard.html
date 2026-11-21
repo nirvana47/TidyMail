@@ -9,7 +9,7 @@
     <title>TidyMail — Inbox cleanup</title>
     <link rel="stylesheet" th:href="@{/static/css/dashboard.css}">
     <script defer th:src="@{/static/js/destination-picker.js}"></script><script defer th:src="@{/static/js/dashboard.js}"></script>
-    <script defer th:src="@{/static/js/inbox-rules.js}"></script><script defer th:src="@{/static/js/rule-fields.js}"></script>
+    <script defer th:src="@{/static/js/inbox-rules.js}"></script><script defer th:src="@{/static/js/rule-fields.js}"></script><script defer th:src="@{/static/js/rule-review.js}"></script>
     <link rel="stylesheet" th:href="@{/static/css/rules.css}">
 </head>
 
@@ -57,6 +57,11 @@
             </div>
         </section>
         <p id="activeSuggestion" class="evidence" hidden>Large emails (&gt;1 MB) · Whole-message size, including inline images. <span id="sizeCoverage"></span> <button id="clearSuggestion">Show all sizes</button></p>
+        <section id="savedRuleSelection" class="notice" hidden aria-label="Saved rule selection">
+            <span data-saved-rule-summary></span>
+            <button type="button" data-resume-rule-selection>Resume rule setup</button>
+            <button type="button" data-discard-rule-selection>Discard saved selection</button>
+        </section>
         <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
         <button id="clearComposition" hidden></button>
         <section class="workspace" aria-label="Mailbox workspace">
@@ -71,11 +76,13 @@
                             <option value="MARK_READ_ARCHIVE">Mark as read + archive</option>
                             <option value="TRASH" th:text="${outlook?'Move to Deleted Items':'Move to Trash'}">Move to Trash</option><option value="ORGANIZE" th:text="${outlook?'Move to a folder':'Apply a label'}">Apply a label</option>
                         </select>
-                        <button id="reviewSenders" class="primary">Review email action →</button><button id="createSenderSelectionRule">Create rule…</button>
+                        <button id="reviewSenders" class="primary">Review email action →</button><button id="createSenderSelectionRule">Rules…</button>
                     </div>
                     <p id="senderActionScope" class="muted">Applies to matching emails across all pages for the selected senders.</p>
                     <div class="row">
                         <button id="combineGroups">Combine</button><button id="splitGroup">Split</button>
+                        <button id="selectAllMatchingSenders" hidden>Select all matching senders</button>
+                        <span id="senderBulkStatus" role="status" hidden></span>
                         <button id="clearGroups">Clear senders</button>
                     </div>
                 </div>
@@ -83,7 +90,7 @@
                     <table id="senderTable" tabindex="-1">
                         <thead>
                             <tr>
-                                <th aria-label="Select senders"></th>
+                                <th><input id="selectPageSenders" type="checkbox" aria-label="Select all senders on this page" title="Select all senders on this page" disabled></th>
                                 <th>Sender</th>
                                 <th aria-sort="descending"><button id="sortMessages" class="column-sort" aria-label="Sort by message count, highest first">Total ↓</button></th>
                                 <th aria-sort="none"><button id="sortUnread" class="column-sort" aria-label="Sort by unread count, highest first">Unread ↕</button></th>
@@ -95,7 +102,7 @@
                     </table>
                 </div>
                 <div id="empty" class="empty" role="status">Loading indexed mail…</div>
-                <div class="paging muted"><span id="sortSummary">Sorted by message count</span><button id="prevPage"
+                <div class="paging muted"><span id="sortSummary">Sorted by message count</span><label>Rows <select id="senderPageSize" aria-label="Senders per page"><option value="10" selected>10</option><option value="20">20</option><option value="50">50</option></select></label><button id="prevPage"
                         aria-label="Previous sender page" disabled>‹</button><span id="pageLabel">0 of 0</span><button
                         id="nextPage" aria-label="Next sender page" disabled>›</button></div>
             </div>
@@ -122,7 +129,7 @@
                 </div><button id="correctSelectedCategory">Correct category</button><button class="ghost" id="clear">Clear selection</button>
                 <div class="actions row" role="group" aria-label="Choose cleanup action">
                     <label class="action-choice">Action <select id="messageAction"><option value="MARK_READ">Mark as read</option><option value="ARCHIVE">Archive</option><option value="MARK_READ_ARCHIVE">Mark as read + archive</option><option value="TRASH" th:text="${outlook?'Move to Deleted Items':'Move to Trash'}">Move to Trash</option><option value="ORGANIZE" th:text="${outlook?'Move to a folder':'Apply a label'}">Apply a label</option></select></label>
-                    <button id="createMessageRule">Create rule…</button><button id="review" class="primary">Review selection →</button></div>
+                    <button id="createMessageRule">Rules…</button><button id="review" class="primary">Review selection →</button></div>
             </div>
             <div id="jobProgress" role="status" aria-live="polite"></div>
         </section>
@@ -236,8 +243,7 @@
     <dialog id="inboxRule" class="drawer" aria-labelledby="inboxRuleTitle">
         <header class="row spread"><h2 id="inboxRuleTitle">Create rule</h2><button type="button" data-close="inboxRule">Close</button></header>
         <p id="inboxRuleContext" class="muted"></p>
-        <details><summary>What goes into this rule?</summary><p>Starts with the chosen sender addresses. Current inbox filters are not copied into the rule.</p></details>
-        <p class="info-callout"><strong>Future incoming email only.</strong> Existing emails stay unchanged.</p>
+        <details data-rule-setup-help><summary>What goes into this rule?</summary><p>Starts with the chosen sender addresses. Current inbox filters are not copied into the rule.</p></details>
         <p id="inboxRuleError" class="rule-alert" role="alert" hidden></p>
         <div id="inboxRuleContent" aria-live="polite"></div>
     </dialog>

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org"><head><title>Add senders to rule</title></head><body>
+<main id="ruleEditorContent" data-rule-add-senders>
+<section th:if="${data!=null}">
+<h2>Add sender to existing rule</h2><p>Addresses to add: <strong th:text="${senders}"></strong></p>
+<label>Find a rule<input type="search" data-rule-search placeholder="Search name, sender or destination"></label>
+<p th:if="${!data.error.isEmpty()}" class="rule-alert" th:text="${data.error}"></p>
+<p th:if="${#lists.isEmpty(data.rules)}">No saved rules in this mailbox yet.</p>
+<div data-rule-picker-list>
+<section th:each="r:${data.rules}" class="surface" data-rule-choice>
+<h3 th:text="${r.definition.name}"></h3><p><span class="status-badge" th:text="${r.state}"></span> · Managed in TidyMail</p>
+<p th:text="${r.definition.sentence(provider)}"></p>
+<form th:action="@{/rules/{id}/senders/review(id=${r.id})}" method="post">
+<input type="hidden" name="account" th:value="${account}"><input type="hidden" name="senders" th:value="${senders}"><input type="hidden" name="mailScope" th:value="${mailScope}">
+<button th:disabled="${r.pending!=null or (r.state!='ACTIVE' and r.state!='PAUSED' and r.state!='DRAFT') or #lists.containsAll(r.definition.senders,addresses)}" th:text="${#lists.containsAll(r.definition.senders,addresses)?'Already included':(r.pending!=null or r.state=='ATTENTION'?'Needs attention':'Review addition →')}"></button>
+</form></section></div><p data-rule-search-empty hidden>No rules match your search.</p>
+<details th:unless="${#lists.isEmpty(data.nativeRules.?[!#root.data.bound.contains(id)])}"><summary>Rules created in Gmail or Outlook</summary>
+<p>These need explicit adoption before editing. Unsupported rules must be edited in mailbox settings.</p>
+<p th:each="n:${data.nativeRules}" th:unless="${data.bound.contains(n.id)}"><strong th:text="${n.name}"></strong> · <span th:text="${n.compatible==null?'Edit in mailbox settings':'Available to manage in TidyMail'}"></span></p>
+<a href="/rules" target="_blank" rel="noopener">Review and manage external rules ↗</a></details>
+<button type="button" data-rule-start>Back</button>
+</section>
+<section th:if="${addition!=null}" th:with="r=${addition.rule},d=${addition.proposed}" data-rule-add-review>
+<h2 th:text="${'Add sender to “'+d.name+'”'}"></h2>
+<p>Adding: <strong th:text="${#strings.listJoin(addition.added,', ')}"></strong></p>
+<details><summary>Currently included senders</summary><p th:text="${#strings.listJoin(r.definition.senders,', ')}"></p></details>
+<p class="info-callout" th:text="${d.sentence(provider)}"></p>
+<p>The action, destination, subject conditions and exceptions stay the same.</p>
+<p th:if="${r.state=='ACTIVE' and provider=='google'}" class="muted">Gmail requires a replacement filter. The current filter stays active until its replacement is verified; they may briefly overlap.</p>
+<p th:if="${r.state=='PAUSED'}">This rule will stay paused.</p><p th:if="${r.state=='DRAFT'}">This rule will remain a draft.</p>
+<a th:href="@{/rules/{id}(id=${r.id})}" target="_blank" rel="noopener">Edit full rule ↗</a>
+<h3>Recent emails from the added addresses</h3>
+<p class="muted">These examples use indexed mail and do not predict future volume. Subject conditions still apply, including to the email you started from.</p>
+<table><thead><tr><th>Sender</th><th>Subject</th><th>Would match?</th></tr></thead><tbody>
+<tr th:each="e:${addition.examples}" th:if="${#lists.contains(addition.added,e.sender)}" th:attr="data-addition-extra=${e.rn>3}" th:hidden="${e.rn>3}"><td th:text="${e.sender}"></td><td th:text="${e.subject_header}"></td><td th:text="${e.bucket=='match'?'Yes':(e.bucket=='excluded'?'No · subject exception':'No · required subject phrase missing')}"></td></tr>
+</tbody></table><button th:if="${addition.counts.matched>3 or addition.counts.excluded>3 or addition.counts.other>3}" type="button" data-addition-more>Show more examples</button><p th:if="${addition.counts.matched==0}" class="muted">No matching examples found. The sender will still need to meet this rule’s subject conditions.</p>
+<p th:if="${!#lists.isEmpty(addition.protected)}" class="rule-alert">A sender is protected. Resolve the protection before adding it.</p>
+<p th:if="${!addition.inventoryError.isEmpty()}" class="rule-alert" th:text="${addition.inventoryError}"></p>
+<p th:unless="${addition.deployable}" class="rule-alert">Subject matching could not be verified. Review again before updating.</p>
+<p th:if="${!addition.permission and r.remoteId!=null}" class="rule-alert">Connect rule permissions in Rules, then review the addition again.</p>
+<section th:replace="~{fragments/rule-interactions :: interactions(${addition.interactions},${addition.id},${r.id},${#lists.size(d.senders)})}"></section>
+<form th:action="@{/rules/{id}/senders/add(id=${r.id})}" method="post" class="rule-review-actions">
+<input type="hidden" name="account" th:value="${account}"><input type="hidden" name="preview" th:value="${addition.id}"><input type="hidden" name="mailScope" th:value="${mailScope}">
+<label th:unless="${#lists.isEmpty(addition.interactions)}" class="row"><input type="checkbox" name="reviewedInventory" value="true" required>I reviewed the possible overlaps.</label>
+<p><strong>Future incoming mail only. Existing emails stay unchanged.</strong></p>
+<a class="button" th:href="@{/rules/add-senders(account=${account},senders=${senders},mailScope=${mailScope})}">Back</a>
+<button class="primary" th:disabled="${!addition.deployable or !#lists.isEmpty(addition.protected) or (r.remoteId!=null and (!addition.permission or !addition.inventoryError.isEmpty()))}" th:text="${r.state=='ACTIVE'?'Update active rule':(r.state=='PAUSED'?'Save changes · keep paused':'Save draft')}"></button>
+</form></section>
+<section th:if="${updated!=null}" data-rule-add-result data-inbox-rule-result th:attr="data-account=${account},data-addition-saved=${ok}" th:with="ok=${updated.pending==null and updated.state!='ATTENTION'}">
+<h2 th:text="${ok?'Sender added to rule':'Rule update needs attention'}"></h2><p th:text="${updated.detail}"></p>
+<p th:if="${ok}" th:text="${updated.state=='ACTIVE'?'The updated rule applies to future incoming mail.':(updated.state=='PAUSED'?'The rule is still paused.':'The rule is still a draft.')}"></p>
+<p>Existing emails stay unchanged.</p>
+<button th:if="${ok and updated.state=='ACTIVE' and updated.definition.organize()}" type="button" data-rule-existing th:attr="data-rule-id=${updated.id},data-mail-scope=${mailScope},data-senders=${#strings.listJoin(added,', ')}">Review existing emails from added senders</button>
+<p data-rule-filing-status role="status"></p>
+<a th:unless="${ok}" href="/rules" target="_blank" rel="noopener">Check rule status ↗</a>
+<button type="button" data-inbox-rule-done>Close</button>
+</section>
+</main></body></html>

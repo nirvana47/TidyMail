@@ -17,7 +17,7 @@ const output = path.resolve(process.argv[3] || '/tmp/tidymail-filing-screenshots
     await page.goto(target.href); await expect(page.locator('[data-browser-fixture]')).toBeVisible();
     await expect(page.locator('#detailContent .message-row').first()).toBeVisible();
     await page.locator('#detailContent input[data-selection]').first().check();
-    await page.locator('#createMessageRule').click();
+    await page.locator('#createMessageRule').click();await page.getByRole('button',{name:'Create new rule',exact:true}).click();
     const drawer = page.locator('#inboxRuleContent');
     await expect(drawer.locator('[name="name"]')).toHaveValue(/Organize/);
     await expect(drawer.locator('[name="senders"]')).not.toBeEmpty();
@@ -28,19 +28,21 @@ const output = path.resolve(process.argv[3] || '/tmp/tidymail-filing-screenshots
     const picker = drawer.locator('[data-destination-picker]');
     await picker.getByRole('combobox').nth(0).selectOption('NEW');
     await picker.getByRole('textbox', { name: 'New label name' }).fill('Offers');
-    await drawer.getByRole('button', { name: 'Save draft and preview' }).click();
+    await drawer.getByRole('button', { name: 'Review rule →' }).click();
     await expect(drawer.locator('[data-destination-error]')).toContainText('already exists'); assert.equal(saves, 0);
     await expect(picker.getByRole('combobox').nth(0)).toHaveValue('EXISTING');
     // A permission failure must retain both phrases and destination choice.
     await page.route('**/rules/save?*', async route => { await route.fulfill({ status: 503, contentType: 'text/html', body: '<p role="alert">Reconnect permissions; draft retained.</p>' }); }, { times: 1 });
-    await drawer.getByRole('button', { name: 'Save draft and preview' }).click();
+    await drawer.getByRole('button', { name: 'Review rule →' }).click();
     await expect(page.locator('#inboxRuleError')).toContainText('Reconnect permissions');
     await expect(drawer.locator('[name="subject"]').nth(1)).toHaveValue('Synthetic');
     await expect(picker.getByRole('combobox').nth(1)).toHaveValue('Label_42');
     await page.screenshot({ path: path.join(output, 'rule-editor.png') });
-    await drawer.getByRole('button', { name: 'Save draft and preview' }).click();
+    await drawer.getByRole('button', { name: 'Review rule →' }).click();
     await expect(drawer.locator('[data-rule-preview]')).toBeVisible();
     await expect(drawer.locator('[data-rule-preview]')).toContainText('Indexed');
+    await expect(drawer.locator('[name="subject"]')).toHaveCount(0);
+    await drawer.getByRole('link', { name: 'Back to edit rule' }).click();
     await expect(drawer.locator('[name="subject"]')).toHaveCount(2);
     await expect(drawer.locator('[data-destination-picker] select').first()).toHaveValue('EXISTING');
     await page.locator('#inboxRule [data-close]').click();

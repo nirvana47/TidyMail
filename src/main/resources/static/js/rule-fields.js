@@ -27,8 +27,8 @@
         const button = form.querySelector('button.primary'); if (button.disabled) return;
         const body = new URLSearchParams(new FormData(form)); button.disabled = true;
         try {
-          const response = await fetch(form.action, { method: 'POST', body, headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-TidyMail-Account': form.querySelector('[name="account"]').value } });
-          if (!response.ok) { const html = new DOMParser().parseFromString(await response.text(), 'text/html'); throw new Error(html.querySelector('[role="alert"]')?.textContent || 'Could not save. Your choices are retained.'); }
+          const response = await fetch(form.getAttribute('action'), { method: 'POST', body, headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-TidyMail-Account': form.querySelector('[name="account"]').value } });
+          if (!response.ok) { const html = new DOMParser().parseFromString(await response.text(), 'text/html'); throw new Error(html.querySelector('[role="alert"]')?.textContent || (response.status === 401 || response.status === 403 ? 'Your session or permissions changed. Sign in again, then retry. Your choices are retained.' : `Could not save (HTTP ${response.status}). Your choices are retained.`)); }
           location.assign(response.url);
         } catch (error) { errorBox.textContent = error.message; errorBox.hidden = false; destination.hidden = false; }
         finally { button.disabled = false; }

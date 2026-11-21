@@ -17,6 +17,8 @@ public interface RuleProvider {
     default JsonNode useDestination(JsonNode payload,String id) { return payload; }
     default String destinationId(JsonNode payload) { return null; }
     default long destinationCount(UserAccount account,String id) { throw new UnsupportedOperationException(); }
+    default JsonNode withSenders(JsonNode raw,List<String> senders){throw new UnsupportedOperationException();}
+    default void updateSenders(UserAccount account,String id,JsonNode payload){throw new UnsupportedOperationException();}
     String create(UserAccount account, JsonNode payload);
     void pause(UserAccount account, String id);
     void resume(UserAccount account, String id);

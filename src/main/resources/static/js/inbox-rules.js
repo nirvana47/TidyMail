@@ -6,7 +6,29 @@
   const error = document.getElementById('inboxRuleError');
   const title = document.getElementById('inboxRuleTitle');
   const actionNames = { ORGANIZE: 'Organize', READ: 'Mark as read', READ_ARCHIVE: 'Read and archive', ARCHIVE: 'Archive', TRASH: 'Move to Trash' };
-  let account, generation = 0, pending = false, dirty = false, opener;
+  let selectedSenders = [], contextText = "";
+  let account, mailScope = 'inbox', generation = 0, pending = false, dirty = false, opener;
+
+  // Tab-local, mailbox-scoped recovery. Never log or send the addresses to another service.
+  const savedSelection = document.getElementById('savedRuleSelection');
+  const storageKey = `tidymail-rule-selection:${document.body.dataset.account}`;
+  function readSelection() {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(storageKey) || 'null');
+      return saved && String(saved.account) === document.body.dataset.account && Array.isArray(saved.senders) && saved.senders.length && saved.senders.every(v => typeof v === 'string') && ['inbox','all','indexed'].includes(saved.mailScope) ? saved : null;
+    } catch (_) { return null; }
+  }
+  function updateSavedSelection() {
+    if (!savedSelection) return;
+    const saved = readSelection(); savedSelection.hidden = !saved || dialog.open;
+    if (saved) savedSelection.querySelector('[data-saved-rule-summary]').textContent = `${saved.senders.length} sender addresses saved for rule setup in this tab.`;
+  }
+  function clearSavedSelection() { try { sessionStorage.removeItem(storageKey); } catch (_) {} updateSavedSelection(); }
+  savedSelection?.querySelector('[data-resume-rule-selection]').addEventListener('click', () => {
+    const saved=readSelection();if(saved)document.dispatchEvent(new CustomEvent('tidymail:create-rule',{detail:saved}));
+  });
+  savedSelection?.querySelector('[data-discard-rule-selection]').addEventListener('click', clearSavedSelection);
+  updateSavedSelection();
 
   function report(message) { error.textContent = message; error.hidden = false; }
   async function load(url, body, defaults) {
@@ -19,8 +41,9 @@
       const target = new URL(url, location.href);
       if (target.origin !== location.origin || !target.pathname.startsWith('/rules/')) throw new Error('Invalid rule destination.');
       target.searchParams.set('inbox', 'true');
+      if(body)target.searchParams.delete('mailScope');else target.searchParams.set('mailScope', mailScope);
       const headers = { 'X-TidyMail-Account': account };
-      if (body) body.set('inbox', 'true');
+      if (body) { body.set('inbox', 'true'); body.set('mailScope', mailScope); }
       const response = await fetch(target, { method: body ? 'POST' : 'GET', body, headers, credentials: 'same-origin' });
       const html = new DOMParser().parseFromString(await response.text(), 'text/html');
       if (request !== generation || !dialog.open) return;
@@ -38,11 +61,19 @@
         const name = content.querySelector('[name="name"]');
         if (name && !name.value) name.value = `${actionNames[defaults.action]} · ${defaults.senders.join(', ')}`.slice(0, 100);
       }
-      const result = content.querySelector('[data-inbox-rule-result]');
-      title.textContent = result ? 'Rule status' : 'Create rule';
+      const addition = content.querySelector('[data-rule-add-senders]');
+      const result = content.querySelector('[data-inbox-rule-result], [data-rule-add-result]');
+      if (result && (result.dataset.ruleState === 'ACTIVE' || result.dataset.additionSaved === 'true')) clearSavedSelection();
       const preview = content.querySelector('[data-rule-preview]');
-      const focus = preview || content.querySelector('[name="name"]') || result;
-      if (focus) { if (focus.tagName !== 'INPUT') focus.tabIndex = -1; focus.focus({ preventScroll: true }); focus.scrollIntoView({ block: 'nearest' }); }
+      title.textContent = result ? result.querySelector('h2').textContent : addition ? (content.querySelector('[data-rule-add-review]') ? 'Review sender addition' : 'Choose existing rule') : preview ? 'Review rule' : 'Create rule';
+      dialog.dataset.step = result ? 'success' : preview ? 'review' : 'setup';
+      document.getElementById('inboxRuleContext').hidden = !!(preview || result || addition);
+      dialog.querySelector('[data-rule-setup-help]').hidden = !!(preview || result || addition);
+      dialog.scrollTop = 0; content.scrollTop = 0;
+      title.tabIndex = -1;
+      const focus = preview || result || addition ? title : content.querySelector('[name="name"]');
+      focus?.focus({ preventScroll: true });
+
     } catch (failure) {
       if (request === generation && dialog.open) report(failure.message);
     } finally {
@@ -56,13 +87,31 @@
   document.addEventListener('tidymail:create-rule', event => {
     if (dialog.open || pending) return;
     const { senders, action, context } = event.detail;
-    dirty = false; account = event.detail.account; generation++; opener = document.activeElement;
-    const ruleAction = 'ORGANIZE';
-    title.textContent = 'Create rule';
-    document.getElementById('inboxRuleContext').textContent = `${context} · ${senders.join(', ')}`;
-    content.replaceChildren(document.createTextNode('Loading rule editor…'));
-    dialog.showModal();
-    load('/rules/new?' + new URLSearchParams({ sender: senders.join(', '), action: ruleAction }), null, { senders, action: ruleAction });
+    dialog.querySelectorAll('.dialog-notice').forEach(node => node.remove());
+    dirty = false; account = event.detail.account; mailScope = event.detail.mailScope || 'inbox'; generation++; opener = document.activeElement;
+    selectedSenders = senders; contextText = context;
+    let stored=true;
+    try { sessionStorage.setItem(storageKey, JSON.stringify({senders, context, account, mailScope})); } catch (_) { stored=false; }
+    dialog.showModal(); showStart(); updateSavedSelection();
+    if(!stored)report('This browser could not save the sender selection. Keep this tab open until you finish rule setup.');
+  });
+  function showStart() {
+    title.textContent = 'Rules'; error.hidden = true;
+    document.getElementById('inboxRuleContext').textContent = `${contextText} · ${selectedSenders.join(', ')}`;
+    document.getElementById('inboxRuleContext').hidden = false;
+    dialog.querySelector('[data-rule-setup-help]').hidden = true;
+    const description = document.createElement('p'); description.textContent = 'Set up how future incoming email from these exact addresses is handled.';
+    const create = document.createElement('button'); create.type = 'button'; create.textContent = 'Create new rule';
+    create.onclick = () => load('/rules/new?' + new URLSearchParams({ sender: selectedSenders.join(', '), action: 'ORGANIZE' }), null, { senders: selectedSenders, action: 'ORGANIZE' });
+    const existing = document.createElement('button'); existing.type = 'button'; existing.className = 'primary'; existing.textContent = 'Add sender to existing rule';
+    existing.onclick = () => load('/rules/add-senders?' + new URLSearchParams({ account, senders: selectedSenders.join(', ') }));
+    content.replaceChildren(description, existing, create); existing.focus();
+  }
+  content.addEventListener('input', event => {
+    if (!event.target.matches('[data-rule-search]')) return;
+    const query=event.target.value.trim().toLowerCase();let count=0;
+    for(const row of content.querySelectorAll('[data-rule-choice]')){row.hidden=!row.textContent.toLowerCase().includes(query);if(!row.hidden)count++;}
+    content.querySelector('[data-rule-search-empty]').hidden=count>0;
   });
   content.addEventListener('submit', event => {
     const form = event.target;
@@ -72,13 +121,21 @@
     load(form.getAttribute('action'), new URLSearchParams(new FormData(form)));
   });
   content.addEventListener('click', event => {
+    const more=event.target.closest('[data-addition-more]');
+    if(more){const expanded=more.getAttribute('aria-expanded')==='true';for(const row of content.querySelectorAll('[data-addition-extra="true"]'))row.hidden=expanded;more.setAttribute('aria-expanded',String(!expanded));more.textContent=expanded?'Show more examples':'Show fewer examples';return;}
+    if (event.target.closest('[data-rule-start]')) { showStart(); return; }
     if (event.target.closest('[data-inbox-rule-done]')) { dialog.close(); return; }
     const link = event.target.closest('a');
-    if (!link || link.target === '_blank') return;
+    if (!link || link.target === '_blank' || link.hasAttribute('data-rule-navigation')) return;
     const target = new URL(link.href);
-    if (target.origin === location.origin && /^\/rules\/(new|[0-9a-f-]{36})$/.test(target.pathname)) {
+    if (target.origin === location.origin && /^\/rules\/(new|add-senders|[0-9a-f-]{36})$/.test(target.pathname)) {
       event.preventDefault(); load(target);
     }
+  });
+  document.addEventListener('tidymail:rule-filing-started', () => {
+    const status=content.querySelector('[data-rule-filing-status]');
+    if(status){status.textContent='Filing started. You can follow progress in Activity.';const link=document.createElement('a');link.href='/activity';link.textContent='View Activity';status.append(' ',link);}
+    const button=content.querySelector('[data-rule-existing]');if(button){button.disabled=true;button.textContent='Filing started';}
   });
   // An edited form must be saved and previewed again before its native rule can be enabled.
   content.addEventListener('input', event => {
@@ -102,7 +159,7 @@
   dialog.addEventListener('cancel', event => { if (dirty) { event.preventDefault(); reviewDiscard(); } });
   window.addEventListener('beforeunload', event => { if (dialog.open && dirty) { event.preventDefault(); event.returnValue = ''; } });
   dialog.addEventListener('close', () => {
-    generation++; pending = false; content.removeAttribute('aria-busy');
+    generation++; pending = false; content.removeAttribute('aria-busy'); updateSavedSelection();
     if (opener?.isConnected) opener.focus({ preventScroll: true });
   });
 })();

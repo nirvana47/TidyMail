@@ -2,12 +2,12 @@
 (() => {
   const outlook = document.body.dataset.provider === 'microsoft';
   const $ = id => document.getElementById(id);
-  const state = { scope: 'inbox', suggestion: '', page: 0, messagePage: 0, address: null, tab: 'messages', data: null, focused: null, details: null, action: 'MARK_READ', preview: null, targetPage: 0, revision: 0 };
+  const state = { scope: 'inbox', suggestion: '', page: 0, pageSize: 10, messagePage: 0, address: null, tab: 'messages', data: null, focused: null, details: null, action: 'MARK_READ', preview: null, targetPage: 0, revision: 0 };
   const selected = new Map(), expanded = new Map(), senderSelection = new Map();
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-  let composition = null, selectionGeneration = 0;
+  let composition = null, selectionGeneration = 0, senderSelectionVersion = 0;
   let filingPicker = null;
-  let jobs = [], confirming = false, previewLoading = false, previewFromSenders = false;
+  let jobs = [], confirming = false, previewLoading = false, previewFromSenders = false, previewFromRule = false;
   let jobsRequest = 0;
   const pendingText = state => ({ QUEUED: 'Cleanup queued', DISPATCH_INTENT: 'Cleanup in progress', AWAITING_VERIFICATION: 'Outcome unresolved — checking provider state' }[state] || '');
   function rememberFocus(container) {
@@ -42,14 +42,15 @@
   async function confirmJob() {
     if (confirming || !state.preview) return;
     confirming = true; $('confirmAction').disabled = true;
-    const preview = state.preview, fromSenders = previewFromSenders;
+    const preview = state.preview, fromSenders = previewFromSenders, fromRule = previewFromRule;
     try {
       const job = await api('jobs', { preview: preview.id });
       state.preview = null;
-      if (fromSenders) senderSelection.clear();
+      if (fromRule) document.dispatchEvent(new Event('tidymail:rule-filing-started'));
+      else if (fromSenders) senderSelection.clear();
       else { selectionGeneration++; selected.clear(); }
       $('confirm').close(); renderSelectionControls();
-      notice(actionName(preview.action) + ' saved. You can close this page; work continues.');
+      if (!fromRule) notice(actionName(preview.action) + ' saved. You can close this page; work continues.');
       await pollJobs();
       if (!jobs.some(j => j.id === job.id)) { jobs.unshift(job); renderJobs(); }
     } catch (error) { notice(error.message); } finally {
@@ -114,7 +115,7 @@
   }
   function filter() {
     return { scope: state.scope, q: $('search').value, start: $('start').value, end: $('end').value,
-      zone, page: state.page, sort: $('sort').value, groupBy: $('groupBy').value, suggestion: state.suggestion,
+      zone, page: state.page, pageSize: state.pageSize, sort: $('sort').value, groupBy: $('groupBy').value, suggestion: state.suggestion,
       recommendation: $('recommendation').value, importance: $('importance').value,
       labels: labelChoices.filter(input => input.checked).map(input => input.value).join(','), match: $('labelMatch').value,
       composition: composition?.key || '', excludeProtectedShopping: $('excludeProtectedShopping').checked };
@@ -144,6 +145,17 @@
     $('combineGroups').hidden = $('splitGroup').hidden = byAddress;
     $('combineGroups').disabled = count < 2 || listLoading;
     $('splitGroup').disabled = count !== 1 || listLoading;
+    const visible=state.data?.groups || [], visibleSelected=visible.filter(g=>senderSelection.has(g.id)).length;
+    const header=$('selectPageSenders'), total=Number(state.data?.summary.groups || 0);
+    header.checked=visible.length>0 && visibleSelected===visible.length;
+    header.indeterminate=visibleSelected>0 && visibleSelected<visible.length;
+    header.disabled=!visible.length || listLoading || selectionBusy>0;
+    const allSelected=total>0 && count===total;
+    $('selectAllMatchingSenders').hidden=!header.checked || allSelected || total<=visible.length;
+    $('selectAllMatchingSenders').textContent=`Select all ${fmt(total)} matching ${byAddress?'sender addresses':'sender groups'}`;
+    $('selectAllMatchingSenders').disabled=reviewBusy || listLoading;
+    $('senderBulkStatus').hidden=!allSelected || total<=visible.length;
+    $('senderBulkStatus').textContent=`All ${fmt(total)} matching ${byAddress?'sender addresses':'sender groups'} selected.`;
   }
   async function selectAllMatching() {
     if (selectionBusy || listLoading || !state.details || !state.focused) return;
@@ -208,7 +220,7 @@
         page.revision, page.classificationRevision, page.sync.email, page.sync.incremental_last_success_at];
       const refreshDetails = !background || forceDetails || JSON.stringify(visibleFacts(data)) !== JSON.stringify(visibleFacts(state.data));
       if (state.data && state.revision !== data.revision) { selectionGeneration++; selected.clear(); senderSelection.clear(); expanded.clear(); invalidatePreview(); notice('Grouping changed. Draft selection was cleared.'); }
-      const lastPage = Math.max(0, Math.ceil(Number(data.summary.groups) / 10) - 1);
+      const lastPage = Math.max(0, Math.ceil(Number(data.summary.groups) / state.pageSize) - 1);
       if (state.page > lastPage) { state.page = lastPage; return loadPage(pagerFocus); }
       if (state.data && data.filter.labels && state.data.classificationRevision !== data.classificationRevision) {
         // Sender groups are a draft scope, resolved to current matching messages at review.
@@ -232,8 +244,8 @@
       if (state.scope === 'indexed') $('coverage').textContent += ' · Includes Sent, Spam, Trash, Drafts and unknown labels. Cleanup still requires received-mail eligibility or a Sent storage suggestion.';
       if ($('composition').open && (refreshDetails || !$('compositionRows').childElementCount)) loadComposition(request, epoch);
       $('empty').hidden = !!data.groups.length; $('empty').textContent = Number(c.indexed) ? 'No messages match these filters. Clear filters to browse more indexed mail.' : 'No messages indexed yet. Fetching mail…';
-      $('pageLabel').textContent = data.groups.length ? `${state.page * 10 + 1}–${state.page * 10 + data.groups.length} of ${fmt(data.summary.groups)}` : `0 of ${fmt(data.summary.groups)}`;
-      $('prevPage').disabled = state.page === 0; $('nextPage').disabled = (state.page + 1) * 10 >= data.summary.groups;
+      $('pageLabel').textContent = data.groups.length ? `${state.page * state.pageSize + 1}–${state.page * state.pageSize + data.groups.length} of ${fmt(data.summary.groups)}` : `0 of ${fmt(data.summary.groups)}`;
+      $('prevPage').disabled = state.page === 0; $('nextPage').disabled = (state.page + 1) * state.pageSize >= data.summary.groups;
       renderGroups(); updateSelection();
       if (pagerFocus && (document.activeElement === document.body || document.activeElement.id === pagerFocus)) {
         const preferred = $(pagerFocus), other = $(pagerFocus === 'nextPage' ? 'prevPage' : 'nextPage');
@@ -260,6 +272,7 @@
           $('senderTable').removeAttribute('aria-busy'); renderSelectionControls();
           if (document.activeElement === document.body || document.activeElement === $('senderTable')) restoreFocus();
         }
+        updateSelection();
       }
     }
   }
@@ -321,7 +334,7 @@
       const cell = node('td');
       const senderCheckbox = checkbox(`Select sender ${g.address || g.label}`, 1, Number(senderSelection.has(g.id)), checked => {
         if (checked) senderSelection.set(g.id, g); else senderSelection.delete(g.id);
-        updateSelection();
+        senderSelectionVersion++; updateSelection();
       });
       senderCheckbox.dataset.focusKey = 'select-sender-' + g.id;
       cell.append(senderCheckbox);
@@ -432,7 +445,7 @@
     $('detailTitle').textContent = state.focused.label;
     const ruleSender = state.address || state.focused.address;
     let ruleButton = $('createSenderRule');
-    if (!ruleButton) { ruleButton = node('button', 'Create rule…'); ruleButton.id = 'createSenderRule'; $('detailTitle').parentElement.append(ruleButton); }
+    if (!ruleButton) { ruleButton = node('button', 'Rules…'); ruleButton.id = 'createSenderRule'; $('detailTitle').parentElement.append(ruleButton); }
     ruleButton.hidden = !ruleSender;
     ruleButton.onclick = () => createInboxRule([ruleSender], state.action, 'For this sender');
     $('detailBadge').textContent = state.focused.label.slice(0, 1).toUpperCase();
@@ -470,7 +483,7 @@
         text.append(meta);
         if (m.reviewedPattern) text.append(node('small',`Reviewed pattern: ${categoryName(m.reviewedPattern)} · Importance is not determined by this pattern`, 'muted'));
         if (m.pendingState) text.append(node('small', pendingText(m.pendingState), 'pending'));
-        const ruleButton = node('button', 'Create rule…'); ruleButton.type = 'button'; ruleButton.setAttribute('aria-label', 'Create rule from ' + (m.subject || 'this email')); ruleButton.onclick = () => createInboxRule([m.address], state.action, 'From this email: ' + (m.subject || '(No subject)')); const more = node('details', undefined, 'message-tools'), moreTitle = node('summary', 'Details and actions');
+        const ruleButton = node('button', 'Rules…'); ruleButton.type = 'button'; ruleButton.setAttribute('aria-label', 'Rules for ' + (m.subject || 'this email')); ruleButton.onclick = () => createInboxRule([m.address], state.action, 'From this email: ' + (m.subject || '(No subject)')); const more = node('details', undefined, 'message-tools'), moreTitle = node('summary', 'Details and actions');
         moreTitle.dataset.focusKey = 'message-tools-' + m.id; more.open = openMessageTools.has(m.id);
         more.addEventListener('toggle', () => { if (more.isConnected) { if (more.open) openMessageTools.add(m.id); else openMessageTools.delete(m.id); } });
         more.append(moreTitle, ruleButton); appendEvidence(more,m); appendRecommendation(more,m,recommendation);
@@ -542,7 +555,15 @@
       }
       const preview = await api('previews', { filter: activeFilter, ids, action: actionType, revision, classificationRevision, destination });
       if (!isCurrent()) { api(`previews/${preview.id}/invalidate`, {}).catch(() => { }); return; }
-      previewFromSenders = fromSenders;
+      previewFromSenders = fromSenders; previewFromRule = false;
+      await showActionPreview(preview);
+
+    } catch (error) { if (isCurrent()) notice(error.message); } finally {
+      previewLoading = false;
+      updateSelection();
+    }
+  }
+  async function showActionPreview(preview) {
       state.preview = preview; state.targetPage = 0;
       $('confirmAction').disabled = confirming || !preview.effective;
       $('actionAvailability').textContent = 'Work is saved before processing. Closing this page does not cancel it.';
@@ -550,7 +571,7 @@
       $('confirmTitle').textContent = 'Review ' + actionName(preview.action).toLowerCase(); $('confirmAction').textContent = action;
       $('confirmAction').classList.toggle('danger', preview.action === 'TRASH');
       $('confirmScope').textContent = `${preview.filter.scope === 'inbox' ? 'Inbox' : preview.filter.scope === 'indexed' ? 'All indexed mail' : preview.filter.suggestion === 'large' && !outlook ? 'Received and Sent mail' : 'All Mailbox'} · ${preview.filter.start || 'All indexed dates'}${preview.filter.end ? ' through ' + preview.filter.end : ''} · ${preview.filter.zone}${preview.filter.q ? ' · Search: ' + preview.filter.q : ''}`;
-      if (fromSenders) $('confirmScope').textContent += ' · ' + $('groupingCount').textContent;
+      if (previewFromSenders) $('confirmScope').textContent += ' · ' + $('groupingCount').textContent;
       $('confirmCounts').textContent = `${fmt(preview.selected)} fixed targets · ${fmt(preview.effective)} eligible changes · ${fmt(preview.skipped)} will be skipped (${fmt(preview.protectedCount)} protected) · ${bytesText(preview.knownBytes)} selected${preview.unknownSizes ? ' · '+fmt(preview.unknownSizes)+' sizes unknown' : ''}`;
       $('confirmCoverage').textContent = `Indexed messages only · ${dateText(preview.coverage.oldest)}–${dateText(preview.coverage.newest)} · As of ${dateText(preview.coverage.as_of)}`;
       $('actionExplanation').textContent = preview.action === 'ORGANIZE' ? `${preview.destination.mode === 'NEW' ? 'Create' : 'Use existing'} ${outlook ? 'folder' : 'label'} “${preview.destination.name}”. ${outlook || preview.destination.skipInbox ? 'Messages leave the Inbox.' : 'Messages stay in the Inbox.'} No future-mail rule is created. New destinations are created only after you confirm Apply.` : preview.action === 'ARCHIVE' ? (outlook ? 'Move selected emails to Archive.' : 'Archive removes mail from Inbox but does not free storage.') : preview.action === 'TRASH' ? outlook ? 'Move selected emails to Deleted Items.' : `Move to Trash may reclaim approximately ${bytesText(preview.effectiveBytes)} after Gmail permanently deletes the emails, normally after 30 days.` : preview.action === 'MARK_READ_ARCHIVE' ? (outlook ? 'Mark selected emails as read, then move them to Archive.' : 'Gmail removes the Unread and Inbox labels in one request. Messages already read and outside Inbox are skipped.') : 'Already-read messages will be skipped.';
@@ -558,11 +579,14 @@
       $('targetRange').textContent = 'Loading selected emails…';
       $('targetPrev').disabled = $('targetNext').disabled = true;
       $('confirm').querySelector('.dialog-notice')?.remove(); $('confirm').showModal(); await loadTargets();
-    } catch (error) { if (isCurrent()) notice(error.message); } finally {
-      previewLoading = false;
-      updateSelection();
-    }
   }
+  document.addEventListener('tidymail:rule-existing-preview', event => {
+    if (confirming || previewLoading) return;
+    const ruleDialog = $('inboxRule');
+    if (ruleDialog?.open) ruleDialog.close();
+    previewFromSenders = false; previewFromRule = true;
+    showActionPreview(event.detail).catch(error => notice(error.message));
+  });
   async function loadTargets() {
     if (!state.preview) return; const id = state.preview.id, page = state.targetPage;
     try { const result = await api(`previews/${id}/targets?page=${page}`); if (state.preview?.id !== id || state.targetPage !== page) return; $('exactTargets').replaceChildren(); for (const target of result.rows) { const row = node('div', undefined, 'target'); row.append(node('strong', target.subject_header || '(No subject)'), node('div', `${target.sender_address} · ${dateText(target.received_at)}`), node('small', target.reason, 'muted')); $('exactTargets').append(row); } $('targetRange').textContent = `${result.rows.length ? page * 10 + 1 : 0}–${page * 10 + result.rows.length} of ${fmt(result.total)}`; $('targetPrev').disabled = page === 0; $('targetNext').disabled = (page + 1) * 10 >= result.total; } catch (error) { notice(error.message); invalidatePreview(); }
@@ -1084,17 +1108,41 @@
   $('sortUnread').onclick = () => { $('sort').value = 'unread'; sortChanged(); };
   $('detailUnreadOnly').onchange = () => { state.messagePage = 0; state.details = null; renderDetail(); loadDetails(); };
   for (const id of ['start','end']) $(id).addEventListener('change', filtersChanged);
+  $('senderPageSize').onchange = () => { state.pageSize = Number($('senderPageSize').value); state.page = 0; loadPage(); };
   $('prevPage').onclick = () => { state.page--; loadPage('prevPage'); };
   $('nextPage').onclick = () => { state.page++; loadPage('nextPage'); };
   $('combineGroups').onclick = () => openCorrections([...senderSelection.values()], 'MERGE');
   $('splitGroup').onclick = () => openCorrections([...senderSelection.values()], 'SPLIT');
-  $('clearGroups').onclick = () => { senderSelection.clear(); renderSelectionControls(); };
+  $('selectPageSenders').onchange = () => {
+    if(listLoading || selectionBusy)return;
+    for(const g of state.data?.groups || []){if($('selectPageSenders').checked)senderSelection.set(g.id,g);else senderSelection.delete(g.id);}
+    senderSelectionVersion++;renderSelectionControls();
+  };
+  $('selectAllMatchingSenders').onclick = async () => {
+    if(listLoading || selectionBusy || !state.data)return;
+    const epoch=filterEpoch, revision=state.revision, version=senderSelectionVersion, activeFilter=filter();
+    const total=Number(state.data.summary.groups), all=new Map();
+    selectionBusy++;renderSelectionControls();
+    try {
+      for(let page=0;all.size<total;page++){
+        const result=await api('page?'+query({...activeFilter,page,pageSize:50}));
+        if(epoch!==filterEpoch || revision!==state.revision || version!==senderSelectionVersion)return;
+        if(result.revision!==revision || Number(result.summary.groups)!==total)throw new Error('Matching senders changed. Review the current list and select again.');
+        const before=all.size;for(const g of result.groups)all.set(g.id,g);
+        if(all.size===before)throw new Error('Matching senders could not be fully loaded. Your previous selection is retained.');
+      }
+      for(const [id,g] of all)senderSelection.set(id,g);
+      senderSelectionVersion++;
+    } catch(error){if(epoch===filterEpoch)notice(error.message);}
+    finally{selectionBusy--;renderSelectionControls();}
+  };
+  $('clearGroups').onclick = () => { senderSelectionVersion++;senderSelection.clear(); renderSelectionControls(); };
   $('clear').onclick = () => clearSelection();
   $('review').onclick = () => openPreview();
   function createInboxRule(addresses, action, context) {
     const senders = [...new Set(addresses.filter(Boolean))].sort();
-    if (!senders.length || senders.length > 20) { notice('Choose emails from 1–20 exact sender addresses to create a rule.'); return; }
-    document.dispatchEvent(new CustomEvent('tidymail:create-rule', { detail: { senders, action, context, account: document.body.dataset.account } }));
+    if (!senders.length) { notice('Choose at least one exact sender address for a rule.'); return; }
+    document.dispatchEvent(new CustomEvent('tidymail:create-rule', { detail: { senders, action, context, mailScope: state.scope, account: document.body.dataset.account } }));
   }
   $('createMessageRule').onclick = () => createInboxRule([...selected.values()].map(m => m.address), state.action, `From ${fmt(selected.size)} selected emails`);
   $('createSenderSelectionRule').onclick = async () => {
@@ -1112,6 +1160,7 @@
   document.querySelectorAll('[data-tab]').forEach((button, index, tabs) => { button.onclick = () => { const changed = state.tab !== button.dataset.tab; state.tab = button.dataset.tab; if (changed) state.details = null; tabs.forEach(b => { b.classList.toggle('active', b === button); b.setAttribute('aria-selected', String(b === button)); b.tabIndex = b === button ? 0 : -1; }); $('detailContent').setAttribute('aria-labelledby', button.id); renderDetail(); if (changed) loadDetails(); }; button.onkeydown = e => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) { e.preventDefault(); const next = tabs[e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : (index + 1) % 2]; next.click(); next.focus(); } }; });
   document.querySelectorAll('[data-close]').forEach(button => button.onclick = () => $(button.dataset.close).close());
   $('confirm').addEventListener('close', () => {
+    if (previewFromRule && $('inboxRule').open) { $('inboxRule').querySelector('[data-rule-existing]')?.focus({ preventScroll: true }); return; }
     const review = $(previewFromSenders ? 'reviewSenders' : 'review');
     (review.disabled ? $('senderTable') : review).focus();
   });
@@ -1132,7 +1181,11 @@
   }
   new ResizeObserver(() => { document.documentElement.style.setProperty('--dock-height', $('dock').hidden ? '0px' : $('dock').getBoundingClientRect().height + 'px'); requestAnimationFrame(keepFocusVisible); }).observe($('dock'));
   document.addEventListener('focusin', keepFocusVisible);
-  pollJobs(); setInterval(pollJobs, 2000);
+  const transferred = sessionStorage.getItem('tidymail-rule-filing-preview');
+  function restoreRuleFilingPreview(){
+  if(transferred){sessionStorage.removeItem('tidymail-rule-filing-preview');try{const saved=JSON.parse(transferred);if(String(saved.account)!==document.body.dataset.account)throw new Error('Mailbox changed. Review existing emails again from the rule.');previewFromRule=true;showActionPreview(saved.preview).catch(error=>notice(error.message));}catch(error){notice(error.message);}}
+  }
+  const initialJobs=pollJobs(); setInterval(pollJobs, 2000);
   loadRecommendations();setInterval(()=>{if(!document.hidden)loadRecommendations();},5000);
   const overlayOpeners = new Map();
   function openLocalDialog(id, opener) {
@@ -1173,7 +1226,8 @@
   };
   if (location.hash === '#settings') $('settingsOpen').click();
   if (location.hash === '#activity') document.querySelector('[data-activity-link]').click();
-  loadPage();
+  // Initial sender focus clears mailbox selections; restore the independent rule preview afterward.
+  Promise.all([initialJobs,loadPage()]).then(restoreRuleFilingPreview);
   setInterval(() => loadPage(undefined, true), 15000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) loadPage(undefined, true); });
 })();

@@ -111,6 +111,51 @@ public class GmailRuleProvider implements RuleProvider {
         Set<String> included=d.exceptSubject().isEmpty()?before:search(a,query+" -"+subjectQuery(d.exceptions()));
         return new Matches(included,before);
     }
+    /** One combined, read-only search for all selected addresses, bounded by search()'s 10,000-match ceiling. */
+    public Set<String> matchingInbox(UserAccount a,JsonNode filter,List<String> senders){return search(a,inboxFilterQuery(filter,senders));}
+    public static String inboxFilterQuery(JsonNode filter,List<String> senders){
+        // Validate selected addresses independently of the native search expression.
+        var selected=new RuleDefinition("Check existing filter",senders,"","","READ");
+        var c=filter.path("criteria");
+        if(!c.isObject())throw new IllegalStateException("The full filter conditions are unavailable. Review this filter in Gmail.");
+        var allowed=Set.of("from","to","subject","query","negatedQuery","hasAttachment","excludeChats","size","sizeComparison");
+        c.fieldNames().forEachRemaining(key->{if(!allowed.contains(key))throw new IllegalStateException("This filter uses conditions that cannot be checked safely here. Review the full filter in Gmail.");});
+        var parts=new ArrayList<String>();parts.add("in:inbox");parts.add("from:{"+String.join(" ",selected.senders())+"}");
+        for(String field:List.of("from","query","negatedQuery")){
+            String text=c.path(field).asText("").strip();if(text.isEmpty())continue;requireBalancedQuery(text);
+            parts.add((field.equals("from")?"from:":field.equals("negatedQuery")?"-":"")+"("+text+")");
+        }
+        String to=c.path("to").asText("").strip();
+        if(!to.isEmpty()){requireBalancedQuery(to);parts.add("{to:("+to+") cc:("+to+") bcc:("+to+")}");}
+        String subject=c.path("subject").asText("").strip();
+        if(!subject.isEmpty()){
+            if(subject.startsWith("\"")&&subject.endsWith("\"")&&subject.length()>1)subject=subject.substring(1,subject.length()-1);
+            if(subject.contains("\"")||subject.contains("\\"))throw new IllegalStateException("This subject expression needs review in Gmail; no partial match will be reported as verified.");
+            parts.add("subject:\""+subject+"\"");
+        }
+        if(c.hasNonNull("hasAttachment")){
+            if(!c.path("hasAttachment").asBoolean())throw new IllegalStateException("This attachment condition needs review in Gmail.");
+            parts.add("has:attachment");
+        }
+        if(c.path("excludeChats").asBoolean())parts.add("-is:chat");
+        if(c.hasNonNull("size")){
+            String comparison=c.path("sizeComparison").asText();
+            if(!Set.of("smaller","larger").contains(comparison)||!c.path("size").canConvertToLong()||c.path("size").asLong()<0)
+                throw new IllegalStateException("This size condition cannot be checked safely. Review it in Gmail.");
+            parts.add(comparison+":"+c.path("size").asLong());
+        }else if(c.hasNonNull("sizeComparison")&&!c.path("sizeComparison").asText().equals("unspecified"))
+            throw new IllegalStateException("The filter’s size condition is incomplete. Review it in Gmail.");
+        return String.join(" ",parts);
+    }
+    private static void requireBalancedQuery(String query){
+        var groups=new ArrayDeque<Character>();boolean quoted=false,escaped=false;
+        for(char ch:query.toCharArray()){
+            if(escaped){escaped=false;continue;}if(ch=='\\'){escaped=true;continue;}if(ch=='"'){quoted=!quoted;continue;}
+            if(quoted)continue;if(ch=='('||ch=='{')groups.push(ch);
+            else if(ch==')'||ch=='}')if(groups.isEmpty()||groups.pop()!=(ch==')'?'(':'{'))throw new IllegalStateException("This search expression needs review in Gmail.");
+        }
+        if(quoted||escaped||!groups.isEmpty())throw new IllegalStateException("This search expression needs review in Gmail.");
+    }
     public static String subjectQuery(List<String> phrases) {
         return "{"+String.join(" ",phrases.stream().map(p->"subject:\""+p+"\"").toList())+"}";
     }
@@ -126,8 +171,12 @@ public class GmailRuleProvider implements RuleProvider {
             var page=call(a,5,c->c.users().messages().list("me").setQ(query).setIncludeSpamTrash(true).setMaxResults(500L).setPageToken(token).execute());
             if(page.getMessages()!=null)page.getMessages().forEach(m->ids.add(m.getId()));
             cursor=page.getNextPageToken();
-            if(ids.size()>=10000&&cursor!=null)throw new IllegalStateException("This preview exceeds 10,000 provider matches. Narrow the sender/subject conditions.");
+            if(ids.size()>10000||ids.size()>=10000&&cursor!=null)throw new IllegalStateException("This preview exceeds 10,000 provider matches. Narrow the sender/subject conditions.");
         }while(cursor!=null);return ids;
+    }
+    public JsonNode withSenders(JsonNode raw,List<String> senders){
+        ObjectNode payload=raw.deepCopy();payload.remove("id");
+        ((ObjectNode)payload.path("criteria")).put("from",senders.size()==1?senders.getFirst():"{"+String.join(" ",senders)+"}");return payload;
     }
     public String create(UserAccount a,JsonNode payload){
         return call(a,5,c->{var f=new Filter();

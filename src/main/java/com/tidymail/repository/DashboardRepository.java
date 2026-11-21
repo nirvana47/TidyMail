@@ -257,7 +257,7 @@ public class DashboardRepository {
                 .addValue("asOf",timestamp(Instant.now()))
                 .addValue("q", filter.q())
                 .addValue("start", timestamp(filter.startInstant()))
-                .addValue("end", timestamp(filter.endInstant())).addValue("offset", filter.page() * 10L);
+                .addValue("end", timestamp(filter.endInstant())).addValue("offset", filter.page() * (long) filter.pageSize()).addValue("pageSize", filter.pageSize());
     }
 
     private static final String GROUP_COUNTS = """
@@ -294,7 +294,7 @@ public class DashboardRepository {
                 ), page_groups AS (
                   SELECT * FROM group_counts ORDER BY
                 """+order+"""
-                  messages DESC,group_key LIMIT 10 OFFSET :offset
+                  messages DESC,group_key LIMIT :pageSize OFFSET :offset
                 ) SELECT totals.messages total_messages,totals.unread total_unread,totals.groups total_groups,
                     totals.undated total_undated,totals.known_bytes total_known_bytes,totals.unknown_sizes total_unknown_sizes,page_groups.*
                   FROM totals LEFT JOIN page_groups ON true ORDER BY

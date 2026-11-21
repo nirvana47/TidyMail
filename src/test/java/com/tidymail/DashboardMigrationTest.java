@@ -21,6 +21,25 @@ class DashboardMigrationTest {
     }
 
     @Test
+    void upgradeFromV49DropsRetiredRuleSuggestionStorageAndPreservesRulesAndMail() {
+        flyway("49").clean();
+        flyway("49").migrate();
+        var jdbc = new JdbcTemplate(new DriverManagerDataSource(
+            POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword()));
+        long account = new UserAccountFixtures(jdbc).createAccount("rule-upgrade@example.test");
+        jdbc.update("INSERT INTO automation_rule_suggestion_dismissals(account_id,sender_address,action,evidence_count) VALUES(?,'sender@example.test','ARCHIVE',5)", account);
+        jdbc.update("INSERT INTO automation_rules(account_id,definition) VALUES(?, '{\"name\":\"Retained rule\"}'::jsonb)", account);
+        jdbc.update("INSERT INTO message_metadata(account_id,provider,provider_message_id,labels) VALUES(?,'google','retained-rule-upgrade',ARRAY['INBOX'])", account);
+        String savedRules = jdbc.queryForObject("SELECT to_jsonb(r)::text FROM automation_rules r WHERE account_id=?", String.class, account);
+        String mail = jdbc.queryForObject("SELECT to_jsonb(m)::text FROM message_metadata m WHERE account_id=?", String.class, account);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT to_regclass('automation_rule_suggestion_dismissals') IS NULL", Boolean.class)).isTrue();
+        assertThat(jdbc.queryForObject("SELECT to_jsonb(r)::text FROM automation_rules r WHERE account_id=?", String.class, account)).isEqualTo(savedRules);
+        assertThat(jdbc.queryForObject("SELECT to_jsonb(m)::text FROM message_metadata m WHERE account_id=?", String.class, account)).isEqualTo(mail);
+        assertThat(flyway(null).validateWithResult().validationSuccessful).isTrue();
+    }
+
+    @Test
     void gmailScopeUpgradeDiscardsListTokensAndPreservesIndexHistoryAndCleanup() {
         flyway("43").clean();
         flyway("43").migrate();

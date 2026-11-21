@@ -254,11 +254,19 @@ class PersonalOutlookJourneyTest extends PostgresJourneyTest {
     }
 
     @Autowired MailDestinationService destinations;
+    @Autowired com.tidymail.rules.AutomationRuleService nativeRules;
+    @Autowired com.tidymail.rules.RuleExistingMailService existingRuleMail;
     @Test void manualFolderFilingUsesReviewedNestedDestinationAndReconcilesLostAcknowledgement() {
         importMailbox();
         assertThat(destinations.list(accountId)).anySatisfy(d->{assertThat(d.id()).isEqualTo("sub");assertThat(d.name()).isEqualTo("Projects / Nested");});
-        var choice=new MailDestinationService.Choice("EXISTING","sub","Wrong browser label",false);
-        var preview=previews.create(accountId,new DashboardPreviewService.Request(ALL,List.of(id("move"),id("gone"),id("comment")),"ORGANIZE",dashboard.revision(accountId),null,choice));
+        var definition=new com.tidymail.rules.RuleDefinition("Projects",List.of("user@example.test","alerts@example.test","no-reply@sharepointonline.com"),"","","ORGANIZE","Projects / Nested",false,"sub","EXISTING");
+        UUID ruleId=nativeRules.save(accountId,null,0,definition);
+        // Simulate an already-enabled native rule; Graph writes below remain ordinary manual filing.
+        jdbc.update("UPDATE automation_rules SET state='ACTIVE' WHERE id=?",ruleId);
+        jdbc.update("INSERT INTO automation_rule_results(rule_id,account_id,destination_id,baseline_count,current_count) VALUES(?,?,'sub',0,0)",ruleId,accountId);
+        assertThat(existingRuleMail.matches(accountId,ruleId,"inbox").total()).isEqualTo(2);
+        assertThat(existingRuleMail.matches(accountId,ruleId,"all").total()).isEqualTo(3);
+        var preview=existingRuleMail.preview(accountId,ruleId,"all");
         assertThat(preview.destination().name()).isEqualTo("Projects / Nested");assertThat(preview.effective()).isEqualTo(2);
         assertThat(fixture.writes).isEmpty();
         UUID job=jobs.confirm(accountId,preview.id()).id();

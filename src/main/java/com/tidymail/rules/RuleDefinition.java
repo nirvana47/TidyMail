@@ -35,7 +35,7 @@ public record RuleDefinition(String name, List<String> senders, String subject, 
         subject = Objects.toString(subject, "").strip();
         exceptSubject = Objects.toString(exceptSubject, "").strip();
         if(name.isEmpty() || name.length()>100) fail("Give the rule a name (up to 100 characters).");
-        if(senders == null || senders.isEmpty() || senders.size()>20) fail("Choose 1–20 exact sender addresses.");
+        if(senders == null || senders.isEmpty()) fail("Choose at least one exact sender address.");
         senders = senders.stream().map(s -> s.strip().toLowerCase(Locale.ROOT)).distinct().sorted().toList();
         for(String sender : senders)
             if(!sender.matches("[a-z0-9][a-z0-9._%+\\-]*@[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\\.[a-z]{2,63}") || sender.length()>320)
@@ -59,6 +59,11 @@ public record RuleDefinition(String name, List<String> senders, String subject, 
     public boolean read() { return action.startsWith("READ"); }
     public String actionLabel() { return ACTIONS.get(action); }
     public String actionLabel(String provider) {return "microsoft".equals(provider)?actionLabel().replace("Trash","Deleted Items"):actionLabel();}
+    public String reviewAction(String provider) {
+        if(!organize())return actionLabel(provider)+" for matching incoming mail.";
+        return "microsoft".equals(provider)?"Move matching incoming mail to “"+destination+"”.":
+            "Apply label “"+destination+"”"+(skipInbox?" and remove matching incoming mail from Inbox.":" to matching incoming mail. Keep it in Inbox.");
+    }
     public String sentence() {return sentence("google");}
     public String sentence(String provider) {
         return (organize()?"Organize into “"+destination+"”"+(skipInbox?" and skip the Inbox":""):actionLabel(provider))+" for incoming email from "+String.join(", ",senders)

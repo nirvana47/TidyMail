@@ -43,6 +43,17 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
     @Test
     void serveSyntheticDashboardForBrowserAcceptance() throws Exception {
         long account = userAccounts.createAccount("browser-fixture@example.test");
+        jdbc.update("UPDATE user_accounts SET scopes=ARRAY['https://www.googleapis.com/auth/gmail.settings.basic'] WHERE id=?",account);
+        var nativeRules=new java.util.concurrent.CopyOnWriteArrayList<com.tidymail.rules.RuleProvider.NativeRule>();
+        var ruleIds=new java.util.concurrent.atomic.AtomicInteger();
+        var overlapJson=new com.fasterxml.jackson.databind.ObjectMapper().readTree("{\"criteria\":{\"from\":\"overlap@example.test\",\"subject\":\"Invoice\",\"negatedQuery\":\"subject:receipt\"},\"action\":{\"addLabelIds\":[\"TRASH\"]}}");
+        nativeRules.add(new com.tidymail.rules.RuleProvider.NativeRule("fixture-overlap","Gmail filter",true,false,overlapJson,null,""));
+        org.mockito.Mockito.doReturn(java.util.Set.of()).when(ruleLabels).matchingInbox(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.anyList());
+        org.mockito.Mockito.doAnswer(i->java.util.List.copyOf(nativeRules)).when(ruleLabels).list(org.mockito.ArgumentMatchers.any());
+        org.mockito.Mockito.doReturn(0L).when(ruleLabels).destinationCount(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.anyString());
+        org.mockito.Mockito.doAnswer(i->{var raw=((com.fasterxml.jackson.databind.JsonNode)i.getArgument(1)).deepCopy();String id="fixture-rule-"+ruleIds.incrementAndGet();((com.fasterxml.jackson.databind.node.ObjectNode)raw).put("id",id);nativeRules.add(new com.tidymail.rules.RuleProvider.NativeRule(id,"Synthetic rule",true,false,raw,null,""));return id;}).when(ruleLabels).create(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any());
+        org.mockito.Mockito.doAnswer(i->{nativeRules.removeIf(r->r.id().equals(i.getArgument(1)));return null;}).when(ruleLabels).pause(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.anyString());
+        org.mockito.Mockito.doAnswer(i->{var ids=new java.util.HashSet<>(jdbc.queryForList("SELECT provider_message_id FROM message_metadata WHERE account_id=?",String.class,account));return new com.tidymail.rules.GmailRuleProvider.Matches(ids,ids);}).when(ruleLabels).matching(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any());
         org.mockito.Mockito.doReturn(java.util.List.of(new com.tidymail.rules.GmailRuleProvider.Destination("Label_42","Offers"),new com.tidymail.rules.GmailRuleProvider.Destination("Label_43","Receipts"))).when(ruleLabels).destinations(org.mockito.ArgumentMatchers.any());
         org.mockito.Mockito.doAnswer(i->ruleLabels.useDestination(i.getArgument(1),"Label_42")).when(ruleLabels).prepare(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any());
         jdbc.update("UPDATE classification_budget SET owner_account=? WHERE id=1",account);

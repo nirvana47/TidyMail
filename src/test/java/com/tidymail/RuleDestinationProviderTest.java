@@ -20,6 +20,18 @@ class RuleDestinationProviderTest {
     private final UserAccount account=new UserAccount();
     private RuleDefinition definition(boolean skip){return new RuleDefinition("Offers",List.of("offers@example.test"),"weekly offers\nmonthly sale","receipt\ninvoice","ORGANIZE","TidyMail - Offers",skip);}
 
+    @Test void inboxFilterCheckKeepsSenderScopeAndAllConditionsAndRejectsPartialTranslation() throws Exception {
+        var raw=json.readTree("{\"criteria\":{\"from\":\"{offers@example.test billing@example.test}\",\"to\":\"owner@example.test\",\"subject\":\"Monthly invoice\",\"query\":\"(has:userlabels OR is:unread)\",\"negatedQuery\":\"subject:overdue\",\"hasAttachment\":true,\"excludeChats\":true,\"size\":1000,\"sizeComparison\":\"larger\"}}");
+        String query=GmailRuleProvider.inboxFilterQuery(raw,List.of("offers@example.test","other@example.test"));
+        assertThat(query).startsWith("in:inbox from:{offers@example.test other@example.test}")
+            .contains("from:({offers@example.test billing@example.test})","subject:\"Monthly invoice\"","((has:userlabels OR is:unread))","-(subject:overdue)","to:(owner@example.test)","cc:(owner@example.test)","bcc:(owner@example.test)","has:attachment","-is:chat","larger:1000");
+        ((com.fasterxml.jackson.databind.node.ObjectNode)raw.path("criteria")).put("unsupportedCondition",true);
+        assertThatThrownBy(()->GmailRuleProvider.inboxFilterQuery(raw,List.of("offers@example.test"))).isInstanceOf(IllegalStateException.class);
+        ((com.fasterxml.jackson.databind.node.ObjectNode)raw.path("criteria")).remove("unsupportedCondition");
+        ((com.fasterxml.jackson.databind.node.ObjectNode)raw.path("criteria")).put("query","foo) OR in:anywhere (");
+        assertThatThrownBy(()->GmailRuleProvider.inboxFilterQuery(raw,List.of("offers@example.test"))).isInstanceOf(IllegalStateException.class);
+    }
+
     @Test void gmailCompilesWithoutMutationThenCreatesOrReusesLabelAndReadsMessageCount() throws Exception {
         var calls=new ArrayList<String>();var existing=new boolean[]{false};
         var transport=new MockHttpTransport(){

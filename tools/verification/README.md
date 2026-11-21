@@ -129,3 +129,11 @@ keeps cleanup running when global scheduling is disabled for local labeling
 controls. This does not enable sync, legacy classification, or paid labeling.
 `DashboardCleanupPollingJourneyTest` verifies automatic completion of confirmed
 indexed-mail cleanup with global scheduling disabled and excluded targets skipped.
+
+Standalone rule editing uses the same synthetic browser fixture:
+
+```sh
+node tools/verification/rule-edit.cjs http://127.0.0.1:PORT/dashboard /tmp/tidymail-rule-edit
+```
+
+It checks standalone draft saving, pausing and editing an enabled Gmail-label rule, retaining the existing destination, saving Remove from Inbox, preserving choices after a rejected save, and enabling the reviewed edit. All provider operations are synthetic.

@@ -9,7 +9,13 @@ import org.springframework.web.server.ResponseStatusException;
 
 /** One predicate for browsing, expansion, selection and preview. */
 public record DashboardFilter(String scope, String q, String start, String end, String zone, int page,
-        String category, String sort, String suggestion, String recommendation, String importance, String label, String labels, String match, String composition, boolean excludeProtectedShopping, String groupBy) {
+        String category, String sort, String suggestion, String recommendation, String importance, String label, String labels, String match, String composition, boolean excludeProtectedShopping, String groupBy, Integer pageSize) {
+    public DashboardFilter(String scope, String q, String start, String end, String zone, int page,
+            String category, String sort, String suggestion, String recommendation, String importance, String label,
+            String labels, String match, String composition, boolean excludeProtectedShopping, String groupBy) {
+        this(scope, q, start, end, zone, page, category, sort, suggestion, recommendation, importance, label,
+                labels, match, composition, excludeProtectedShopping, groupBy, 10);
+    }
     public DashboardFilter(String scope, String q, String start, String end, String zone, int page,
             String category, String sort, String suggestion, String recommendation, String importance, String label,
             String labels, String match, String composition, boolean excludeProtectedShopping) {
@@ -42,6 +48,7 @@ public record DashboardFilter(String scope, String q, String start, String end, 
     }
 
     public DashboardFilter {
+        pageSize = pageSize == null ? 10 : pageSize;
         recommendation = recommendation == null ? "" : recommendation;
         importance = importance == null ? "" : importance;
         label = label == null ? "" : label;
@@ -59,6 +66,7 @@ public record DashboardFilter(String scope, String q, String start, String end, 
         end = end == null ? "" : end;
         zone = zone == null || zone.isBlank() ? "UTC" : zone;
         try {
+            if (!java.util.Set.of(10, 20, 50).contains(pageSize)) throw new IllegalArgumentException();
             if (!java.util.Set.of("","KEEP_IN_INBOX","KEEP_STORED","ARCHIVE","SUGGEST_TRASH","REVIEW","PENDING","STALE").contains(recommendation)) throw new IllegalArgumentException();
             if (!java.util.Set.of("","IMPORTANT","ROUTINE","UNKNOWN").contains(importance)) throw new IllegalArgumentException();
             if (!java.util.Set.of("current", "address").contains(groupBy)) throw new IllegalArgumentException();
@@ -99,7 +107,7 @@ public record DashboardFilter(String scope, String q, String start, String end, 
     public static DashboardFilter from(Map<String, String> values) {
         try {
             return new DashboardFilter(values.get("scope"), values.get("q"), values.get("start"), values.get("end"),
-                    values.get("zone"), Integer.parseInt(values.getOrDefault("page", "0")), values.get("category"), values.get("sort"), values.get("suggestion"), values.get("recommendation"), values.get("importance"), values.get("label"), values.get("labels"), values.get("match"), values.get("composition"), Boolean.parseBoolean(values.get("excludeProtectedShopping")), values.get("groupBy"));
+                    values.get("zone"), Integer.parseInt(values.getOrDefault("page", "0")), values.get("category"), values.get("sort"), values.get("suggestion"), values.get("recommendation"), values.get("importance"), values.get("label"), values.get("labels"), values.get("match"), values.get("composition"), Boolean.parseBoolean(values.get("excludeProtectedShopping")), values.get("groupBy"), Integer.valueOf(values.getOrDefault("pageSize", "10")));
         } catch (NumberFormatException invalid) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid page");
         }
@@ -118,7 +126,7 @@ public record DashboardFilter(String scope, String q, String start, String end, 
     }
 
     public DashboardFilter inbox() {
-        return new DashboardFilter("inbox", q, start, end, zone, 0, category, sort, suggestion, recommendation, importance, label, labels, match, "", excludeProtectedShopping, groupBy);
+        return new DashboardFilter("inbox", q, start, end, zone, 0, category, sort, suggestion, recommendation, importance, label, labels, match, "", excludeProtectedShopping, groupBy, pageSize);
     }
 
     public Instant startInstant() {
@@ -132,7 +140,7 @@ public record DashboardFilter(String scope, String q, String start, String end, 
     /** Browsing all indexed mail must not expand cleanup eligibility. */
     public DashboardFilter cleanupScope() {
         return scope.equals("indexed")
-            ? new DashboardFilter("all", q, start, end, zone, page, category, sort, suggestion, recommendation, importance, label, labels, match, "", excludeProtectedShopping, groupBy)
+            ? new DashboardFilter("all", q, start, end, zone, page, category, sort, suggestion, recommendation, importance, label, labels, match, "", excludeProtectedShopping, groupBy, pageSize)
             : this;
     }
 
@@ -142,6 +150,6 @@ public record DashboardFilter(String scope, String q, String start, String end, 
     }
 
     public DashboardFilter firstPage() {
-        return new DashboardFilter(scope, q, start, end, zone, 0, category, sort, suggestion,recommendation,importance,label,labels,match,composition,excludeProtectedShopping,groupBy);
+        return new DashboardFilter(scope, q, start, end, zone, 0, category, sort, suggestion,recommendation,importance,label,labels,match,composition,excludeProtectedShopping,groupBy,pageSize);
     }
 }

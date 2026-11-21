@@ -84,6 +84,194 @@ class AutomationRulesJourneyTest extends PostgresJourneyTest {
         rules.manage(account,id,"remove");assertThat(nativeGmail).isEmpty();assertThat(rules.get(account,id).state()).isEqualTo("REMOVED");
     }
 
+    @Autowired RuleExistingMailService existingMail;
+    @Autowired com.tidymail.service.DashboardJobService filingJobs;
+    @Autowired com.tidymail.job.DashboardCleanupWorker filingWorker;
+    @Test void reviewReplacesEditorAndSuccessfulRuleOffersExactlyScopedOptionalFiling() throws Exception {
+        jdbc.update("DELETE FROM message_metadata WHERE account_id=?",account);
+        var matches=new HashSet<String>();
+        for(int i=0;i<42;i++) {
+            String id="scope-"+i;matches.add(id);
+            String label=i<28?"INBOX":i<38?"":i==38?"SPAM":i==39?"TRASH":i==40?"DRAFT":"SENT";
+            jdbc.update("""
+                INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,dashboard_from_address,
+                  dashboard_unit_kind,dashboard_unit_key,subject_header,labels,label_evidence_known,unread,received_at)
+                VALUES(?,'google',?, ?,?,'ADDRESS',?,'Weekly offers',?::text[],true,?,now()-(?*interval '1 hour'))
+                """,account,id,SENDER,SENDER,SENDER,label.isEmpty()?"{}":"{"+label+"}",i<22,i);
+        }
+        doReturn(new GmailRuleProvider.Matches(matches,matches)).when(gmailRules).matching(any(),any());
+        doReturn(List.of(new GmailRuleProvider.Destination("Label_scope","Offers"))).when(gmailRules).destinations(any());
+        doAnswer(i->gmailRules.useDestination(i.getArgument(1),"Label_scope")).when(gmailRules).prepare(any(),any());
+        doReturn(0L).when(gmailRules).destinationCount(any(),anyString());
+        var unrelated=json.readTree("{\"criteria\":{\"from\":\"unrelated.example\"},\"action\":{\"addLabelIds\":[\"TRASH\"]}}");
+        nativeGmail.add(new RuleProvider.NativeRule("unrelated","Unrelated filter",true,false,unrelated,null,""));
+        var d=new RuleDefinition("Offers",List.of(SENDER),"Weekly offers","","ORGANIZE","Offers",true,"Label_scope","EXISTING");
+        UUID id=rules.save(account,null,0,d);
+        var review=mockMvc.perform(get("/rules/"+id+"?preview=true&inbox=true&mailScope=inbox").with(authenticatedAs(EMAIL)))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(review).contains("Back to edit rule","Create rule","Recent matching emails","Show more").doesNotContain("name=\"senders\""," matching</strong>","toPrettyString","Unrelated filter","Refresh preview");
+        assertThat(creates).isZero();assertThat(jdbc.queryForObject("SELECT count(*) FROM cleanup_jobs",Integer.class)).isZero();
+        rules.enable(account,id,preview(account,id),false); // unrelated filters require no acknowledgement
+        assertThat(existingMail.matches(account,id,"inbox").total()).isEqualTo(28);
+        assertThat(existingMail.matches(account,id,"inbox").unread()).isEqualTo(22);
+        assertThat(existingMail.matches(account,id,"all").total()).isEqualTo(38);
+        assertThat(existingMail.matches(account,id,"all").inbox()).isEqualTo(28);
+        mockMvc.perform(get("/rules/"+id+"?result=true&inbox=true&mailScope=inbox").with(authenticatedAs(EMAIL)))
+            .andExpect(status().isOk()).andExpect(content().string(org.hamcrest.Matchers.containsString("28 matching emails in Inbox")));
+        var response=mockMvc.perform(post("/rules/"+id+"/existing-preview").with(authenticatedAs(EMAIL)).with(csrfToken())
+            .param("account",""+account).param("mailScope","inbox")).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        UUID exact=UUID.fromString(json.readTree(response).path("id").asText());
+        assertThat(json.readTree(response).path("selected").asInt()).isEqualTo(28);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM cleanup_jobs",Integer.class)).isZero();
+        var job=filingJobs.confirm(account,exact);filingWorker.runOnce();
+        assertThat(filingJobs.get(account,job.id()).changed()).isEqualTo(28);
+        verify(gmailProvider).fileOnce(any(),argThat(ids->ids.size()==28&&!ids.contains("scope-28")),eq("Label_scope"),eq(true));
+        long foreign=userAccounts.createAccount("foreign-rule@example.test");
+        assertThatThrownBy(()->existingMail.preview(foreign,id,"inbox")).isInstanceOfSatisfying(org.springframework.web.server.ResponseStatusException.class,e->assertThat(e.getStatusCode().value()).isEqualTo(404));
+    }
+
+    @Test void inboxSenderAdditionPreservesSettingsAndRecoversLostGmailReplacementReceipt() throws Exception {
+        doReturn(new GmailRuleProvider.Matches(Set.of("mail-1","added-1"),Set.of("mail-1","added-1"))).when(gmailRules).matching(any(),any());
+        doAnswer(i->gmailRules.useDestination(i.getArgument(1),"Label_add")).when(gmailRules).prepare(any(),any());
+        doReturn(0L).when(gmailRules).destinationCount(any(),anyString());
+        var d=new RuleDefinition("Receipts",List.of(SENDER),"receipt","overdue","ORGANIZE","Receipts",true,"Label_add","EXISTING");
+        UUID id=rules.save(account,null,0,d);rules.enable(account,id,preview(account,id),true);
+        var original=nativeGmail.getFirst().raw().deepCopy();
+        mockMvc.perform(get("/rules/add-senders").param("account",""+account).param("senders","billing@example.test").param("inbox","true").with(authenticatedAs(EMAIL)))
+            .andExpect(status().isOk()).andExpect(content().string(org.hamcrest.Matchers.containsString("Review addition")));
+        var response=mockMvc.perform(post("/rules/"+id+"/senders/review").param("account",""+account).param("senders","billing@example.test").param("inbox","true").with(authenticatedAs(EMAIL)).with(csrfToken()))
+            .andExpect(status().isOk()).andExpect(model().attributeExists("addition")).andReturn();
+        var addition=(Map<?,?>)response.getModelAndView().getModel().get("addition");
+        assertThat(creates).isEqualTo(1);assertThat(rules.get(account,id).definition()).isEqualTo(d);
+        assertThat(rules.get(account,id).state()).isEqualTo("ACTIVE");
+        uncertain=true; // Provider creates the replacement, but its response is lost.
+        rules.addSenders(account,id,(UUID)addition.get("id"),true);
+        assertThat(rules.get(account,id).pending()).isEqualTo("UPDATE_SENDERS");assertThat(nativeGmail).hasSize(2);
+        rules.refresh(account);
+        var updated=rules.get(account,id);
+        assertThat(updated.pending()).isNull();assertThat(updated.state()).isEqualTo("ACTIVE");assertThat(creates).isEqualTo(2);assertThat(nativeGmail).hasSize(1);
+        assertThat(updated.definition().senders()).containsExactly("billing@example.test",SENDER);
+        var expected=original.deepCopy();((ObjectNode)expected.path("criteria")).put("from","{billing@example.test "+SENDER+"}");
+        assertThat(gmailRules.behavior(nativeGmail.getFirst().raw())).isEqualTo(gmailRules.behavior(expected));
+        assertThatThrownBy(()->rules.addSenders(account,id,(UUID)addition.get("id"),true)).hasMessageContaining("changed");
+        assertThatThrownBy(()->rules.reviewSenders(account,id,List.of("billing@example.test"))).hasMessageContaining("already included");
+        jdbc.update("INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,subject_header,labels,received_at) VALUES(?,'google','added-1','billing@example.test','receipt',ARRAY['INBOX'],now())",account);
+        assertThat(existingMail.matches(account,id,"inbox",List.of("billing@example.test")).total()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM cleanup_jobs",Integer.class)).isZero();
+        mockMvc.perform(post("/rules/"+id+"/senders/review").param("account",""+account).param("senders","another@example.test").with(authenticatedAs(EMAIL)))
+            .andExpect(status().isForbidden());
+        long foreign=userAccounts.createAccount("sender-add-foreign@example.test");
+        assertThatThrownBy(()->rules.reviewSenders(foreign,id,List.of("another@example.test"))).hasMessageContaining("not found");
+        rules.manage(account,id,"pause");
+        var paused=rules.reviewSenders(account,id,List.of("another@example.test"));
+        rules.addSenders(account,id,(UUID)paused.get("id"),true);
+        assertThat(rules.get(account,id).state()).isEqualTo("PAUSED");assertThat(nativeGmail).isEmpty();assertThat(creates).isEqualTo(2);
+    }
+
+    @Test void rulesPageShowsSavedRulesAndUnmanagedGmailFiltersFirst() throws Exception {
+        draft(account);
+        var raw=json.readTree("{\"id\":\"external-filter\",\"criteria\":{\"from\":\"offers@example.test\"},\"action\":{\"addLabelIds\":[\"STARRED\"]}}");
+        nativeGmail.add(new RuleProvider.NativeRule("external-filter","Existing Gmail filter",true,false,raw,null,""));
+        String html=mockMvc.perform(get("/rules").with(authenticatedAs(EMAIL))).andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+        assertThat(html).contains("Your rules","Existing Gmail filters","Existing Gmail filter","Gmail filter settings ↗")
+            .doesNotContain("Refresh provider state","Organize future incoming email","No additional mailbox rules found.");
+    }
+
+    @Test void deleteOnlyConfirmedEligibleDraftsInOwnedSelectedMailbox() throws Exception {
+        long other=userAccounts.createAccount("other-drafts@example.test");
+        UUID eligible=draft(account),changed=draft(account),edited=draft(account),pending=draft(account),attached=draft(account),active=draft(account),paused=draft(account),foreign=draft(other);
+        jdbc.update("UPDATE automation_rules SET pending_operation='CREATE' WHERE id=?",pending);
+        jdbc.update("UPDATE automation_rules SET remote_id='attached' WHERE id=?",attached);
+        jdbc.update("UPDATE automation_rules SET state='ACTIVE',remote_id='active' WHERE id=?",active);
+        jdbc.update("UPDATE automation_rules SET state='PAUSED' WHERE id=?",paused);
+        var session=new MockHttpSession();var auth=authenticatedAs(EMAIL);
+        String html=mockMvc.perform(get("/rules").session(session).with(auth)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(html).contains("Delete all drafts","Delete draft");
+        var response=mockMvc.perform(get("/rules/drafts/deletion-preview").session(session).with(auth).param("account",""+account))
+            .andExpect(status().isOk()).andReturn();
+        var snapshot=json.readTree(response.getResponse().getContentAsString());assertThat(snapshot.path("count").asInt()).isEqualTo(3);
+        // Opening/cancelling confirmation has no effect. A new opening replaces the snapshot.
+        assertThat(rules.get(account,eligible).state()).isEqualTo("DRAFT");
+        response=mockMvc.perform(get("/rules/drafts/deletion-preview").session(session).with(auth).param("account",""+account)).andReturn();
+        String token=json.readTree(response.getResponse().getContentAsString()).path("token").asText();
+        UUID later=draft(account);
+        jdbc.update("UPDATE automation_rules SET state='PAUSED' WHERE id=?",changed);
+        rules.save(account,edited,1,new RuleDefinition("Edited draft",List.of(SENDER),"","","READ"));
+        clearInvocations(gmailRules,graph);
+        mockMvc.perform(post("/rules/drafts/delete").session(session).with(auth).param("account",""+account).param("confirmation",token)).andExpect(status().isForbidden());
+        mockMvc.perform(post("/rules/drafts/delete").session(session).with(auth).with(csrfToken()).param("account",""+other).param("confirmation",token))
+            .andExpect(flash().attributeExists("error"));
+        mockMvc.perform(post("/rules/drafts/delete").session(session).with(auth).with(csrfToken()).param("account",""+account).param("confirmation",token))
+            .andExpect(redirectedUrl("/rules")).andExpect(flash().attribute("notice","Deleted 1 draft. Skipped 2 changed or already removed."));
+        assertThat(rules.get(account,eligible).state()).isEqualTo("REMOVED");
+        for(UUID id:List.of(edited,later,pending,attached))assertThat(rules.get(account,id).state()).isEqualTo("DRAFT");
+        assertThat(rules.get(account,changed).state()).isEqualTo("PAUSED");
+        assertThat(rules.get(account,active).state()).isEqualTo("ACTIVE");assertThat(rules.get(account,paused).state()).isEqualTo("PAUSED");
+        assertThat(rules.get(other,foreign).state()).isEqualTo("DRAFT");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM automation_rule_events WHERE rule_id=?",Integer.class,eligible)).isEqualTo(2);
+        verifyNoInteractions(gmailRules,graph);
+        // Single deletion uses the same fixed confirmation and local removal path.
+        response=mockMvc.perform(get("/rules/drafts/deletion-preview").session(session).with(auth).param("account",""+account).param("id",later.toString())).andReturn();
+        token=json.readTree(response.getResponse().getContentAsString()).path("token").asText();
+        mockMvc.perform(post("/rules/drafts/delete").session(session).with(auth).with(csrfToken()).param("account",""+account).param("confirmation",token)).andExpect(redirectedUrl("/rules"));
+        assertThat(rules.get(account,later).state()).isEqualTo("REMOVED");
+        verifyNoInteractions(gmailRules,graph);
+    }
+
+    @Test void overlapIdentifiesOnlySharedAddressesAndBatchChecksFullFilterWithoutMovingMail() throws Exception {
+        var senders=new ArrayList<String>();senders.add(SENDER);senders.add("not-"+SENDER);
+        java.util.stream.IntStream.range(0,40).mapToObj(i->"selected"+i+"@example.test").forEach(senders::add);
+        var raw=json.readTree("{\"criteria\":{\"from\":\"offers@example.test\",\"subject\":\"invoice\",\"negatedQuery\":\"subject:overdue\"},\"action\":{\"addLabelIds\":[\"TRASH\"]}}");
+        nativeGmail.add(new RuleProvider.NativeRule("existing-trash","Gmail filter",true,false,raw,null,""));
+        var d=new RuleDefinition("Forty-two selected senders",senders,"","","READ");UUID id=rules.save(account,null,0,d);
+        var response=mockMvc.perform(get("/rules/"+id+"?preview=true&inbox=true").with(authenticatedAs(EMAIL)))
+            .andExpect(status().isOk()).andReturn();
+        assertThat(response.getResponse().getContentAsString()).contains("1 of 42 selected addresses",SENDER,"Subject phrase","invoice","Must not match this search","subject:overdue","not a full-rule match");
+        var review=(Map<?,?>)response.getModelAndView().getModel().get("preview");
+        var overlaps=(List<AutomationRuleService.Interaction>)review.get("interactions");
+        assertThat(overlaps).hasSize(1);assertThat(overlaps.getFirst().senders()).extracting(RuleOverlap.Sender::address).containsExactly(SENDER);
+        doReturn(Set.of("mail-1")).when(gmailRules).matchingInbox(any(),any(),anyList());
+        jdbc.update("UPDATE message_metadata SET subject_header='invoice' WHERE account_id=? AND provider_message_id='mail-1'",account);
+        var check=mockMvc.perform(post("/rules/"+id+"/interaction-check").with(authenticatedAs(EMAIL)).with(csrfToken())
+            .param("account",""+account).param("preview",review.get("id").toString()).param("remote","existing-trash").param("fingerprint",rules.fingerprint(raw)).param("inbox","true"))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        var result=json.readTree(check);assertThat(result.path("selectedAddresses").asInt()).isEqualTo(42);
+        assertThat(result.path("currentInboxMatches").asInt()).isEqualTo(1);assertThat(result.path("senders")).hasSize(42);
+        assertThat(result.path("senders").get(0).path("address").asText()).isEqualTo(SENDER);
+        assertThat(result.path("explanation").asText()).contains("not that this filter ran","cause is not established");
+        assertThat(creates).isZero();assertThat(nativeGmail).hasSize(1);assertThat(jdbc.queryForObject("SELECT count(*) FROM cleanup_jobs",Integer.class)).isZero();
+        verify(gmailRules).matchingInbox(any(),eq(raw),argThat(v->v.size()==42));
+        mockMvc.perform(post("/rules/"+id+"/interaction-check").with(authenticatedAs(EMAIL)).with(csrfToken())
+            .param("account",""+account).param("preview",review.get("id").toString()).param("remote","existing-trash").param("fingerprint","stale").param("inbox","true"))
+            .andExpect(status().isConflict());
+        doThrow(new IllegalStateException("Simulated search failure")).when(gmailRules).matchingInbox(any(),any(),anyList());
+        mockMvc.perform(post("/rules/"+id+"/interaction-check").with(authenticatedAs(EMAIL)).with(csrfToken())
+            .param("account",""+account).param("preview",review.get("id").toString()).param("remote","existing-trash").param("fingerprint",rules.fingerprint(raw)).param("inbox","true"))
+            .andExpect(status().isConflict()).andExpect(content().string(org.hamcrest.Matchers.containsString("No partial result is treated as verified")));
+        long foreign=userAccounts.createAccount("overlap-foreign@example.test");
+        assertThatThrownBy(()->rules.checkInteraction(foreign,id,(UUID)review.get("id"),"existing-trash",rules.fingerprint(raw))).isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+        var complex=raw.deepCopy();((ObjectNode)complex.path("criteria")).put("from","-offers@example.test");
+        var assessment=RuleOverlap.assess(d,new RuleProvider.NativeRule("complex","Gmail filter",true,false,complex,null,""));
+        assertThat(assessment.uncertain()).isTrue();assertThat(assessment.senders()).isEmpty();
+    }
+
+    @Test void newRuleFromFortyTwoSendersRetainsEveryAddressThroughHttpPreviewAndProviderPayloads() throws Exception {
+        var senders=java.util.stream.IntStream.range(0,42).mapToObj(i->"selected"+i+"@example.test").sorted().toList();
+        var response=mockMvc.perform(post("/rules/save").with(authenticatedAs(EMAIL)).with(csrfToken())
+            .param("account",""+account).param("inbox","true").param("name","Selected senders").param("senders",String.join(", ",senders)).param("action","READ"))
+            .andExpect(status().is3xxRedirection()).andReturn().getResponse();
+        UUID id=UUID.fromString(response.getRedirectedUrl().split("/rules/")[1].split("\\?")[0]);
+        assertThat(rules.get(account,id).definition().senders()).containsExactlyElementsOf(senders);
+        var review=mockMvc.perform(get(response.getRedirectedUrl()).with(authenticatedAs(EMAIL))).andExpect(status().isOk()).andReturn();
+        var preview=(Map<?,?>)review.getModelAndView().getModel().get("preview");
+        assertThat(creates).isZero();rules.enable(account,id,(UUID)preview.get("id"),true);
+        assertThat(rules.get(account,id).state()).isEqualTo("ACTIVE");
+        assertThat(nativeGmail.getFirst().raw().path("criteria").path("from").asText()).isEqualTo("{"+String.join(" ",senders)+"}");
+        var outlook=new OutlookRuleProvider(graph,json).compile(accounts.findById(account).orElseThrow(),rules.get(account,id).definition(),List.of());
+        assertThat(outlook.path("conditions").path("fromAddresses")).hasSize(42);
+    }
+
     @Test void multipleSubjectPhrasesKeepSenderScopeAndAnyExceptionWinsAcrossPreviewAndNativePayloads() throws Exception {
         long outlook=userAccounts.createAccount("phrases@example.test","microsoft");
         var a=accounts.findById(outlook).orElseThrow();a.setScopes(List.of("MailboxSettings.ReadWrite"));accounts.save(a);
@@ -159,6 +347,35 @@ class AutomationRulesJourneyTest extends PostgresJourneyTest {
         assertThatThrownBy(()->rules.results(foreign,id)).isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
     }
 
+    @Test void pausedNewLabelRuleReopensWithResolvedDestinationAndCanSaveSkipInbox() throws Exception {
+        var definition = new RuleDefinition("Synthetic social rule",List.of(SENDER),"","","ORGANIZE","Offers",false,"","NEW");
+        UUID id=rules.save(account,null,0,definition);
+        doAnswer(i->gmailRules.useDestination(i.getArgument(1),"Label_edit")).when(gmailRules).prepare(any(),any());
+        doReturn(0L).when(gmailRules).destinationCount(any(),anyString());
+        rules.enable(account,id,preview(account,id),true);
+        rules.manage(account,id,"pause");
+        doReturn(List.of(new GmailRuleProvider.Destination("Label_edit","Offers"))).when(gmailRules).destinations(any());
+        String html=mockMvc.perform(get("/rules/"+id).with(authenticatedAs(EMAIL))).andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+        assertThat(html).contains("data-initial-mode=\"EXISTING\"","data-initial-id=\"Label_edit\"");
+        mockMvc.perform(post("/rules/save").with(authenticatedAs(EMAIL)).with(csrfToken())
+            .header("X-Requested-With","XMLHttpRequest").param("account",""+account).param("id",id.toString()).param("version","1")
+            .param("name",definition.name()).param("senders",SENDER).param("action","ORGANIZE")
+            .param("destinationMode","EXISTING").param("destinationId","Label_edit").param("destination","Offers").param("skipInbox","true"))
+            .andExpect(redirectedUrl("/rules/"+id+"?preview=true&mailScope=all"));
+        var saved=rules.get(account,id);
+        assertThat(saved.version()).isEqualTo(2);
+        assertThat(saved.definition().skipInbox()).isTrue();
+        assertThat(saved.definition().destinationMode()).isEqualTo("EXISTING");
+        assertThat(saved.definition().destinationId()).isEqualTo("Label_edit");
+        assertThat(saved.state()).isEqualTo("DRAFT");
+        assertThat(creates).isEqualTo(1);
+        rules.enable(account,id,preview(account,id),true);
+        assertThat(rules.get(account,id).state()).isEqualTo("ACTIVE");
+        assertThat(nativeGmail).hasSize(1);
+        assertThat(nativeGmail.getFirst().raw().path("action").path("removeLabelIds").toString()).contains("INBOX");
+    }
+
     @Test void failedDestinationPreparationNeverDispatchesRuleAndLostNativeResponseStillReconciles(){
         var d=new RuleDefinition("Organize offers",List.of(SENDER),"","","ORGANIZE","TidyMail - Offers",true);
         UUID id=rules.save(account,null,0,d);
@@ -212,7 +429,9 @@ class AutomationRulesJourneyTest extends PostgresJourneyTest {
             if(path.contains("mailFolders/archive"))return json.createObjectNode().put("id","archive-folder");
             if(method==HttpMethod.GET){var page=json.createObjectNode();var values=page.putArray("value");
                 if(path.contains("messageRules"))inventory.values().forEach(values::add);return page;}
-            if(method==HttpMethod.PATCH){((ObjectNode)inventory.get("native-organize")).put("isEnabled",(Boolean)((Map<?,?>)payload).get("isEnabled"));return null;}
+            if(method==HttpMethod.PATCH){var changes=(Map<?,?>)payload;var current=(ObjectNode)inventory.get("native-organize");
+                if(changes.containsKey("isEnabled"))current.put("isEnabled",(Boolean)changes.get("isEnabled"));
+                if(changes.containsKey("conditions"))current.set("conditions",((JsonNode)changes.get("conditions")).deepCopy());return null;}
             JsonNode created=((JsonNode)payload).deepCopy();((ObjectNode)created).put("id","native-organize");inventory.put("native-organize",created);return created;
         });
         UUID id=rules.save(outlook,null,0,new RuleDefinition("Organize offers",List.of(SENDER),"","","ORGANIZE","TidyMail - Offers",false));
@@ -224,7 +443,16 @@ class AutomationRulesJourneyTest extends PostgresJourneyTest {
         jdbc.update("INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,outlook_folder_id,received_at) VALUES(?,'microsoft','outlook-new',?,'offers-folder',now()+interval '1 second')",outlook,SENDER);
         assertThat(rules.results(outlook,id).get("observed")).isEqualTo(1L);
         assertThat(rules.results(outlook,id).get("baseline_count")).isEqualTo(3L);
-        rules.manage(outlook,id,"pause");rules.enable(outlook,id,preview(outlook,id),true);
+        var beforeUpdate=inventory.get("native-organize").deepCopy();
+        var addition=rules.reviewSenders(outlook,id,List.of("billing@example.test"));rules.addSenders(outlook,id,(UUID)addition.get("id"),true);
+        assertThat(rules.get(outlook,id).state()).isEqualTo("ACTIVE");
+        assertThat(inventory.get("native-organize").path("actions")).isEqualTo(beforeUpdate.path("actions"));
+        assertThat(inventory.get("native-organize").path("sequence")).isEqualTo(beforeUpdate.path("sequence"));
+        rules.manage(outlook,id,"pause");
+        var pausedAddition=rules.reviewSenders(outlook,id,List.of("paused@example.test"));rules.addSenders(outlook,id,(UUID)pausedAddition.get("id"),true);
+        assertThat(rules.get(outlook,id).state()).isEqualTo("PAUSED");
+        assertThat(inventory.get("native-organize").path("isEnabled").asBoolean()).isFalse();
+        rules.enable(outlook,id,preview(outlook,id),true);
         assertThat(inventory).hasSize(1);assertThat(rules.get(outlook,id).state()).isEqualTo("ACTIVE");
     }
 

@@ -6,7 +6,7 @@ const { chromium, expect } = require('playwright/test');
 const root = path.resolve(__dirname, '../..');
 const inmail = 'inmail-hit-reply@linkedin.com', invitations = 'invitations@linkedin.com';
 const groups = [
-  { id: 'linkedin', label: 'LinkedIn', addresses: 22, messages: 89, unread: 55 },
+  { id: 'linkedin', label: 'LinkedIn', addresses: 42, messages: 109, unread: 55 },
   { id: 'target', label: 'Target', addresses: 2, messages: 4, unread: 2 }
 ].map(g => ({ ...g, inbox: g.messages, latest: '2026-11-14T12:00:00Z', knownBytes: 0, unknownSizes: 0 }));
 const messages = [[inmail, 36, 'linkedin'], [invitations, 33, 'linkedin'], ['news@target.com', 2, 'target'], ['offers@target.com', 2, 'target']]
@@ -16,7 +16,9 @@ const messages = [[inmail, 36, 'linkedin'], [invitations, 33, 'linkedin'], ['new
     attachmentState: 'ABSENT', snippetState: 'ABSENT'
   })));
 // A fully expanded group must be taller than the viewport to expose focus scrolling.
-for (let i = 0; i < 20; i++) messages.push({ ...messages[0], id: `extra-${i}`, address: `extra${i}@linkedin.com` });
+for (let i = 0; i < 40; i++) messages.push({ ...messages[0], id: `extra-${i}`, address: `extra${i}@linkedin.com` });
+let paginationMode = true;
+const paginationGroups = Array.from({ length: 53 }, (_, i) => ({ ...groups[0], id: `paging-${i}`, label: `Sender ${i}`, addresses: 1 }));
 let previewIds = [], delaySelection = null, selectionStarted = null, detailFailure = false, delayDetails = null, detailsStarted = null;
 (async () => {
   const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
@@ -48,9 +50,15 @@ let previewIds = [], delaySelection = null, selectionStarted = null, detailFailu
       const endpoint = url.pathname.replace('/dashboard/api/', '');
       if (endpoint === 'jobs') return send([]);
       if (endpoint === 'recommendations') return send({ enabled: false, labeling: {} });
+      if (endpoint === 'page' && paginationMode) {
+        const size = Number(url.searchParams.get('pageSize') || 10), offset = Number(url.searchParams.get('page') || 0) * size;
+        return send({ groups: paginationGroups.slice(offset, offset + size), revision: 1, classificationRevision: 1,
+          filter: { labels: '' }, summary: { messages: 53, unread: 53, groups: 53, known_bytes: 0 },
+          coverage: { indexed: 53 }, sync: { email: 'fixture@example.test' } });
+      }
       if (endpoint === 'page') return send({ groups, revision: 1, classificationRevision: 1,
-        filter: { labels: '' }, summary: { messages: 93, unread: 57, groups: 2, known_bytes: 0 },
-        coverage: { indexed: 93 }, sync: { email: 'fixture@example.test', initial_batch_completed_at: '2026-11-14T12:00:00Z' } });
+        filter: { labels: '' }, summary: { messages: 113, unread: 57, groups: 2, known_bytes: 0 },
+        coverage: { indexed: 113 }, sync: { email: 'fixture@example.test', initial_batch_completed_at: '2026-11-14T12:00:00Z' } });
       if (endpoint === 'selection') {
         const request = route.request().postDataJSON();
         const rows = messages.filter(m => request.groups.includes(m.groupId) && (!request.address || request.address === m.address) && (!request.unreadOnly || m.unread));
@@ -84,6 +92,36 @@ let previewIds = [], delaySelection = null, selectionStarted = null, detailFailu
     const selectedCount = count => expect(page.locator('#selectionCount')).toHaveText(`${count} messages selected`);
     const expand = label => page.getByRole('button', { name: `Show sender addresses for ${label}`, exact: true }).click();
     await page.goto('https://tidymail.test/');
+    await expect(page.locator('#senders > tr')).toHaveCount(10);
+    const header=page.getByRole('checkbox',{name:'Select all senders on this page',exact:true});
+    await header.check();await expect(page.locator('#groupingCount')).toHaveText('10 sender groups selected');
+    await page.getByRole('checkbox',{name:'Select sender Sender 0',exact:true}).uncheck();
+    await expect(header).toHaveJSProperty('indeterminate',true);
+    await header.check();await page.locator('#nextPage').click();await expect(page.locator('#pageLabel')).toHaveText('11–20 of 53');await header.check();
+    await expect(page.locator('#groupingCount')).toHaveText('20 sender groups selected');
+    await header.uncheck();await expect(page.locator('#groupingCount')).toHaveText('10 sender groups selected');
+    await page.locator('#prevPage').click();await expect(page.locator('#pageLabel')).toHaveText('1–10 of 53');await expect(header).toBeChecked();
+    await page.getByRole('button',{name:'Select all 53 matching sender groups',exact:true}).click();
+    await expect(page.locator('#groupingCount')).toHaveText('53 sender groups selected');
+    await page.locator('#nextPage').click();await expect(page.locator('#pageLabel')).toHaveText('11–20 of 53');await expect(header).toBeChecked();
+    await page.locator('#clearGroups').click();await expect(header).not.toBeChecked();
+    await page.locator('#prevPage').click();await expect(page.locator('#pageLabel')).toHaveText('1–10 of 53');
+    for (const size of [20, 50]) {
+      await page.locator('#senderPageSize').selectOption(String(size));
+      await expect(page.locator('#senders > tr')).toHaveCount(size);
+      await expect(page.locator('#pageLabel')).toHaveText(`1–${size} of 53`);
+      await expect(page.locator('#prevPage')).toBeDisabled();
+      await page.locator('#nextPage').click();
+      await expect(page.locator('#pageLabel')).toHaveText(`${size + 1}–${Math.min(size * 2, 53)} of 53`);
+      await expect(page.locator('#senders > tr')).toHaveCount(Math.min(size, 53 - size));
+    }
+    await expect(page.locator('#nextPage')).toBeDisabled();
+    await expect(page.locator('#prevPage')).toBeFocused();
+    await page.locator('#senderPageSize').selectOption('10');
+    await expect(page.locator('#pageLabel')).toHaveText('1–10 of 53');
+    paginationMode = false;
+    await page.reload();
+
     // Real keyboard-operated overlays and filter changes must preserve existing scope rules.
     await page.locator('#filtersOpen').click();
     await expect(page.locator('#filtersDialog')).toBeVisible();
@@ -131,6 +169,14 @@ let previewIds = [], delaySelection = null, selectionStarted = null, detailFailu
     await addressBox(inmail).evaluate(input => window.scrollBy(0, input.getBoundingClientRect().top - 150));
     const scrollBeforeSelection = await page.evaluate(() => window.scrollY);
     await addressBox(inmail).check(); await selectedCount(36);
+    for (const size of ['20', '50', '10']) {
+      const refreshed = page.waitForResponse(response => response.url().includes('/dashboard/api/page?') && new URL(response.url()).searchParams.get('pageSize') === size);
+      await page.locator('#senderPageSize').selectOption(size);
+      await refreshed;
+      await expect(addressBox(inmail)).toBeChecked();
+      await selectedCount(36);
+    }
+
     await expect.poll(() => page.evaluate(() => window.scrollY)).toBeLessThanOrEqual(scrollBeforeSelection + 5);
     await expect(addressBox(inmail)).toBeFocused();
     await openAddress(invitations);
@@ -150,7 +196,7 @@ let previewIds = [], delaySelection = null, selectionStarted = null, detailFailu
     await expect(addressBox(inmail)).toBeChecked(); await expect(addressBox(invitations)).toBeChecked();
     await expand('Target'); await selectedCount(69);
     await page.locator('#messageAction').selectOption('MARK_READ_ARCHIVE');
-    await page.locator('#createMessageRule').click();
+    await page.locator('#createMessageRule').click();await page.getByRole('button',{name:'Create new rule',exact:true}).click();
     await expect(page.locator('#inboxRule')).toBeVisible();
     await expect(page.locator('#inboxRuleContent [name="senders"]')).toHaveValue([inmail, invitations].sort().join(', '));
     await expect(page.locator('#inboxRuleContent [name="action"]')).toHaveValue('ORGANIZE');
@@ -220,7 +266,21 @@ let previewIds = [], delaySelection = null, selectionStarted = null, detailFailu
     await addressBox(inmail).check(); await selectedCount(36);
     await page.locator('#search').fill('changed');
     await expect(page.locator('#selectionRow')).toBeHidden();
+    // A rule selection survives reload without reselecting its 42 exact addresses.
+    await page.locator('#search').fill('');await expect(page.locator('#senders > tr').first()).toBeVisible();
+    await page.getByRole('checkbox',{name:'Select sender LinkedIn',exact:true}).check();
+    await page.locator('#createSenderSelectionRule').click();
+    await page.getByRole('button',{name:'Create new rule',exact:true}).click();
+    const allSenders=[...new Set(messages.filter(m=>m.groupId==='linkedin').map(m=>m.address))].sort().join(', ');
+    await expect(page.locator('#inboxRuleContent [name="senders"]')).toHaveValue(allSenders);
+    await page.reload();await expect(page.locator('#savedRuleSelection')).toContainText('42 sender addresses saved');
+    await page.getByRole('button',{name:'Resume rule setup',exact:true}).click();
+    await page.getByRole('button',{name:'Create new rule',exact:true}).click();
+    await expect(page.locator('#inboxRuleContent [name="senders"]')).toHaveValue(allSenders);
+    await page.locator('#inboxRule [data-close]').click();
+    await page.getByRole('button',{name:'Discard saved selection',exact:true}).click();
+    await expect(page.locator('#savedRuleSelection')).toBeHidden();
     assert.deepEqual(errors, []);
-    console.log('PASS: details failure/timeout and retry recovery, stable scroll position and checkbox focus in a 22-address group, address/message synchronization, additive selection, paging, collapse, group boundary, exact Trash preview, unread scope, filter reset, stale response rejection, and inline rule action/sender transfer with validation and selection preservation.');
+    console.log('PASS: details failure/timeout and retry recovery, stable scroll position and checkbox focus in a 42-address group, address/message synchronization, additive selection, paging, collapse, group boundary, exact Trash preview, unread scope, filter reset, stale response rejection, and inline rule action/sender transfer with validation and selection preservation.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -70,9 +70,11 @@ public class AutomationRuleService {
         for(int i=0;i<phrases.size();i++){String key=prefix+i;params.put(key,phrases.get(i).toLowerCase(Locale.ROOT));clauses.add("position(:"+key+" in lower(COALESCE(subject_header,'')))>0");}
         return clauses.isEmpty()?"true":"("+String.join(" OR ",clauses)+")";
     }
-    public Map<String,Object> preview(long id,UUID ruleId){return serial(id,()->{
-        var a=account(id);var r=store.get(id,ruleId);var d=r.definition();var p=provider(a);
-        var params=new HashMap<String,Object>();params.put("account",id);params.put("senders",d.senders());params.put("subject",d.subject().toLowerCase(Locale.ROOT));params.put("except",d.exceptSubject().toLowerCase(Locale.ROOT));
+    public record Matching(String bucket,Map<String,Object> params,boolean deployable,String note) {}
+    public Matching matching(long account,UUID ruleId) {var a=account(account);return matching(a,store.get(account,ruleId).definition());}
+    private Matching matching(UserAccount a,RuleDefinition d) {
+        var p=provider(a);
+        var params=new HashMap<String,Object>();params.put("account",a.getId());params.put("senders",d.senders());params.put("subject",d.subject().toLowerCase(Locale.ROOT));params.put("except",d.exceptSubject().toLowerCase(Locale.ROOT));
         boolean deployable=true;String matchingNote="";
         String include=localPhrasePredicate(d.subjects(),"include",params), exclude=localPhrasePredicate(d.exceptions(),"exclude",params);
         String bucket="CASE WHEN NOT ("+include+") THEN 'other' WHEN "+(d.exceptions().isEmpty()?"false":exclude)+" THEN 'excluded' ELSE 'match' END";
@@ -84,11 +86,35 @@ public class AutomationRuleService {
                 matchingNote="Subject matches were checked with Gmail search. Only examples retained in TidyMail are shown.";
             }catch(RuntimeException unavailable){deployable=false;matchingNote="Gmail subject matching could not be verified. These are approximate local examples; native activation is unavailable until a fresh preview succeeds.";}
         }else if(!d.subject().isEmpty()||!d.exceptSubject().isEmpty())matchingNote="Outlook subject conditions match text within the subject, ignoring case.";
+        return new Matching(bucket,params,deployable,matchingNote);
+    }
+    public String destination(long account,UUID ruleId) {return results.destination(store.get(account,ruleId));}
+    public record Interaction(String name,String action,List<RuleOverlap.Sender> senders,String reason,boolean uncertain,
+                              List<RuleOverlap.Condition> conditions,String remote,String fingerprint,String settingsUrl,String manageUrl,boolean checkable) {}
+    private List<RuleProvider.NativeRule> interacting(RuleDefinition d,List<RuleProvider.NativeRule> inventory) {
+        return inventory.stream().filter(RuleProvider.NativeRule::enabled).filter(n->RuleOverlap.assess(d,n).possible()).toList();
+    }
+    private List<Interaction> interactionSummaries(UserAccount a,RuleDefinition d,List<RuleProvider.NativeRule> inventory) {
+        var managed=new HashMap<String,RuleStore.Saved>();for(var r:store.list(a.getId()))if(r.remoteId()!=null)managed.put(r.remoteId(),r);
+        String settings=links.accountPage(a.getProvider(),a.getEmail()).map(url->url+"#settings/filters").orElse(provider(a).settingsUrl());
+        return interacting(d,inventory).stream().map(n->{
+            var saved=managed.get(n.id());var overlap=RuleOverlap.assess(d,n);
+            String name=saved!=null?saved.definition().name():n.raw().has("criteria")?"Existing Gmail filter":n.name();
+            return new Interaction(name,RuleOverlap.action(n,a.getProvider()),overlap.senders(),overlap.reason(),overlap.uncertain(),
+                RuleOverlap.conditions(n.raw()),n.id(),fingerprint(n.raw()),settings,saved==null?"":"/rules/"+saved.id(),provider(a) instanceof GmailRuleProvider);
+        }).toList();
+    }
+    public Map<String,Object> preview(long id,UUID ruleId){return serial(id,()->{
+        var r=store.get(id,ruleId);return previewDefinition(id,r,r.definition(),r.definition().senders());
+    });}
+    private Map<String,Object> previewDefinition(long id,RuleStore.Saved r,RuleDefinition d,List<String> sampleSenders){
+        UUID ruleId=r.id();var a=account(id);var p=provider(a);
+        var matching=matching(a,d);var params=matching.params();boolean deployable=matching.deployable();String matchingNote=matching.note(),bucket=matching.bucket();params.put("sampleSenders",sampleSenders);
         String source="""
             WITH evidence AS (
               SELECT m.*,%s AS bucket
               FROM message_metadata m WHERE m.account_id=:account
-              AND lower(COALESCE(m.dashboard_from_address,m.from_address,'')) IN (:senders)
+              AND lower(COALESCE(m.dashboard_from_address,m.from_address,'')) IN (:sampleSenders)
             )
             """.formatted(bucket);
         var counts=store.jdbc().queryForMap(source+"SELECT count(*) FILTER(WHERE bucket='match') matched,count(*) FILTER(WHERE bucket='excluded') excluded,count(*) FILTER(WHERE bucket='other') other,min(received_at) oldest,max(received_at) newest,max(last_synced_at) synced FROM evidence",params);
@@ -103,15 +129,45 @@ public class AutomationRuleService {
         if(permitted(a))try{inventory=p.list(a);inventoryHash=inventoryFingerprint(inventory);}
             catch(RuntimeException e){inventoryError="Native rules could not be checked; activation is unavailable until a fresh preview succeeds.";}
         var protectedAddresses=protectedSenders(id,d);var snapshot=new LinkedHashMap<String,Object>();
-        snapshot.put("protected",protectedAddresses);snapshot.put("counts",counts);snapshot.put("definition",d);
+        snapshot.put("protected",protectedAddresses);snapshot.put("counts",counts);snapshot.put("definition",d);snapshot.put("originalState",r.state());
         // The preview records whether provider-specific subject matching was successfully checked.
         snapshot.put("deployable",deployable);
         store.jdbc().update("DELETE FROM automation_rule_previews WHERE account_id=:account AND expires_at<now()-interval '1 day'",Map.of("account",id));
         UUID preview=UUID.randomUUID();var sql=new HashMap<String,Object>();sql.put("id",preview);sql.put("rule",ruleId);sql.put("account",id);sql.put("version",r.version());sql.put("snapshot",store.encode(snapshot));sql.put("inventory",inventoryHash);
         store.jdbc().update("INSERT INTO automation_rule_previews(id,rule_id,account_id,version,snapshot,inventory_hash) VALUES(:id,:rule,:account,:version,CAST(:snapshot AS jsonb),:inventory)",sql);
         var out=new LinkedHashMap<String,Object>();out.put("id",preview);out.put("rule",r);out.put("counts",counts);out.put("examples",examples);out.put("protected",protectedAddresses);
-        out.put("permission",permitted(a));out.put("inventoryError",inventoryError);out.put("inventory",inventory);out.put("deployable",deployable);out.put("matchingNote",matchingNote);
+        out.put("interactions",interactionSummaries(a,d,inventory.stream().filter(n->!n.id().equals(r.remoteId())).toList()));out.put("permission",permitted(a));out.put("inventoryError",inventoryError);out.put("inventory",inventory);out.put("deployable",deployable);out.put("matchingNote",matchingNote);
         return out;
+    }
+    public Map<String,Object> checkInteraction(long account,UUID id,UUID preview,String remote,String expectedFingerprint){return serial(account,()->{
+        var a=account(account);requirePermission(a);var current=store.get(account,id);
+        if(!(provider(a) instanceof GmailRuleProvider))RuleStore.conflict("Full-condition checking is currently available for Gmail filters. Review this rule in Outlook settings.");
+        var gmail=(GmailRuleProvider)provider(a);
+        var rows=store.jdbc().queryForList("SELECT snapshot FROM automation_rule_previews WHERE id=:preview AND rule_id=:id AND account_id=:account AND version=:version AND expires_at>now()",
+            Map.of("preview",preview,"id",id,"account",account,"version",current.version()));
+        if(rows.isEmpty())RuleStore.conflict("This review expired or the rule changed. Review the rule again before checking overlaps.");
+        var snapshot=store.decode(rows.getFirst().get("snapshot").toString(),JsonNode.class);
+        var d=store.decode(snapshot.path("definition").toString(),RuleDefinition.class);
+        var existing=find(gmail.list(a),remote);
+        if(existing==null||!existing.enabled()||!fingerprint(existing.raw()).equals(expectedFingerprint))RuleStore.conflict("The existing filter changed or is missing. Refresh the rule review before checking it.");
+        Set<String> matches;
+        try{matches=gmail.matchingInbox(a,existing.raw(),d.senders());}
+        catch(IllegalStateException unavailable){throw new ResponseStatusException(HttpStatus.CONFLICT,"The full Gmail conditions could not be checked. No partial result is treated as verified. Review this filter in Gmail or try again.");}
+        var params=new HashMap<String,Object>();params.put("account",account);params.put("senders",d.senders());params.put("ids",matches.isEmpty()?Set.of("__no_matches__"):matches);
+        var indexed=store.jdbc().queryForList("SELECT provider_message_id,COALESCE(dashboard_from_address,from_address) sender,subject_header,received_at,provider_thread_id FROM message_metadata WHERE account_id=:account AND provider_message_id IN (:ids) AND lower(COALESCE(dashboard_from_address,from_address,'')) IN (:senders) ORDER BY received_at DESC NULLS LAST,id DESC",params);
+        var senderRows=new ArrayList<Map<String,Object>>();
+        for(String sender:d.senders()){
+            long count=indexed.stream().filter(m->sender.equalsIgnoreCase(Objects.toString(m.get("sender"),""))).count();
+            senderRows.add(Map.of("address",sender,"matches",count));
+        }
+        senderRows.sort(Comparator.<Map<String,Object>>comparingLong(m->((Number)m.get("matches")).longValue()).reversed());
+        var examples=new ArrayList<Map<String,Object>>();
+        for(var m:indexed.stream().limit(5).toList())examples.add(Map.of("sender",m.get("sender"),"subject",Objects.toString(m.get("subject_header"),"(no subject)"),
+            "url",links.gmail(a.getProvider(),a.getEmail(),(String)m.get("provider_thread_id"),(String)m.get("provider_message_id")).orElse("")));
+        String explanation=matches.isEmpty()?"Gmail found no current Inbox messages from these addresses satisfying this filter’s full conditions. Sharing a sender condition alone does not establish a message match.":
+            "Gmail currently finds Inbox messages satisfying this filter’s conditions. That confirms a current match, not that this filter ran when they arrived. Gmail does not provide filter creation time or a per-message execution history here; the emails may predate the filter or have been restored to Inbox. The cause is not established.";
+        return Map.of("checkedAt",Instant.now().toString(),"selectedAddresses",d.senders().size(),"currentInboxMatches",matches.size(),"indexedMatches",indexed.size(),
+            "unindexedMatches",Math.max(0,matches.size()-indexed.size()),"senders",senderRows,"examples",examples,"explanation",explanation);
     });}
     public void enable(long account,UUID id,UUID preview,boolean reviewedInventory){serial(account,()->{
         var a=account(account);requirePermission(a);var r=store.get(account,id);var p=provider(a);
@@ -124,7 +180,7 @@ public class AutomationRuleService {
         if(!protectedSenders(account,r.definition()).isEmpty())RuleStore.conflict("This rule includes a protected sender. Resolve the protection before enabling it.");
         var inventory=p.list(a);
         if(!Objects.equals(rows.getFirst().get("inventory_hash"),inventoryFingerprint(inventory)))RuleStore.conflict("Mailbox rules changed or were not checked. Preview again.");
-        if(!inventory.isEmpty()&&!reviewedInventory)RuleStore.conflict("Review the existing mailbox rules before enabling this rule.");
+        if(!interacting(r.definition(),inventory.stream().filter(n->!n.id().equals(r.remoteId())).toList()).isEmpty()&&!reviewedInventory)RuleStore.conflict("Review the existing mailbox rules before enabling this rule.");
         for(var existing:inventory){
             if(existing.id().equals(r.remoteId())||!existing.enabled()||existing.compatible()==null)continue;
             if(!Collections.disjoint(existing.compatible().senders(),r.definition().senders())
@@ -157,9 +213,84 @@ public class AutomationRuleService {
             }catch(RuntimeException e){store.attention(r,"Creation needs verification. Refresh rules before trying another operation.");}
         }return null;
     });}
+    /** Review a proposed definition without changing the saved or native rule. */
+    public Map<String,Object> reviewSenders(long account,UUID id,List<String> senders){return serial(account,()->{
+        var r=store.get(account,id);requireSenderEditable(r);
+        var union=new LinkedHashSet<>(r.definition().senders());union.addAll(senders);
+        var d=withSenders(r.definition(),new ArrayList<>(union));
+        if(d.senders().equals(r.definition().senders()))RuleStore.conflict("These addresses are already included in this rule.");
+        var added=d.senders().stream().filter(v->!r.definition().senders().contains(v)).toList();
+        var out=previewDefinition(account,r,d,added);out.put("proposed",d);out.put("added",added);
+        return out;
+    });}
+    private RuleDefinition withSenders(RuleDefinition d,List<String> senders){return new RuleDefinition(d.name(),senders,d.subject(),d.exceptSubject(),d.action(),d.destination(),d.skipInbox(),d.destinationId(),d.destinationMode());}
+    private void requireSenderEditable(RuleStore.Saved r){
+        if(r.pending()!=null||!Set.of("ACTIVE","PAUSED","DRAFT").contains(r.state()))RuleStore.conflict("This rule needs attention. Review its status in Rules first.");
+    }
+    public void addSenders(long account,UUID id,UUID preview,boolean reviewedInventory){serial(account,()->{
+        var a=account(account);var r=store.get(account,id);requireSenderEditable(r);
+        var rows=store.jdbc().queryForList("SELECT * FROM automation_rule_previews WHERE id=:preview AND rule_id=:id AND account_id=:account AND version=:version AND expires_at>now()",
+            Map.of("preview",preview,"id",id,"account",account,"version",r.version()));
+        if(rows.isEmpty())RuleStore.conflict("The rule changed or this review expired. Choose the rule and review again.");
+        var snapshot=store.decode(rows.getFirst().get("snapshot").toString(),JsonNode.class);
+        var d=store.decode(snapshot.path("definition").toString(),RuleDefinition.class);
+        if(!snapshot.path("originalState").asText().equals(r.state()))RuleStore.conflict("The rule status changed. Review the addition again.");
+        if(!withSenders(r.definition(),d.senders()).equals(d)||!d.senders().containsAll(r.definition().senders())||d.senders().equals(r.definition().senders()))RuleStore.conflict("Review the sender addition again.");
+        if(!snapshot.path("deployable").asBoolean()||!protectedSenders(account,d).isEmpty())RuleStore.conflict("Matching could not be verified or a sender is protected. Review the rule again.");
+        if(r.remoteId()==null){store.updateSenders(r,d,r.state(),null,r.remoteSnapshot());return null;}
+        requirePermission(a);var p=provider(a);var inventory=p.list(a);
+        if(!Objects.equals(rows.getFirst().get("inventory_hash"),inventoryFingerprint(inventory)))RuleStore.conflict("Mailbox rules changed. Review the addition again.");
+        var n=find(inventory,r.remoteId());
+        if(n==null||n.readOnly()||n.enabled()!=r.state().equals("ACTIVE")||!p.behavior(n.raw()).equals(p.behavior(r.remoteSnapshot())))RuleStore.conflict("The native rule changed. Refresh it in Rules before editing.");
+        var others=inventory.stream().filter(v->!v.id().equals(r.remoteId())).toList();
+        if(!interacting(d,others).isEmpty()&&!reviewedInventory)RuleStore.conflict("Review the other rules that may act on this mail.");
+        JsonNode payload=p.withSenders(n.raw(),d.senders());
+        if(p.provider().equals("google")&&others.stream().anyMatch(v->p.behavior(v.raw()).equals(p.behavior(payload))))RuleStore.conflict("An equivalent rule already exists. Manage it in Rules.");
+        var operation=store.json().createObjectNode();operation.set("payload",payload);operation.set("definition",store.json().valueToTree(d));operation.put("state",r.state());
+        store.claim(r,"UPDATE_SENDERS",operation);
+        try{
+            if(p.provider().equals("google"))p.create(a,payload);else p.updateSenders(a,r.remoteId(),payload);
+            confirm(a,p,r,"UPDATE_SENDERS");
+        }catch(RuntimeException failure){store.attention(r,"Sender update needs verification. Refresh Rules before retrying; the original or replacement rule may still be running.");}
+        return null;
+    });}
+    private void reconcileSenderUpdate(UserAccount a,RuleProvider p,RuleStore.Saved r,List<RuleProvider.NativeRule> inventory){
+        var payload=r.operation().path("payload");
+        var matches=inventory.stream().filter(n->!n.readOnly()&&p.behavior(n.raw()).equals(p.behavior(payload))
+            &&(p.provider().equals("google")||n.id().equals(r.remoteId()))).toList();
+        if(matches.size()!=1){store.attention(r,"Sender update not confirmed. Inspect mailbox rules, then refresh or resolve; do not create another rule.");return;}
+        var replacement=matches.getFirst();
+        if(replacement.enabled()!=r.operation().path("state").asText().equals("ACTIVE")){store.attention(r,"The updated rule status changed. Inspect mailbox settings.");return;}
+        if(p.provider().equals("google")){
+            var old=find(inventory,r.remoteId());
+            if(old!=null){
+                if(old.readOnly()||!p.behavior(old.raw()).equals(p.behavior(r.remoteSnapshot()))){store.attention(r,"The original filter changed during replacement. Review both filters in mailbox settings.");return;}
+                p.pause(a,old.id());
+                var fresh=p.list(a);
+                if(find(fresh,old.id())!=null){store.attention(r,"The replacement exists; removal of the original filter needs verification.");return;}
+                replacement=find(fresh,replacement.id());
+                if(replacement==null||!p.behavior(replacement.raw()).equals(p.behavior(payload))){store.attention(r,"The replacement filter changed during verification.");return;}
+            }
+        }
+        var d=store.decode(r.operation().path("definition").toString(),RuleDefinition.class);
+        store.updateSenders(r,d,replacement.enabled()?"ACTIVE":"PAUSED",replacement.id(),replacement.raw());
+    }
+    public record DraftTarget(UUID id,long version) {}
+    public record DraftDeletion(int deleted,int skipped) {}
+    public List<DraftTarget> draftDeletionTargets(long account,UUID id){return serial(account,()->store.list(account).stream()
+        .filter(RuleStore::deletableDraft).filter(r->id==null||r.id().equals(id)).map(r->new DraftTarget(r.id(),r.version())).toList());}
+    public DraftDeletion deleteDrafts(long account,List<DraftTarget> confirmed){return serial(account,()->{
+        int deleted=0;
+        var current=new HashMap<UUID,RuleStore.Saved>();store.list(account).forEach(r->current.put(r.id(),r));
+        for(var target:confirmed){
+            var r=current.get(target.id());
+            if(r!=null&&r.version()==target.version()&&RuleStore.deletableDraft(r)&&store.removeLocal(r,true))deleted++;
+        }
+        return new DraftDeletion(deleted,confirmed.size()-deleted);
+    });}
     public void manage(long account,UUID id,String action){serial(account,()->{
         var r=store.get(account,id);
-        if(action.equals("remove")&&r.remoteId()==null&&r.pending()==null){store.settle(r,"REMOVED",null,null,"Local draft removed");return null;}
+        if(action.equals("remove")&&r.remoteId()==null&&r.pending()==null){if(!store.removeLocal(r,false))RuleStore.conflict("The rule changed. Reload before removing it.");return null;}
         var a=account(account);requirePermission(a);var p=provider(a);
         if(r.pending()!=null)RuleStore.conflict("Refresh the pending provider operation first.");
         if(!Set.of("pause","remove").contains(action))RuleDefinition.fail("Unknown rule operation.");
@@ -195,7 +326,14 @@ public class AutomationRuleService {
         if(!old)RuleStore.conflict("Wait two minutes after the request, then refresh before resolving an uncertain operation.");
         var inventory=p.list(a);reconcileOne(a,p,r,inventory);r=store.get(account,id);
         if(r.pending()==null)return null;
-        if(r.pending().equals("CREATE")){
+        if(r.pending().equals("UPDATE_SENDERS")){
+            var current=r;var payload=r.operation().path("payload");
+            if(inventory.stream().anyMatch(n->p.behavior(n.raw()).equals(p.behavior(payload))))RuleStore.conflict("An updated rule exists. Review mailbox settings and refresh before resolving.");
+            var original=find(inventory,r.remoteId());
+            if(original!=null&&p.behavior(original.raw()).equals(p.behavior(current.remoteSnapshot())))
+                store.settle(r,original.enabled()?"ACTIVE":"PAUSED",original.id(),original.raw(),"Sender update not applied; original rule retained. Review the addition again.");
+            else RuleStore.conflict("Restore the original rule in mailbox settings before resolving this update.");
+        }else if(r.pending().equals("CREATE")){
             final var pending=r;long matches=inventory.stream().filter(n->p.behavior(n.raw()).equals(p.behavior(pending.operation()))).count();
             if(matches!=0)RuleStore.conflict("Matching native rules still exist. Resolve their state in mailbox settings first.");
             store.settle(r,"DRAFT",null,null,"No native rule found; uncertain creation explicitly cleared");
@@ -219,6 +357,7 @@ public class AutomationRuleService {
     private void reconcile(UserAccount a,RuleProvider p,List<RuleProvider.NativeRule> inventory){for(var r:store.list(a.getId()))reconcileOne(a,p,r,inventory);}
     private void reconcileOne(UserAccount a,RuleProvider p,RuleStore.Saved r,List<RuleProvider.NativeRule> inventory){
         if(r.pending()!=null){
+            if(r.pending().equals("UPDATE_SENDERS")){reconcileSenderUpdate(a,p,r,inventory);return;}
             if(r.pending().equals("CREATE")){
                 var matches=inventory.stream().filter(n->(r.remoteId()==null||r.remoteId().equals(n.id()))&&p.behavior(n.raw()).equals(p.behavior(r.operation()))).toList();
                 if(matches.size()==1)store.settle(r,matches.getFirst().enabled()?"ACTIVE":"PAUSED",matches.getFirst().id(),matches.getFirst().raw(),"Native rule creation confirmed");

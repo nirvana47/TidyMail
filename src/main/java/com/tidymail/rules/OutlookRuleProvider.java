@@ -115,6 +115,13 @@ public class OutlookRuleProvider implements RuleProvider {
         if(!folder.path("totalItemCount").canConvertToLong())throw new IllegalStateException("Destination count is unavailable.");
         return folder.path("totalItemCount").asLong();
     }
+    public JsonNode withSenders(JsonNode raw,List<String> senders){
+        ObjectNode payload=raw.deepCopy();var from=((ObjectNode)payload.path("conditions")).putArray("fromAddresses");
+        for(String sender:senders)from.addObject().putObject("emailAddress").put("address",sender);return payload;
+    }
+    public void updateSenders(UserAccount a,String id,JsonNode payload){
+        graph.request(a,HttpMethod.PATCH,path(id),Map.of("conditions",payload.path("conditions")));
+    }
     public String create(UserAccount a,JsonNode payload){return graph.request(a,HttpMethod.POST,BASE,payload).path("id").asText();}
     public void pause(UserAccount a,String id){graph.request(a,HttpMethod.PATCH,path(id),Map.of("isEnabled",false));}
     public void resume(UserAccount a,String id){graph.request(a,HttpMethod.PATCH,path(id),Map.of("isEnabled",true));}

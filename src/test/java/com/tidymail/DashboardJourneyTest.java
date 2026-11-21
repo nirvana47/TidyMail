@@ -54,6 +54,27 @@ class DashboardJourneyTest extends PostgresJourneyTest {
         return new DashboardFilter(scope, search, "", "", "UTC", 0);
     }
 
+    @ParameterizedTest
+    @ValueSource(ints = {10, 20, 50})
+    void senderPageSizesCoverEverySenderWithoutOverlap(int size) throws Exception {
+        for (int i = 0; i < 53; i++)
+            message("paging-" + i, "sender" + i + "@example.test", List.of("INBOX"), true, List.of(), false, NOW);
+        for (String groupBy : List.of("current", "address")) {
+            var seen = new HashSet<UUID>();
+            for (int page = 0; page * size < 53; page++) {
+                var result = dashboard.page(account, DashboardFilter.from(Map.of(
+                        "pageSize", String.valueOf(size), "page", String.valueOf(page), "groupBy", groupBy)));
+                assertThat(result.groups()).hasSize(Math.min(size, 53 - page * size));
+                for (var group : result.groups()) assertThat(seen.add(group.id())).isTrue();
+            }
+            assertThat(seen).hasSize(53);
+        }
+        mockMvc.perform(get("/dashboard/api/page").with(authenticatedAs(OWNER)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.groups.length()").value(10));
+        mockMvc.perform(get("/dashboard/api/page").with(authenticatedAs(OWNER)).param("pageSize", "15"))
+                .andExpect(status().isBadRequest());
+    }
+
     @Test
     void gmailDetailsLinkToTheExactMessageInTheConnectedAccount() {
         message("18c123abc456def0", "sender@example.test", List.of("INBOX"), true, List.of(), true, NOW);

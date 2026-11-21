@@ -40,7 +40,7 @@ public class RuleStore {
     public void claim(Saved r,String op,JsonNode payload){tx.executeWithoutResult(status->{
         var owned=jdbc.queryForList("SELECT id FROM user_accounts WHERE id=:account FOR UPDATE",Map.of("account",r.account()));
         if(owned.isEmpty())conflict("Mailbox was removed before the rule operation started.");
-        int n=jdbc.update("UPDATE automation_rules SET pending_operation=:op,operation_snapshot=CAST(:payload AS jsonb),state='ATTENTION',detail='Waiting for provider confirmation',updated_at=now() WHERE id=:id AND account_id=:account AND version=:version AND pending_operation IS NULL",Map.of("id",r.id(),"account",r.account(),"version",r.version(),"op",op,"payload",encode(payload)));
+        int n=jdbc.update("UPDATE automation_rules SET pending_operation=:op,operation_snapshot=CAST(:payload AS jsonb),state='ATTENTION',detail='Waiting for provider confirmation',updated_at=now() WHERE id=:id AND account_id=:account AND version=:version AND state=:state AND pending_operation IS NULL",Map.of("id",r.id(),"account",r.account(),"version",r.version(),"state",r.state(),"op",op,"payload",encode(payload)));
         if(n!=1)conflict("A rule operation is already pending. Refresh before trying again.");});}
     public void prepared(Saved r,JsonNode payload){
         int changed=jdbc.update("UPDATE automation_rules SET operation_snapshot=CAST(:payload AS jsonb) WHERE id=:id AND account_id=:account AND version=:version AND pending_operation='CREATE'",Map.of("id",r.id(),"account",r.account(),"version",r.version(),"payload",encode(payload)));
@@ -58,6 +58,21 @@ public class RuleStore {
         int changed=jdbc.update("UPDATE automation_rules SET state=:state,remote_id=:remote,remote_snapshot=CAST(:snapshot AS jsonb),pending_operation=NULL,operation_snapshot=NULL,detail=:detail,checked_at=now(),updated_at=now() WHERE id=:id AND account_id=:account AND version=:version AND pending_operation IS NOT DISTINCT FROM :pending",p);
         if(changed!=1)conflict("The rule changed while verifying the provider operation. Refresh rules.");
         event(r.account(),r.id(),state+": "+detail,r.definition());});}
+    public void updateSenders(Saved r,RuleDefinition d,String state,String remoteId,JsonNode snapshot){tx.executeWithoutResult(status->{
+        var params=new HashMap<String,Object>();params.put("id",r.id());params.put("account",r.account());params.put("version",r.version());params.put("pending",r.pending());params.put("oldState",r.state());
+        params.put("definition",encode(d));params.put("state",state);params.put("remote",remoteId);params.put("snapshot",encode(snapshot));
+        int changed=jdbc.update("UPDATE automation_rules SET definition=CAST(:definition AS jsonb),version=version+1,state=:state,remote_id=:remote,remote_snapshot=CAST(:snapshot AS jsonb),pending_operation=NULL,operation_snapshot=NULL,detail='Sender addresses added; other settings preserved',checked_at=now(),updated_at=now() WHERE id=:id AND account_id=:account AND version=:version AND state=:oldState AND pending_operation IS NOT DISTINCT FROM :pending",params);
+        if(changed!=1)conflict("The rule changed while adding senders. Refresh Rules to verify its status.");
+        event(r.account(),r.id(),"Sender addresses added",d);
+    });}
+    public static boolean deletableDraft(Saved r){return r.state().equals("DRAFT")&&r.remoteId()==null&&r.pending()==null;}
+    /** Conditional local removal retains the rule and all audit events. No provider work. */
+    public boolean removeLocal(Saved r,boolean draftOnly){return tx.execute(status->{
+        var p=Map.of("id",r.id(),"account",r.account(),"version",r.version(),"state",r.state());
+        int changed=jdbc.update("UPDATE automation_rules SET state='REMOVED',detail='Local draft removed',checked_at=now(),updated_at=now() WHERE id=:id AND account_id=:account AND version=:version AND state=:state AND remote_id IS NULL AND pending_operation IS NULL"+(draftOnly?" AND state='DRAFT'":""),p);
+        if(changed==0)return false;
+        event(r.account(),r.id(),"REMOVED: Local draft removed",r.definition());return true;
+    });}
     public void attention(Saved r,String detail){jdbc.update("UPDATE automation_rules SET state='ATTENTION',detail=:detail,checked_at=now() WHERE id=:id AND account_id=:account",Map.of("id",r.id(),"account",r.account(),"detail",detail));}
     static void conflict(String text){throw new ResponseStatusException(HttpStatus.CONFLICT,text);}
 }

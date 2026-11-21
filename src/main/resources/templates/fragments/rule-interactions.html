@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org"><body>
+<section th:fragment="interactions(items,reviewId,ruleId,selectedCount)" th:unless="${#lists.isEmpty(items)}" class="rule-interactions" data-rule-interactions>
+<h3>Existing rules with possible overlap</h3>
+<p class="muted">Shared sender conditions are shown below. This does not prove your emails matched the full rule or that the rule ran.</p>
+<section th:each="n:${items}" class="rule-overlap">
+<h4 th:text="${n.name}"></h4><p><strong th:text="${n.action}"></strong></p>
+<p th:unless="${n.uncertain}" th:text="${#lists.size(n.senders)+' of '+selectedCount+' selected addresses have a possible sender overlap.'}"></p>
+<p th:text="${n.reason}"></p>
+<div th:unless="${#lists.isEmpty(n.senders)}" class="rule-overlap-senders" tabindex="0" role="region" aria-label="Addresses involved in this overlap">
+<table><thead><tr><th>Your selected address</th><th>Existing sender condition</th></tr></thead><tbody>
+<tr th:each="s:${n.senders}"><td th:text="${s.address}"></td><td th:text="${s.condition}"></td></tr>
+</tbody></table></div>
+<details><summary>Full conditions of this existing rule</summary><dl class="rule-overlap-conditions">
+<th:block th:each="c:${n.conditions}"><dt th:text="${c.name}"></dt><dd th:text="${c.value}"></dd></th:block>
+<dt>Mailbox filter / rule ID</dt><dd th:text="${n.remote}"></dd>
+</dl></details>
+<div class="row"><a th:if="${!n.manageUrl.isEmpty()}" th:href="${n.manageUrl}" target="_blank" rel="noopener">Open this rule in TidyMail ↗</a>
+<a th:href="${n.settingsUrl}" target="_blank" rel="noopener" th:text="${provider=='google'?'Review filter in Gmail ↗':'Review rule in Outlook ↗'}"></a></div>
+<p th:if="${n.checkable}" class="muted">Check scope: current Inbox mail from all selected addresses, using this existing filter’s full conditions. No mail is moved.</p>
+<button th:if="${n.checkable}" type="button" data-overlap-check th:attr="data-rule-id=${ruleId},data-preview=${reviewId},data-account=${account},data-remote=${n.remote},data-fingerprint=${n.fingerprint}">Check all selected senders against this filter</button>
+<p th:unless="${n.checkable}" class="muted">Full-rule matching has not been checked here. Review the conditions and exceptions in Outlook.</p>
+<div data-overlap-result role="status" aria-live="polite"></div>
+</section>
+<details><summary>Why might these emails still be in Inbox?</summary>
+<p>Rules handle incoming mail. Existing mail is not automatically processed when you create or change a rule in TidyMail. An email may also fail a subject, recipient or other condition, or have been returned to Inbox later.</p>
+<p>Gmail does not supply filter creation time or a per-message filter execution history here. None of these explanations is confirmed for your emails. Use the check above to see which current Inbox messages satisfy the full filter now. The check moves nothing.</p>
+</details>
+</section></body></html>
