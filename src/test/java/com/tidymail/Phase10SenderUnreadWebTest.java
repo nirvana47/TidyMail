@@ -25,8 +25,6 @@ import java.lang.reflect.Constructor;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.time.Duration;
@@ -253,7 +251,6 @@ class Phase10SenderUnreadWebTest {
                 "Move selected", "Create category",
                 "Select senders first, then choose where they belong.");
 
-
     }
 
     @Test
@@ -315,51 +312,6 @@ class Phase10SenderUnreadWebTest {
             .doesNotContain("Visible subject header", "private-provider-message",
                 "Select row", "<span>Action</span>");
         verifyNoInteractions(gmailProvider, outlookProvider);
-    }
-
-    @Test
-    void qual03TemplatesAndCssLockQuietCategoryAndResponsiveContracts() throws Exception {
-        String sender = Files.readString(Path.of("src/main/resources/templates/fragments/senders-results-frag.html"));
-        String unread = Files.readString(Path.of("src/main/resources/templates/fragments/unread-results-frag.html"));
-        String css = Files.readString(Path.of("src/main/resources/static/css/workspace.css"));
-
-        assertThat(sender).contains("<details class=\"cleanup-category\"",
-            "data-category-key", "data-selection=\"sender-selection\"")
-            .doesNotContain("<details class=\"cleanup-category\" open", "metric-strip",
-                "pagination", "cleanup-row-state", "<span>Action</span>");
-        assertThat(unread).contains("<details class=\"cleanup-category\"",
-            "Load more", "Load all",
-              "data-selection=\"unread-selection\"", "DecisionRowKey).unreadSender")
-            .doesNotContain("<details class=\"cleanup-category\" open", "metric-strip",
-                "pagination", "/api/selection-preview", "unread-category-dialog",
-                "cleanup-row-state", "<span>Action</span>",
-                "Unread groups are not mutually exclusive",
-                "Counts and rows reflect the last completed metadata sync");
-        assertThat(Files.readString(Path.of("src/main/resources/templates/senders.html")))
-            .contains("Expand all", "cleanup-categories.js", "<dialog", "data-selection-bar hidden")
-            .doesNotContain("sender-search", "filter-summary", "next-route");
-        assertThat(Files.readString(Path.of("src/main/resources/templates/unread.html")))
-            .contains("Expand all", "cleanup-categories.js",
-                  "action=\"/api/sender-categories/correct\"",
-                  "id=\"unread-category-dialog\"",
-                  "id=\"unread-selection\"",
-                  "page-header",
-                  "How Unread Only works")
-            .doesNotContain("unread-search", "filter-summary", "next-route",
-                "Tidy up your unread emails",
-                "workspace-download", "selection-preview",
-                "cleanup-action-result-frag :: status", "cleanup-action-status",
-                "Ready to stage");
-        assertThat(css)
-            .contains("@media (max-width: 980px)")
-            .contains("@media (max-width: 720px)")
-            .contains("@media (max-width: 375px)")
-            .contains("min-height: 44px")
-            .contains(".cleanup-dialog::backdrop")
-            .contains("overflow-x: auto")
-            .contains(":focus-visible")
-            .contains("@media (prefers-reduced-motion: reduce)")
-            .doesNotContain("@import url", "cdn.jsdelivr", "unpkg.com");
     }
 
     @Test

@@ -14,6 +14,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class AutomationRuleService {
+    private static final org.slf4j.Logger log=org.slf4j.LoggerFactory.getLogger(AutomationRuleService.class);
     private final RuleResults results;
     private final RuleStore store;private final UserAccountRepository accounts;private final ProviderDeepLinkService links;
     private final Map<String,RuleProvider> providers=new HashMap<>();
@@ -40,6 +41,7 @@ public class AutomationRuleService {
         if(id!=null){var r=store.get(account,id);
             if(r.version()!=version)RuleStore.conflict("The rule changed. Reload before saving.");
             if(r.state().equals("PAUSED")&&r.remoteId()!=null&&r.pending()==null){
+                if(r.definition().equals(d))return id; // Review/resume an unchanged rule without replacing it.
                 manage(account,id,"remove");
                 if(!store.get(account,id).state().equals("REMOVED"))RuleStore.conflict("Removing the paused native rule needs verification. Refresh before saving the replacement.");
                 UUID replacement=store.save(account,null,0,d);
@@ -149,7 +151,7 @@ public class AutomationRuleService {
             }e.put("url",url);
         }
         List<RuleProvider.NativeRule> inventory=List.of();String inventoryHash=null,inventoryError="";
-        if(permitted(a))try{inventory=p.list(a);inventoryHash=inventoryFingerprint(inventory);}
+        if(permitted(a))try{inventory=p.list(a);inventoryHash=inventoryFingerprint(p,inventory);}
             catch(RuntimeException e){inventoryError="Native rules could not be checked; activation is unavailable until a fresh preview succeeds.";}
         var protectedAddresses=protectedSenders(id,d);var snapshot=new LinkedHashMap<String,Object>();
         snapshot.put("protected",protectedAddresses);snapshot.put("counts",counts);snapshot.put("definition",d);snapshot.put("originalState",r.state());
@@ -202,7 +204,7 @@ public class AutomationRuleService {
         if(!snapshot.path("deployable").asBoolean())RuleStore.conflict("Subject matching was not verified. Create a fresh preview before enabling this rule.");
         if(!protectedSenders(account,r.definition()).isEmpty())RuleStore.conflict("This rule includes a protected sender. Resolve the protection before enabling it.");
         var inventory=p.list(a);
-        if(!Objects.equals(rows.getFirst().get("inventory_hash"),inventoryFingerprint(inventory)))RuleStore.conflict("Mailbox rules changed or were not checked. Preview again.");
+        if(!Objects.equals(rows.getFirst().get("inventory_hash"),inventoryFingerprint(p,inventory)))RuleStore.conflict("Mailbox rules changed or were not checked. Preview again.");
         if(!interacting(r.definition(),inventory.stream().filter(n->!n.id().equals(r.remoteId())).toList()).isEmpty()&&!reviewedInventory)RuleStore.conflict("Review the existing mailbox rules before enabling this rule.");
         for(var existing:inventory){
             if(existing.id().equals(r.remoteId())||!existing.enabled()||existing.compatible()==null)continue;
@@ -238,6 +240,8 @@ public class AutomationRuleService {
     });}
     /** Review a proposed definition without changing the saved or native rule. */
     public Map<String,Object> reviewSenders(long account,UUID id,List<String> senders){return serial(account,()->{
+        var saved=store.get(account,id);
+        if(saved.pending()==null&&saved.state().equals("ATTENTION")&&saved.remoteId()!=null&&"microsoft".equals(account(account).getProvider()))checkPending(account,id);
         var r=store.get(account,id);requireSenderEditable(r);
         var union=new LinkedHashSet<>(r.definition().senders());union.addAll(senders);
         var d=withSenders(r.definition(),new ArrayList<>(union));
@@ -262,7 +266,7 @@ public class AutomationRuleService {
         if(!snapshot.path("deployable").asBoolean()||!protectedSenders(account,d).isEmpty())RuleStore.conflict("Matching could not be verified or a sender is protected. Review the rule again.");
         if(r.remoteId()==null){store.updateSenders(r,d,r.state(),null,r.remoteSnapshot());return null;}
         requirePermission(a);var p=provider(a);var inventory=p.list(a);
-        if(!Objects.equals(rows.getFirst().get("inventory_hash"),inventoryFingerprint(inventory)))RuleStore.conflict("Mailbox rules changed. Review the addition again.");
+        if(!Objects.equals(rows.getFirst().get("inventory_hash"),inventoryFingerprint(p,inventory)))RuleStore.conflict("Mailbox rules changed. Review the addition again.");
         var n=find(inventory,r.remoteId());
         if(n==null||n.readOnly()||n.enabled()!=r.state().equals("ACTIVE")||!p.behavior(n.raw()).equals(p.behavior(r.remoteSnapshot())))RuleStore.conflict("The native rule changed. Refresh it in Rules before editing.");
         var others=inventory.stream().filter(v->!v.id().equals(r.remoteId())).toList();
@@ -271,10 +275,36 @@ public class AutomationRuleService {
         if(p.provider().equals("google")&&others.stream().anyMatch(v->p.behavior(v.raw()).equals(p.behavior(payload))))RuleStore.conflict("An equivalent rule already exists. Manage it in Rules.");
         var operation=store.json().createObjectNode();operation.set("payload",payload);operation.set("definition",store.json().valueToTree(d));operation.put("state",r.state());
         store.claim(r,"UPDATE_SENDERS",operation);
+        boolean mutationAcknowledged=false;
         try{
             if(p.provider().equals("google"))p.create(a,payload);else p.updateSenders(a,r.remoteId(),payload);
+            mutationAcknowledged=true;
             confirm(a,p,r,"UPDATE_SENDERS");
-        }catch(RuntimeException failure){store.attention(r,"Sender update needs verification. Refresh Rules before retrying; the original or replacement rule may still be running.");}
+        }catch(RuntimeException failure){
+            log.warn("Rule sender update failed provider={} diagnostic={}",p.provider(),com.tidymail.util.FailureDiagnostics.failureDiagnostic(failure));
+            if(!p.provider().equals("microsoft")){
+                store.attention(r,"Sender update needs verification. Refresh Rules before retrying; the original or replacement rule may still be running.");
+                return null;
+            }
+            // A lost response does not mean the update failed. Read back before showing an error.
+            try {
+                var fresh=p.list(a);var pending=store.get(account,id);
+                reconcileOne(a,p,pending,fresh);
+                if(store.get(account,id).pending()==null)return null;
+                if(!mutationAcknowledged&&failure instanceof com.tidymail.mail.CleanupProviderException rejection && rejection.rejected()){
+                    var original=find(fresh,r.remoteId());
+                    if(original!=null&&!original.readOnly()&&original.enabled()==r.state().equals("ACTIVE")
+                            &&p.behavior(original.raw()).equals(p.behavior(r.remoteSnapshot()))) {
+                        store.settle(pending,r.state(),original.id(),original.raw(),
+                            "Outlook did not accept the sender update (HTTP "+rejection.status()+"). The original rule is unchanged. Review the addition and try again.");
+                        return null;
+                    }
+                }
+            }catch(RuntimeException verificationFailure){
+                log.warn("Rule sender update read-back failed provider={} diagnostic={}",p.provider(),com.tidymail.util.FailureDiagnostics.failureDiagnostic(verificationFailure));
+            }
+            store.attention(r,"The sender update could not be confirmed. Check rule status before retrying; the mailbox rule may already have changed.");
+        }
         return null;
     });}
     private void reconcileSenderUpdate(UserAccount a,RuleProvider p,RuleStore.Saved r,List<RuleProvider.NativeRule> inventory){
@@ -335,6 +365,50 @@ public class AutomationRuleService {
         var d=n.compatible();UUID id=store.save(account,null,0,d);var r=store.get(account,id);
         store.settle(r,n.enabled()?"ACTIVE":"PAUSED",remoteId,n.raw(),"Existing mailbox rule brought under management; native definition preserved");return id;
     });}
+    public record RuleInspection(String status,String message,String remoteId,String fingerprint,
+                                 boolean enabled,boolean recoverable,String differences,String mailboxSummary,Instant checkedAt) {}
+    /** A read-only provider inspection: never infer absence from an unavailable provider. */
+    public RuleInspection inspect(long account,UUID id){return serial(account,()->{
+        var a=account(account);requirePermission(a);var p=provider(a);var r=store.get(account,id);
+        var inventory=p.list(a);var nativeRule=find(inventory,r.remoteId());
+        if(nativeRule==null&&r.remoteId()==null){
+            var expected=r.operation()!=null?r.operation():r.remoteSnapshot();
+            var candidates=inventory.stream().filter(n->expected!=null&&p.behavior(n.raw()).equals(p.behavior(expected))
+                ||n.name().equals(r.definition().name())).toList();
+            if(!candidates.isEmpty())return new RuleInspection("UNKNOWN","Similar rules exist, but TidyMail cannot identify which belongs to this saved rule. No mailbox rule was changed.","","",false,false,"","",Instant.now());
+        }
+        boolean recoverable="CREATE".equals(r.pending())||r.pending()==null&&r.state().equals("ATTENTION");
+        if(nativeRule==null)return new RuleInspection("MISSING","This rule was not found in your mailbox.","","",false,recoverable,"","",Instant.now());
+        var expected=r.operation()!=null?r.operation():r.remoteSnapshot();
+        var actual=p.behavior(nativeRule.raw());var changes=new ArrayList<String>();
+        if(expected!=null){var wanted=p.behavior(expected);
+            for(String field:List.of("displayName","conditions","exceptions","actions","sequence","criteria","action"))
+                if(!Objects.equals(wanted.get(field),actual.get(field)))changes.add(switch(field){
+                    case "displayName"->"name";case "conditions","criteria"->"sender or subject conditions";
+                    case "exceptions"->"exceptions";case "sequence"->"rule order";default->"actions";});
+        }
+        return new RuleInspection("FOUND","The rule exists in your mailbox and is "+(nativeRule.enabled()?"enabled.":"disabled."),
+            nativeRule.id(),fingerprint(nativeRule.raw()),nativeRule.enabled(),recoverable&&!nativeRule.readOnly(),String.join(", ",changes),nativeRule.compatible()!=null?nativeRule.compatible().sentence(p.provider()):nativeRule.name()+" — includes settings outside the shared editor.",Instant.now());
+    });}
+    /** Recover only the receipted native identity reviewed by the user, after a fresh check. */
+    public void recover(long account,UUID id,String action,String remote,String expectedFingerprint){serial(account,()->{
+        if(!Set.of("edit","remove").contains(action))RuleDefinition.fail("Unknown recovery action.");
+        var r=store.get(account,id);var inspection=inspect(account,id);
+        if(!inspection.recoverable()||!inspection.remoteId().equals(remote)||!inspection.fingerprint().equals(expectedFingerprint))
+            RuleStore.conflict("The mailbox result changed. Check rule status again before continuing.");
+        if(inspection.status().equals("MISSING")){
+            boolean old=Boolean.TRUE.equals(store.jdbc().queryForObject("SELECT updated_at<now()-interval '2 minutes' FROM automation_rules WHERE id=:id AND account_id=:account",Map.of("id",id,"account",account),Boolean.class));
+            if(!old)RuleStore.conflict("The creation request is still recent. Wait two minutes, then check rule status again.");
+            store.settle(r,action.equals("edit")?"DRAFT":"REMOVED",null,null,"Mailbox rule absent; "+(action.equals("edit")?"draft recovered for editing":"local rule removed"));
+            store.jdbc().update("DELETE FROM automation_rule_results WHERE rule_id=:rule AND account_id=:account",Map.of("rule",id,"account",account));
+            return null;
+        }
+        var a=account(account);var p=provider(a);var n=find(p.list(a),remote);
+        if(n==null||n.readOnly()||!fingerprint(n.raw()).equals(expectedFingerprint))RuleStore.conflict("The mailbox rule changed. Check rule status again.");
+        // Preserve the inspected definition as the removal/pause snapshot; do not adopt its behavior.
+        store.settle(r,"ATTENTION",n.id(),n.raw(),"Mailbox rule inspected for recovery");
+        manage(account,id,action.equals("edit")?"pause":"remove");return null;
+    });}
     public void resolve(long account,UUID id){serial(account,()->{
         var a=account(account);requirePermission(a);var p=provider(a);var r=store.get(account,id);
         if(r.pending()==null&&r.state().equals("ATTENTION")){
@@ -357,8 +431,9 @@ public class AutomationRuleService {
                 store.settle(r,original.enabled()?"ACTIVE":"PAUSED",original.id(),original.raw(),"Sender update not applied; original rule retained. Review the addition again.");
             else RuleStore.conflict("Restore the original rule in mailbox settings before resolving this update.");
         }else if(r.pending().equals("CREATE")){
+            if(find(inventory,r.remoteId())!=null)RuleStore.conflict("The created rule exists with different settings. Check rule status to review and recover it.");
             final var pending=r;long matches=inventory.stream().filter(n->p.behavior(n.raw()).equals(p.behavior(pending.operation()))).count();
-            if(matches!=0)RuleStore.conflict("Matching native rules still exist. Resolve their state in mailbox settings first.");
+            if(matches!=0||inventory.stream().anyMatch(n->n.name().equals(pending.definition().name())))RuleStore.conflict("Possible matching mailbox rules exist. Check rule status before resolving this operation.");
             store.settle(r,"DRAFT",null,null,"No native rule found; uncertain creation explicitly cleared");
             store.jdbc().update("DELETE FROM automation_rule_results WHERE rule_id=:rule AND account_id=:account",Map.of("rule",id,"account",account));
         }else{
@@ -369,6 +444,24 @@ public class AutomationRuleService {
         }return null;
     });}
     public void refresh(long account){refresh(account,true);}
+    public void checkPending(long account,UUID id){serial(account,()->{
+        var a=account(account);var r=store.get(account,id);
+        if(r.state().equals("REMOVED"))return null;
+        requirePermission(a);var p=provider(a);
+        // Inspect this operation only; do not refresh or alter unrelated mailbox rules.
+        var inventory=p.list(a);reconcileOne(a,p,r,inventory);
+        var pending=store.get(account,id);
+        if(p.provider().equals("microsoft")&&"UPDATE_SENDERS".equals(pending.pending())){
+            boolean old=Boolean.TRUE.equals(store.jdbc().queryForObject("SELECT updated_at<now()-interval '2 minutes' FROM automation_rules WHERE id=:id AND account_id=:account",Map.of("id",id,"account",account),Boolean.class));
+            var original=find(inventory,r.remoteId());
+            if(old&&original!=null&&!original.readOnly()&&!original.raw().path("hasError").asBoolean()
+                    &&original.enabled()==r.operation().path("state").asText().equals("ACTIVE")
+                    &&p.behavior(original.raw()).equals(p.behavior(r.remoteSnapshot())))
+                store.settle(pending,original.enabled()?"ACTIVE":"PAUSED",original.id(),original.raw(),
+                    "The sender update was not applied. The original rule is unchanged. Review the addition again.");
+        }
+        return null;
+    });}
     private void refresh(long account,boolean manual){serial(account,()->{
         var a=account(account);requirePermission(a);var p=provider(a);reconcile(a,p,p.list(a));
         for(var r:store.list(account))if(r.definition().organize()&&r.pending()==null)
@@ -382,9 +475,10 @@ public class AutomationRuleService {
         if(r.pending()!=null){
             if(r.pending().equals("UPDATE_SENDERS")){reconcileSenderUpdate(a,p,r,inventory);return;}
             if(r.pending().equals("CREATE")){
-                var matches=inventory.stream().filter(n->(r.remoteId()==null||r.remoteId().equals(n.id()))&&p.behavior(n.raw()).equals(p.behavior(r.operation()))).toList();
-                if(matches.size()==1)store.settle(r,matches.getFirst().enabled()?"ACTIVE":"PAUSED",matches.getFirst().id(),matches.getFirst().raw(),"Native rule creation confirmed");
-                else store.attention(r,matches.isEmpty()?"No matching native rule found after creation attempt. Check mailbox settings before resolving this operation.":"Multiple matching native rules found. Resolve duplicates in mailbox settings.");
+                var matches=inventory.stream().filter(n->(r.remoteId()==null||r.remoteId().equals(n.id()))&&p.creationMatches(r.operation(),n.raw())).toList();
+                if(matches.size()==1&&!matches.getFirst().readOnly()&&!matches.getFirst().raw().path("hasError").asBoolean())store.settle(r,matches.getFirst().enabled()?"ACTIVE":"PAUSED",matches.getFirst().id(),matches.getFirst().raw(),"Native rule creation confirmed");
+                else if(find(inventory,r.remoteId())!=null)store.attention(r,"The mailbox rule exists, but its settings or provider status need review. Check mailbox rule status to recover editing or deletion.");
+                else store.attention(r,matches.isEmpty()?"Rule creation has not been confirmed. Check mailbox rule status to inspect the result.":"Multiple matching native rules found. Resolve duplicates in mailbox settings.");
             }else{
                 var n=find(inventory,r.remoteId());
                 if(r.pending().equals("REMOVE")&&n==null)store.settle(r,"REMOVED",null,null,"Native rule removed");
@@ -401,7 +495,9 @@ public class AutomationRuleService {
         var n=find(inventory,r.remoteId());
         if(n!=null&&(n.readOnly()||n.raw().path("hasError").asBoolean())){store.attention(r,"Provider reports this rule as read-only or in error. Inspect mailbox settings.");return;}
         if(n==null){store.attention(r,"Native rule is missing. It will not be recreated automatically.");return;}
-        if(!p.behavior(n.raw()).equals(p.behavior(r.remoteSnapshot()))){store.attention(r,"Changed outside TidyMail. Use mailbox settings to review the full rule.");return;}
+        if(!p.behavior(n.raw()).equals(p.behavior(r.remoteSnapshot()))){
+            store.attention(r,"Changed outside TidyMail. Use mailbox settings to review the full rule.");return;
+        }
         if(n.enabled()&&!protectedSenders(a.getId(),r.definition()).isEmpty()){
             store.claim(r,"PAUSE",n.raw());
             try{p.pause(a,n.id());confirm(a,p,r,"PAUSE");}catch(RuntimeException e){store.attention(r,"Protected sender still may be affected by native rules. Pause could not be confirmed; use mailbox settings.");}return;
@@ -422,8 +518,9 @@ public class AutomationRuleService {
             &&a.exceptSubject().equalsIgnoreCase(b.exceptSubject())&&a.action().equals(b.action())
             &&a.destination().equalsIgnoreCase(b.destination())&&a.destinationId().equals(b.destinationId())&&a.skipInbox()==b.skipInbox();
     }
-    private String inventoryFingerprint(List<RuleProvider.NativeRule> inventory){
-        return fingerprint(inventory.stream().sorted(Comparator.comparing(RuleProvider.NativeRule::id)).map(RuleProvider.NativeRule::raw).toList());
+    private String inventoryFingerprint(RuleProvider p,List<RuleProvider.NativeRule> inventory){
+        return fingerprint(inventory.stream().sorted(Comparator.comparing(RuleProvider.NativeRule::id))
+            .map(n->Map.of("id",n.id(),"content",p.behavior(n.raw()),"enabled",n.enabled(),"readOnly",n.readOnly(),"hasError",n.raw().path("hasError").asBoolean())).toList());
     }
     public String fingerprint(Object value){
         try{var bytes=store.json().writeValueAsBytes(canonical(store.json().valueToTree(value)));

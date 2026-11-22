@@ -62,11 +62,12 @@ public class AutomationRuleController {
         long a=checked(auth,account);var before=rules.get(a,id);rules.addSenders(a,id,preview,reviewedInventory);var updated=rules.get(a,id);shell(a,model);model.addAttribute("mailScope",mailScope);model.addAttribute("updated",updated);
         model.addAttribute("added",updated.definition().senders().stream().filter(v->!before.definition().senders().contains(v)).toList());return "rule-add-senders";
     }
-    @GetMapping("/{id}") public String edit(@PathVariable UUID id,@RequestParam(defaultValue="false") boolean preview,@RequestParam(defaultValue="false") boolean inbox,@RequestParam(defaultValue="false") boolean result,@RequestParam(defaultValue="all") String mailScope,OAuth2AuthenticationToken auth,Model model){long a=account(auth);shell(a,model);model.addAttribute("mailScope",mailScope);model.addAttribute("inbox",inbox);model.addAttribute("result",result);model.addAttribute("rule",rules.get(a,id));if(!preview&&!result)model.addAttribute("ruleResults",rules.results(a,id));if(preview)model.addAttribute("preview",rules.preview(a,id));
+    @GetMapping("/{id}") public String edit(@PathVariable UUID id,@RequestParam(defaultValue="false") boolean preview,@RequestParam(defaultValue="false") boolean inbox,@RequestParam(defaultValue="false") boolean result,@RequestParam(defaultValue="false") boolean inspect,@RequestParam(defaultValue="all") String mailScope,OAuth2AuthenticationToken auth,Model model){long a=account(auth);shell(a,model);model.addAttribute("mailScope",mailScope);model.addAttribute("inbox",inbox);model.addAttribute("result",result);model.addAttribute("rule",rules.get(a,id));if(!preview&&!result)model.addAttribute("ruleResults",rules.results(a,id));if(preview)model.addAttribute("preview",rules.preview(a,id));
         if(result && rules.get(a,id).state().equals("ACTIVE") && rules.get(a,id).definition().organize()) {
             try{model.addAttribute("existingMail",existingMail.matches(a,id,mailScope));}
             catch(RuntimeException unavailable){model.addAttribute("existingMailError","Existing emails could not be checked. Review them from the mailbox when ready.");}
         }
+        if(inspect)try{model.addAttribute("inspection",rules.inspect(a,id));}catch(RuntimeException unavailable){model.addAttribute("ruleInspectionError","Mailbox status could not be checked. No rule was changed. Try checking again.");}
         return "rule-editor";}
     @PostMapping("/save") public String save(@RequestParam long account,@RequestParam(required=false) UUID id,@RequestParam(defaultValue="0") long version,
             @RequestParam String name,@RequestParam String senders,@RequestParam(defaultValue="") List<String> subject,@RequestParam(defaultValue="") List<String> exceptSubject,
@@ -82,6 +83,19 @@ public class AutomationRuleController {
     }
     @PostMapping("/{id}/existing-preview") @ResponseBody public com.tidymail.service.DashboardPreviewService.Preview existingPreview(@PathVariable UUID id,@RequestParam long account,@RequestParam(defaultValue="inbox") String mailScope,@RequestParam(defaultValue="") String senders,OAuth2AuthenticationToken auth){return existingMail.preview(checked(auth,account),id,mailScope,senderAddresses(senders));}
     @PostMapping("/{id}/results/refresh") public String refreshResults(@PathVariable UUID id,@RequestParam long account,@RequestParam(defaultValue="false") boolean inbox,OAuth2AuthenticationToken auth){rules.refreshResults(checked(auth,account),id);return "redirect:/rules/"+id+(inbox?"?inbox=true&result=true":"");}
+    @PostMapping("/{id}/check") public String checkRule(@PathVariable UUID id,@RequestParam long account,@RequestParam(defaultValue="false") boolean inbox,@RequestParam(defaultValue="all") String mailScope,OAuth2AuthenticationToken auth,Model model,RedirectAttributes redirect){
+        long a=checked(auth,account);var before=rules.get(a,id);try{rules.checkPending(a,id);}catch(RuntimeException unavailable){redirect.addFlashAttribute("ruleInspectionError","Mailbox status could not be checked. No recovery action was taken.");}var updated=rules.get(a,id);
+        if(inbox&&"UPDATE_SENDERS".equals(before.pending())){
+            shell(a,model);model.addAttribute("mailScope",mailScope);model.addAttribute("updated",updated);
+            model.addAttribute("added",updated.definition().senders().stream().filter(v->!before.definition().senders().contains(v)).toList());return "rule-add-senders";
+        }
+        if("UPDATE_SENDERS".equals(before.pending())&&updated.pending()==null&&before.definition().senders().equals(updated.definition().senders()))redirect.addFlashAttribute("senderAdditionNotApplied",true);
+        return "redirect:/rules/"+id+"?result=true&inspect=true&mailScope="+mailScope+(inbox?"&inbox=true":"");
+    }
+    @PostMapping("/{id}/recover/{operation:edit|remove}") public String recover(@PathVariable UUID id,@PathVariable String operation,@RequestParam long account,@RequestParam(defaultValue="") String remote,@RequestParam(defaultValue="") String fingerprint,@RequestParam(defaultValue="false") boolean confirmed,@RequestParam(defaultValue="false") boolean inbox,@RequestParam(defaultValue="all") String mailScope,OAuth2AuthenticationToken auth){
+        long a=checked(auth,account);if(!confirmed)throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Confirm the inspected rule before continuing.");
+        rules.recover(a,id,operation,remote,fingerprint);return "redirect:/rules/"+id+"?mailScope="+mailScope+(operation.equals("remove")?"&result=true":"")+(inbox?"&inbox=true":"");
+    }
     @PostMapping("/{id}/enable") public String enable(@PathVariable UUID id,@RequestParam long account,@RequestParam UUID preview,@RequestParam(defaultValue="false") boolean reviewedInventory,@RequestParam(defaultValue="false") boolean inbox,@RequestParam(defaultValue="all") String mailScope,OAuth2AuthenticationToken auth){rules.enable(checked(auth,account),id,preview,reviewedInventory);return "redirect:/rules/"+id+"?result=true&mailScope="+mailScope+(inbox?"&inbox=true":"");}
     @PostMapping("/{id}/{operation:pause|remove}") public String manage(@PathVariable UUID id,@PathVariable String operation,@RequestParam long account,OAuth2AuthenticationToken auth){rules.manage(checked(auth,account),id,operation);return "redirect:/rules";}
     @PostMapping("/{id}/resolve") public String resolve(@PathVariable UUID id,@RequestParam long account,OAuth2AuthenticationToken auth){rules.resolve(checked(auth,account),id);return "redirect:/rules";}

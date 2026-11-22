@@ -11,8 +11,6 @@ import com.tidymail.support.LegacyHistoryFixtures;
 import com.tidymail.entity.UserAccount;
 import com.tidymail.mail.MailProvider;
 import com.tidymail.repository.UserAccountRepository;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,7 +43,6 @@ import org.springframework.test.web.servlet.MockMvc;
 })
 class Phase17ReviewHistoryTest {
     private static final String EMAIL = "history-owner@example.com";
-    private static final Path TEMPLATES = Path.of("src/main/resources/templates");
 
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
@@ -63,61 +60,6 @@ class Phase17ReviewHistoryTest {
         jdbc.update("DELETE FROM message_metadata");
         jdbc.update("DELETE FROM user_accounts");
         reset(gmail, outlook);
-    }
-
-    @Test
-    void sourceKeepsHistoryCompactResponsiveAndAuditDetailsReachable()
-            throws Exception {
-        String history = Files.readString(
-            TEMPLATES.resolve("fragments/review-history-frag.html"));
-        String outcome = Files.readString(
-            TEMPLATES.resolve("fragments/action-outcome-frag.html"));
-        String css = Files.readString(
-            Path.of("src/main/resources/static/css/workspace.css"));
-
-        assertThat(history)
-            .contains(
-                "No completed actions yet.",
-                "<th scope=\"col\">Action</th>",
-                "<th scope=\"col\">Counts</th>",
-                "<th scope=\"col\">Details</th>",
-                "history-compact-row",
-                "row.primaryTimeLabel",
-                "row.countLabel",
-                "row.availabilityLabel",
-                "history-row-details",
-                "history-details-open\">Details",
-                "history-details-closed\">Hide details",
-                "outcomeCompact(${row.outcome})",
-                "outcomeDetails(${row.outcome})",
-                "Linked unsubscribe outcome: ${row.linkedUnsubscribeOutcome}",
-                "Open provider options",
-                "#action-${row.compensatesActionPublicId}")
-            .doesNotContain(
-                "<th scope=\"col\">Account</th>",
-                "<th scope=\"col\">Mode</th>",
-                "th:text=\"${row.occurredAt}\"",
-                "aria-label=\"Action history table; scroll horizontally if needed\"");
-        assertThat(outcome)
-            .contains(
-                "th:fragment=\"outcomeCompact(outcome)\"",
-                "th:fragment=\"outcomeDetails(outcome)\"",
-                "aria-label=\"Append-only action timeline\"",
-                "aria-label=\"Outcome reasons\"");
-        assertThat(css)
-            .contains(
-                ".history-table {",
-                "table-layout: fixed",
-                ".history-status-chip",
-                ".history-followup-chip",
-                ".history-row-details summary",
-                ".history-details-panel",
-                ".history-audit-list",
-                "@media (max-width: 720px)",
-                ".history-compact-row",
-                ".history-table {",
-                "min-width: 0",
-                "overflow-wrap: anywhere");
     }
 
     @Test

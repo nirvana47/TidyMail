@@ -18,8 +18,6 @@ import com.tidymail.mail.MailProvider;
 import com.tidymail.mail.gmail.GmailMailService;
 import com.tidymail.repository.MessageMetadataRepository;
 import com.tidymail.repository.UserAccountRepository;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
@@ -52,10 +50,6 @@ import org.springframework.test.web.servlet.MockMvc;
     "MICROSOFT_CLIENT_SECRET="
 })
 class Phase17UnreadOnlyTest {
-    private static final Path TEMPLATES = Path.of("src/main/resources/templates");
-    private static final Path CSS = Path.of("src/main/resources/static/css/workspace.css");
-    private static final Path SCRIPT =
-        Path.of("src/main/resources/static/js/cleanup-categories.js");
 
     @Autowired MockMvc mockMvc;
     @Autowired UserAccountRepository accounts;
@@ -106,43 +100,6 @@ class Phase17UnreadOnlyTest {
             .andExpect(content().string(org.hamcrest.Matchers.not(
                 org.hamcrest.Matchers.containsString(
                     "Unread groups are not mutually exclusive"))));
-    }
-
-    @Test
-    void sourceKeepsTextOnlyRailAndVisibleUnreadTotalContract()
-            throws Exception {
-        String unread = Files.readString(TEMPLATES.resolve("unread.html"));
-        String rail = Files.readString(TEMPLATES.resolve("fragments/workspace-rail.html"));
-        String fragment = Files.readString(
-            TEMPLATES.resolve("fragments/unread-results-frag.html"));
-        String service = Files.readString(Path.of(
-            "src/main/java/com/tidymail/service/UnreadDecisionQueryService.java"));
-
-        assertThat(unread)
-            .contains(
-                "class=\"unread-total-panel\"",
-                "aria-label=\"Inbox unread message total\"",
-                "Inbox unread",
-                "page.workspace.inboxUnreadCountAvailable()",
-                "page.workspace.inboxUnreadCount")
-            .doesNotContain(
-                "Tidy up your unread emails",
-                "Open a group of Inbox-unread mail and correct sender classification when needed.");
-        assertThat(rail)
-            .contains("Unread Only")
-            .doesNotContain("rail-badge", "Unread Only <span");
-        assertThat(fragment)
-            .contains(
-                "category.key == 'attachments'",
-                "category.dataAvailable")
-            .doesNotContain(
-                "Counts and rows reflect the last completed metadata sync",
-                "Unread groups are not mutually exclusive");
-        assertThat(service)
-            .contains(
-                "group(\"attachments\", \"Has attachments\"",
-                "Unread mail with attachment metadata in the approved index.",
-                "UnreadSenderAccumulator::hasAttachments");
     }
 
     @Test

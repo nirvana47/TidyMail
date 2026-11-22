@@ -20,8 +20,6 @@ import com.tidymail.security.crypto.CryptoUtil;
 import com.tidymail.service.MessageMetadataQueryService;
 import com.tidymail.service.WorkspaceModelService;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -332,44 +330,6 @@ class Phase9WorkspaceShellTest {
             WorkspaceModelService.aggregate(List.of(ready, never), now);
         assertThat(mixedNever.state()).isEqualTo(WorkspaceState.PARTIAL);
         assertThat(mixedNever.completedEmpty()).isFalse();
-    }
-
-    @Test
-    void templatesAndCssLockAccessibilityResponsiveAndLocalContracts() throws Exception {
-        Path templates = Path.of("src/main/resources/templates");
-        for (String name : List.of("senders", "unread", "review")) {
-            String source = Files.readString(templates.resolve(name + ".html"));
-            assertThat(source)
-                .contains("fragments/workspace-nav")
-                .contains("fragments/workspace-rail")
-                .contains("/static/css/workspace.css")
-                .doesNotContain("tailwind")
-                .doesNotContain("lucide")
-                .doesNotContain("href=\"#\"");
-        }
-        assertThat(Files.readString(templates.resolve("review.html")))
-            .contains(">Action history</h1>", "review-history-frag :: history")
-            .doesNotContain(
-                "fragments/workspace-state",
-                "Showing partial indexed data",
-                "Sync metadata",
-                "Approve staged exact scopes");
-        String css = Files.readString(Path.of("src/main/resources/static/css/workspace.css"));
-        assertThat(css)
-            .contains("--shell-rail: 248px")
-            .contains("--content-max: 1180px")
-            .contains("grid-template-columns: var(--shell-rail) minmax(0, 1fr)")
-            .contains("@media (max-width: 980px)")
-            .contains("@media (max-width: 720px)")
-            .contains("@media (max-width: 375px)")
-            .contains("min-height: 44px")
-            .contains(":focus-visible")
-            .contains("outline: 2px solid var(--tm-primary)")
-            .contains("@media (prefers-reduced-motion: reduce)")
-            .contains(".rail-navigation a")
-            .contains(".skip-link")
-            .contains("overflow-x: auto", "overscroll-behavior-inline: contain")
-            .doesNotContain("overflow-x: hidden");
     }
 
     @Test

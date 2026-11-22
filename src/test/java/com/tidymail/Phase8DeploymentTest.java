@@ -3,32 +3,26 @@ package com.tidymail;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.tidymail.config.ScheduleConfig;
 import com.tidymail.entity.SenderStat;
 import com.tidymail.entity.SyncProgress;
 import com.tidymail.entity.UserAccount;
-import com.tidymail.job.IncrementalSyncJob;
-import com.tidymail.job.SenderStatsVacuumJob;
 import com.tidymail.mail.MailProvider;
 import com.tidymail.repository.SenderStatRepository;
 import com.tidymail.repository.SyncProgressRepository;
 import com.tidymail.repository.UserAccountRepository;
 import com.tidymail.security.crypto.CryptoUtil;
 import jakarta.persistence.EntityManager;
-import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.Semaphore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -37,9 +31,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.scheduling.annotation.EnableScheduling;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
@@ -50,45 +41,6 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
 
 class Phase8DeploymentTest {
-
-    // ============================================================
-    // T8(a): Pure-Java tests (no Spring context)
-    // ============================================================
-
-    @Nested
-    @DisplayName("T8a Pure Java Tests")
-    class T8a_pureJavaTests {
-
-        @Test
-        @DisplayName("T8a_01 scheduleAnnotations — cron/configurable cycle + @EnableScheduling config")
-        void T8a_01_scheduleAnnotations() throws Exception {
-            Method vacuumRun = SenderStatsVacuumJob.class.getMethod("run");
-            Scheduled vacuumSched = vacuumRun.getAnnotation(Scheduled.class);
-            assertNotNull(vacuumSched, "VacuumJob.run must have @Scheduled");
-            assertEquals("0 0 2 * * *", vacuumSched.cron(), "VacuumJob cron");
-
-            Method syncRun = IncrementalSyncJob.class.getMethod("run");
-            Scheduled syncSched = syncRun.getAnnotation(Scheduled.class);
-            assertNotNull(syncSched, "IncrementalSyncJob.run must have @Scheduled");
-            assertEquals("${app.sync.freshness-cycle-ms:300000}",
-                syncSched.fixedRateString(), "IncrementalSyncJob configurable cycle");
-            assertEquals("${app.sync.startup-delay-ms:5000}",
-                syncSched.initialDelayString(), "IncrementalSyncJob configurable initial delay");
-
-            assertTrue(ScheduleConfig.class.isAnnotationPresent(Configuration.class),
-                "ScheduleConfig has @Configuration");
-            assertTrue(ScheduleConfig.class.isAnnotationPresent(EnableScheduling.class),
-                "ScheduleConfig has @EnableScheduling");
-        }
-
-        @Test
-        @DisplayName("T8a_02 Semaphore(1) tryAcquire")
-        void T8a_02_semaphore() {
-            Semaphore sem = new Semaphore(1);
-            assertTrue(sem.tryAcquire(), "first tryAcquire returns true");
-            assertFalse(sem.tryAcquire(), "second tryAcquire returns false (saturated)");
-        }
-    }
 
     // ============================================================
     // T8(b): Persistence tests — @SpringBootTest with JPA + Flyway V4

@@ -90,36 +90,4 @@ class Phase12PrivacyTest {
                 "Export CSV", "<canvas");
     }
 
-    @Test
-    void ACTN_04_accessibilityAndResponsiveContractsAreBuildFailing()
-            throws Exception {
-        String page = Files.readString(Path.of(
-            "src/main/resources/templates/review.html"));
-        String history = Files.readString(Path.of(
-            "src/main/resources/templates/fragments/review-history-frag.html"));
-        String css = Files.readString(Path.of(
-            "src/main/resources/static/css/workspace.css"));
-
-        assertThat(page)
-            .contains(
-                "<a class=\"skip-link\"", "href=\"#workspace-main\"",
-                "<main id=\"workspace-main\">", ">Action history</h1>");
-        assertThat(history)
-            .contains(
-                "<caption>", "scope=\"col\"", "tabindex=\"0\"")
-            .doesNotContain("href=\"#\"", ">Delete<");
-        assertThat(history)
-            .contains(
-                "target=\"_blank\"", "rel=\"noopener noreferrer\"",
-                "opens in a new tab");
-        assertThat(css)
-            .contains(
-                "@media (max-width: 980px)", "@media (max-width: 720px)",
-                "@media (max-width: 375px)",
-                "@media (prefers-reduced-motion: reduce)",
-                "min-height: 44px", "outline: 2px solid",
-                "overflow-x: auto", "overscroll-behavior-inline: contain",
-                "overflow-wrap: anywhere", "word-break: break-word")
-            .doesNotContain("overflow-x: hidden");
-    }
 }

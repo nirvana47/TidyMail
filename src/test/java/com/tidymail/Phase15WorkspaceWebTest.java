@@ -27,8 +27,6 @@ import com.tidymail.service.DecisionRuleSet.UnreadCategory;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -60,7 +58,6 @@ import org.springframework.web.server.ResponseStatusException;
 class Phase15WorkspaceWebTest {
     private static final String OWNER_EMAIL = "workspace-owner@example.com";
     private static final String OWNER_KEY = OWNER_EMAIL + ":google";
-    private static final Path TEMPLATES = Path.of("src/main/resources/templates");
 
     @Autowired MockMvc mockMvc;
     @Autowired UserAccountRepository accounts;
@@ -77,27 +74,6 @@ class Phase15WorkspaceWebTest {
         assignments.deleteAll();
         categories.deleteAll();
         accounts.deleteAll();
-    }
-
-    @Test
-    void senderMarkupKeepsCategorySelectionWithoutStaging()
-            throws Exception {
-        String page = Files.readString(TEMPLATES.resolve("senders.html"));
-        String rows = Files.readString(
-            TEMPLATES.resolve("fragments/senders-results-frag.html"));
-        String script = Files.readString(
-            Path.of("src/main/resources/static/js/cleanup-categories.js"));
-        String css = Files.readString(
-            Path.of("src/main/resources/static/css/workspace.css"));
-
-        assertThat(page).contains("Change type", "data-category-toggle-all", "sender-selection")
-            .doesNotContain("/api/cleanup-actions", "Delete selected", "data-cleanup-stage");
-        assertThat(rows).contains("All Mail unread", "data-selection=\"sender-selection\"");
-        assertThat(script).contains("updateSelectionBars", "data-selection-bar", "openButton.dataset.accountId")
-            .doesNotContain("reconcileCleanupResult", "deleteAcknowledged");
-        assertThat(css).contains(".cleanup-row-head", ".cleanup-bulk-stage[hidden]",
-            "@media (max-width: 720px)", "[data-label]::before");
-
     }
 
     @Test

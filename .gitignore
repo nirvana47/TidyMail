@@ -119,3 +119,4 @@ tidymail-ux-rehaul-draft/
 
 # Local runtime observations and temporary recorders
 .local-observations/
+.local-runtime/

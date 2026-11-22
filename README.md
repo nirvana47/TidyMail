@@ -39,3 +39,6 @@ Start the installed local package with `./tools/run-local.sh`. This enables the
 five-minute Gmail sync cycle, cleanup, and local recommendation refresh while
 keeping paid classification/labeling workers off. It validates and applies packaged database migrations before startup.
 Do not use a global scheduling-off verification command as the everyday launcher.
+The launcher keeps a build-specific JAR in `.local-runtime/` so Maven rebuilds
+cannot damage the running app. Restart the app to pick up a new build. Old copies
+can be removed when TidyMail is stopped.

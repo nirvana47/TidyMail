@@ -47,13 +47,15 @@
 <a class="button" th:href="@{/rules/add-senders(account=${account},senders=${senders},mailScope=${mailScope})}">Back</a>
 <button class="primary" th:disabled="${!addition.deployable or !#lists.isEmpty(addition.protected) or (r.remoteId!=null and (!addition.permission or !addition.inventoryError.isEmpty()))}" th:text="${r.state=='ACTIVE'?'Update active rule':(r.state=='PAUSED'?'Save changes · keep paused':'Save draft')}"></button>
 </form></section>
-<section th:if="${updated!=null}" data-rule-add-result data-inbox-rule-result th:attr="data-account=${account},data-addition-saved=${ok}" th:with="ok=${updated.pending==null and updated.state!='ATTENTION'}">
+<section th:if="${updated!=null}" data-rule-add-result data-inbox-rule-result th:attr="data-account=${account},data-addition-saved=${ok}" th:with="ok=${updated.pending==null and updated.state!='ATTENTION' and !#lists.isEmpty(added)}">
 <h2 th:text="${ok?'Sender added to rule':'Rule update needs attention'}"></h2><p th:text="${updated.detail}"></p>
 <p th:if="${ok}" th:text="${updated.state=='ACTIVE'?'The updated rule applies to future incoming mail.':(updated.state=='PAUSED'?'The rule is still paused.':'The rule is still a draft.')}"></p>
 <p>Existing emails stay unchanged.</p>
 <button th:if="${ok and updated.state=='ACTIVE' and updated.definition.organize()}" type="button" data-rule-existing th:attr="data-rule-id=${updated.id},data-mail-scope=${mailScope},data-senders=${#strings.listJoin(added,', ')}">Review existing emails from added senders</button>
 <p data-rule-filing-status role="status"></p>
-<a th:unless="${ok}" href="/rules" target="_blank" rel="noopener">Check rule status ↗</a>
+<a th:unless="${ok}" href="/rules" target="_blank" rel="noopener">Manage rules ↗</a>
+<form th:if="${updated.pending!=null}" th:action="@{/rules/{id}/check(id=${updated.id})}" method="post"><input type="hidden" name="account" th:value="${account}"><input type="hidden" name="inbox" value="true"><button>Check rule status</button></form>
+<button th:if="${!ok and updated.pending==null}" type="button" data-rule-start>Review addition again</button>
 <button type="button" data-inbox-rule-done>Close</button>
 </section>
 </main></body></html>

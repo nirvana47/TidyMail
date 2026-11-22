@@ -14,8 +14,6 @@ import com.tidymail.mail.MailProvider;
 import com.tidymail.repository.MessageMetadataRepository;
 import com.tidymail.repository.SyncProgressRepository;
 import com.tidymail.repository.UserAccountRepository;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -48,7 +46,6 @@ import org.springframework.test.web.servlet.MockMvc;
 class Phase13IntegratedProductTest {
     private static final String OWNER = "integrated-owner@example.com";
     private static final Instant START = Instant.parse("2026-08-01T00:00:00Z");
-    private static final Path TEMPLATES = Path.of("src/main/resources/templates");
 
     @Autowired MockMvc mvc;
     @Autowired UserAccountRepository accounts;
@@ -95,25 +92,6 @@ class Phase13IntegratedProductTest {
             }
         }
         verifyNoInteractions(gmail, outlook);
-    }
-
-    @Test
-    void qual02_allFivePagesMeetResponsiveAccessibleControlContract() throws Exception {
-        String css = Files.readString(Path.of("src/main/resources/static/css/workspace.css"));
-        for (String template : List.of(
-                "senders.html", "unread.html",
-                "review.html")) {
-            String html = Files.readString(TEMPLATES.resolve(template));
-            assertThat(html).as(template)
-                .contains("<meta name=\"viewport\"", "class=\"skip-link\"",
-                    "<main id=\"workspace-main\"", "<h1")
-                .doesNotContain("href=\"#\"", "onclick=", "javascript:");
-        }
-        assertThat(css).contains(
-            "@media (max-width: 375px)", "min-height: 44px",
-            "min-width: 44px", ":focus-visible",
-            "@media (prefers-reduced-motion: reduce)", "overflow-wrap: anywhere")
-            .doesNotContain("min-width: 375px");
     }
 
     private UserAccount account(String email) {

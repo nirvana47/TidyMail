@@ -20,6 +20,27 @@ class RuleDestinationProviderTest {
     private final UserAccount account=new UserAccount();
     private RuleDefinition definition(boolean skip){return new RuleDefinition("Offers",List.of("offers@example.test"),"weekly offers\nmonthly sale","receipt\ninvoice","ORGANIZE","TidyMail - Offers",skip);}
 
+    @Test void outlookSenderUpdateDoesNotMutateReadBackOrAddUnusedPredicates() throws Exception {
+        var graph=mock(com.tidymail.mail.outlook.OutlookGraph.class);
+        var provider=new OutlookRuleProvider(graph,json);
+        var raw=json.readTree("{\"conditions\":{\"fromAddresses\":[{\"emailAddress\":{\"address\":\"offers@example.test\",\"name\":\"Offers\"}}],\"subjectContains\":[],\"hasAttachments\":false},\"actions\":{\"markAsRead\":true},\"sequence\":9}");
+        var original=raw.deepCopy();
+        provider.behavior(raw);
+        assertThat(raw).isEqualTo(original);
+        var payload=provider.withSenders(raw,List.of("offers@example.test","billing@example.test","updates@example.test"));
+        assertThat(payload.path("conditions").has("senderContains")).isFalse();
+        assertThat(payload.path("conditions").path("fromAddresses")).hasSize(3);
+        assertThat(payload.path("actions")).isEqualTo(raw.path("actions"));
+        assertThat(payload.path("sequence")).isEqualTo(raw.path("sequence"));
+        provider.updateSenders(account,"native-rule",payload);
+        verify(graph).request(eq(account),eq(org.springframework.http.HttpMethod.PATCH),anyString(),eq(Map.of("conditions",payload.path("conditions"))));
+        var domain=provider.withSenders(raw,List.of("offers@example.test","@example.test"));
+        // Switching matching modes must explicitly clear the formerly populated predicate.
+        assertThat(domain.path("conditions").path("fromAddresses")).isEmpty();
+        assertThat(domain.path("conditions").path("senderContains")).hasSize(2);
+        assertThat(raw).isEqualTo(original);
+    }
+
     @Test void inboxFilterCheckKeepsSenderScopeAndAllConditionsAndRejectsPartialTranslation() throws Exception {
         var raw=json.readTree("{\"criteria\":{\"from\":\"{offers@example.test billing@example.test}\",\"to\":\"owner@example.test\",\"subject\":\"Monthly invoice\",\"query\":\"(has:userlabels OR is:unread)\",\"negatedQuery\":\"subject:overdue\",\"hasAttachment\":true,\"excludeChats\":true,\"size\":1000,\"sizeComparison\":\"larger\"}}");
         String query=GmailRuleProvider.inboxFilterQuery(raw,List.of("offers@example.test","other@example.test"));

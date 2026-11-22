@@ -3,9 +3,26 @@
 <head><meta charset="utf-8"><meta name="_csrf" th:content="${_csrf.token}"><meta name="_csrf_header" th:content="${_csrf.headerName}"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TidyMail — Rule editor</title>
 <link rel="stylesheet" th:href="@{/static/css/dashboard.css}"><link rel="stylesheet" th:href="@{/static/css/rules.css}"><script defer th:src="@{/static/js/ui.js}"></script><script defer th:src="@{/static/js/destination-picker.js}"></script><script defer th:src="@{/static/js/rule-fields.js}"></script><script defer th:src="@{/static/js/rule-review.js}"></script></head>
 <body th:class="${inbox} ? '' : 'tm-shell'"><aside th:unless="${inbox}" th:insert="~{fragments/app-sidebar :: sidebar('rules', ${email})}"></aside><main id="ruleEditorContent" class="app rules-page"><a th:unless="${inbox}" href="/rules">← Rules</a><h1 th:text="${result?'Rule status':(preview!=null?'Review rule':(rule==null?'Create rule':rule.definition.name))}"></h1><p class="muted" th:text="${email}"></p>
+<section th:if="${rule!=null and preview==null and rule.state!='REMOVED'}" class="surface" data-rule-mailbox-status>
+<h2>Mailbox rule status</h2>
+<p th:if="${inspection==null}" class="muted">Check the mailbox to see whether this rule exists and is enabled.</p>
+<p th:if="${ruleInspectionError}" role="alert" th:text="${ruleInspectionError}"></p>
+<div th:if="${inspection!=null}" role="status">
+<p><strong th:text="${inspection.message}"></strong></p>
+<p th:if="${inspection.status=='FOUND'}" th:text="${inspection.mailboxSummary}"></p>
+<p th:if="${!inspection.differences.isEmpty()}" th:text="${'Different from your request: '+inspection.differences+'.'}"></p>
+<p class="muted" th:text="${'Checked '+#temporals.format(inspection.checkedAt,'MMM d, HH:mm:ss', 'America/Los_Angeles')}"></p>
+<div th:if="${inspection.recoverable}" class="rule-actions">
+<form th:each="operation:${ {'edit','remove'} }" th:action="@{/rules/{id}/recover/{operation}(id=${rule.id},operation=${operation})}" method="post">
+<input type="hidden" name="account" th:value="${account}"><input type="hidden" name="remote" th:value="${inspection.remoteId}"><input type="hidden" name="fingerprint" th:value="${inspection.fingerprint}"><input type="hidden" name="inbox" th:value="${inbox}"><input type="hidden" name="mailScope" th:value="${mailScope}">
+<label><input type="checkbox" required name="confirmed" value="true"><span th:text="${operation=='edit'?(inspection.status=='FOUND'?'Pause this mailbox rule so I can edit it.':'Recover this draft for editing; no mailbox rule was found.'):(inspection.status=='FOUND'?'Remove this mailbox rule and its saved TidyMail rule. Existing emails stay unchanged.':'Delete this saved TidyMail rule; no mailbox rule was found.')}"></span></label>
+<button th:text="${operation=='edit'?'Recover editing':'Delete rule'}"></button>
+</form></div></div>
+<form th:action="@{/rules/{id}/check(id=${rule.id})}" method="post"><input type="hidden" name="account" th:value="${account}"><input type="hidden" name="inbox" th:value="${inbox}"><input type="hidden" name="mailScope" th:value="${mailScope}"><button>Check mailbox rule status</button></form>
+</section>
 <section th:if="${result}" class="surface rule-success" data-inbox-rule-result th:attr="data-account=${account},data-rule-state=${rule.state}">
-<h2 tabindex="-1" th:text="${rule.state=='ACTIVE'?'Rule enabled':(rule.state=='ATTENTION'?'Rule needs attention':'Rule '+#strings.toLowerCase(rule.state))}"></h2>
-<p th:if="${rule.state=='ACTIVE'}">Applies to future incoming mail.</p><p th:unless="${rule.state=='ACTIVE'}" th:text="${rule.detail}"></p>
+<h2 tabindex="-1" th:text="${senderAdditionNotApplied==true?'Senders were not added':(rule.state=='ACTIVE'?'Rule enabled':(rule.state=='ATTENTION'?'Rule needs attention':'Rule '+#strings.toLowerCase(rule.state)))}"></h2>
+<p th:if="${rule.state=='ACTIVE' and senderAdditionNotApplied!=true}">Applies to future incoming mail.</p><p th:if="${rule.state=='ACTIVE' and provider=='microsoft' and rule.definition.trash()}">After moving a matching message to Deleted Items, Outlook stops applying later rules to that message.</p><p th:if="${rule.state!='ACTIVE' or senderAdditionNotApplied==true}" th:text="${rule.detail}"></p>
 <section th:if="${existingMail!=null and existingMail.total>0}" class="rule-existing-mail">
 <p><strong th:text="${existingMail.total+' matching emails '+(mailScope=='inbox'?'in Inbox':'in All mailbox')}"></strong><span th:if="${mailScope=='inbox'}" th:text="${' · '+existingMail.unread+' unread'}"></span></p>
 <p th:unless="${mailScope=='inbox'}" class="muted" th:text="${existingMail.inbox+' in Inbox'}"></p>
@@ -18,11 +35,16 @@
 </section>
 <p th:if="${preview==null and !result}" class="info-callout"><strong>Future incoming email only.</strong> Existing emails stay unchanged.</p>
 <section th:if="${preview==null and !result}" class="surface" th:with="editable=${rule==null or (rule.pending==null and ((rule.remoteId==null and rule.state=='DRAFT') or rule.state=='PAUSED'))}">
-<p th:unless="${editable}" class="rule-alert">This native rule is attached to your mailbox. Pause it to change its action. You can replace deletion with a label or folder below. Previously handled emails will not be restored.</p>
+<section th:if="${rule!=null and (rule.pending!=null or rule.state=='ATTENTION')}" class="rule-alert" role="alert">
+<h2>The rule update needs checking</h2><p th:text="${rule.detail}"></p>
+<p>Check Mailbox rule status above to inspect the result and recover editing or deletion.</p>
+<a href="/rules" data-rule-navigation>Manage rules</a>
+</section>
+<p th:if="${!editable and rule!=null and rule.pending==null and rule.state=='ACTIVE'}" class="rule-alert">Pause this rule to edit its settings. To add selected senders while it stays active, use Rules → Add sender to existing rule from your mailbox selection.</p>
 <form th:if="${rule!=null and rule.state=='ACTIVE' and rule.pending==null}" th:action="@{/rules/{id}/pause(id=${rule.id})}" method="post"><input type="hidden" name="account" th:value="${account}"><button>Pause to edit</button></form>
 <p th:if="${rule!=null and rule.state=='PAUSED' and rule.remoteId!=null}" class="muted">Saving changes removes the paused native rule and creates a replacement draft. Outlook keeps the original rule position. Review and enable the draft when ready.</p>
 <p th:if="${rule!=null and rule.state=='PAUSED' and rule.definition.organize()}" class="muted">Saving a draft resets its results. Review and resume without saving to keep the current tracking period.</p>
-<form th:action="@{/rules/save}" method="post" class="rule-form">
+<form th:if="${rule==null or (rule.pending==null and rule.state!='ATTENTION')}" th:action="@{/rules/save}" method="post" class="rule-form">
 <input type="hidden" name="mailScope" th:value="${mailScope}"><input type="hidden" name="account" th:value="${account}"><input th:if="${rule!=null}" type="hidden" name="id" th:value="${rule.id}"><input th:if="${rule!=null}" type="hidden" name="version" th:value="${rule.version}">
 <fieldset th:disabled="${!editable}"><label>Rule name<input name="name" required maxlength="100" th:value="${rule==null?'':rule.definition.name}" placeholder="Organize weekly offers"></label>
 <label>From these email addresses or @domains<textarea name="senders" required rows="2" placeholder="alerts@example.com, @relay.example.com" th:text="${rule==null?(initialSender==null?'':initialSender):#strings.listJoin(rule.definition.senders, ', ')}"></textarea></label><small class="muted">Separate entries with commas. Any entry qualifies. Use @example.com to cover changing addresses at a domain; no wildcard is needed.</small>
@@ -67,6 +89,7 @@
 <section th:replace="~{fragments/rule-interactions :: interactions(${preview.interactions},${preview.id},${rule.id},${#lists.size(rule.definition.senders)})}"></section>
 <p th:unless="${preview.permission}"><a th:href="@{/rules/connect/{provider}(provider=${provider},rules=true)}">Connect rule permissions</a>, then <a th:href="@{/rules/{id}(id=${rule.id},preview=true,inbox=${inbox},mailScope=${mailScope})}">check again</a>.</p>
 <p th:unless="${preview.deployable}" class="rule-alert">Sender/domain or subject matching could not be checked. Try reviewing again before creating this rule.</p>
+<p th:if="${provider=='microsoft' and rule.definition.trash()}" class="info-callout">After moving a matching message to Deleted Items, Outlook stops applying later rules to that message.</p>
 <form th:action="@{/rules/{id}/enable(id=${rule.id})}" method="post" class="rule-form rule-review-actions">
 <input type="hidden" name="account" th:value="${account}"><input type="hidden" name="preview" th:value="${preview.id}"><input type="hidden" name="inbox" th:value="${inbox}"><input type="hidden" name="mailScope" th:value="${mailScope}">
 <label th:unless="${#lists.isEmpty(preview.interactions)}" class="row"><input type="checkbox" name="reviewedInventory" value="true" required> I reviewed the possible overlaps.</label>

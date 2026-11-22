@@ -483,6 +483,70 @@ class AutomationRulesJourneyTest extends PostgresJourneyTest {
         mockMvc.perform(get("/rules/"+id+"?preview=true").with(authenticatedAs(EMAIL))).andExpect(status().isOk());
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"lost-response","rejected","unavailable-readback","not-applied"})
+    void outlookSenderUpdateRecoversWithoutSendingAnotherMutation(String outcome) throws Exception {
+        long outlook=userAccounts.createAccount("outlook-recovery@example.test","microsoft");
+        var a=accounts.findById(outlook).orElseThrow();a.setScopes(List.of("MailboxSettings.ReadWrite"));accounts.save(a);
+        var inventory=new LinkedHashMap<String,JsonNode>();var writes=new int[]{0};var failRead=new boolean[]{false};
+        when(graph.request(any(),any(),anyString(),nullable(Object.class))).thenAnswer(i->{
+            HttpMethod method=i.getArgument(1);String path=i.getArgument(2);Object payload=i.getArgument(3);
+            if(method==HttpMethod.GET){
+                if(failRead[0])throw new com.tidymail.mail.CleanupProviderException(503,null);
+                var page=json.createObjectNode();var values=page.putArray("value");
+                if(path.contains("messageRules"))inventory.values().forEach(n->values.add(n.deepCopy()));return page;
+            }
+            if(method==HttpMethod.PATCH){
+                writes[0]++;
+                if(outcome.equals("rejected"))throw new com.tidymail.mail.CleanupProviderException(400,null);
+                if(outcome.equals("not-applied"))throw new com.tidymail.mail.CleanupProviderException(0,null);
+                var changes=(Map<?,?>)payload;
+                ((ObjectNode)inventory.get("native-recovery")).set("conditions",((JsonNode)changes.get("conditions")).deepCopy());
+                failRead[0]=outcome.equals("unavailable-readback");
+                throw new com.tidymail.mail.CleanupProviderException(0,null);
+            }
+            ObjectNode created=((JsonNode)payload).deepCopy();created.put("id","native-recovery");inventory.put("native-recovery",created);return created;
+        });
+        UUID id=rules.save(outlook,null,0,new RuleDefinition("Synthetic recovery",List.of(SENDER),"","","READ"));
+        rules.enable(outlook,id,preview(outlook,id),true);
+        var authorities=List.of(new SimpleGrantedAuthority("ROLE_USER"));
+        var auth=new OAuth2AuthenticationToken(new DefaultOAuth2User(authorities,Map.of("sub",a.getProviderAccountId(),"email",a.getEmail()),"sub"),authorities,"microsoft");
+        // Follow the actual picker -> review -> commit HTTP path, with three senders total.
+        String senders="billing@example.test,updates@example.test";
+        mockMvc.perform(get("/rules/add-senders").param("account",""+outlook).param("senders",senders).with(authentication(auth)))
+            .andExpect(status().isOk()).andExpect(content().string(org.hamcrest.Matchers.containsString("Review addition")));
+        var reviewed=mockMvc.perform(post("/rules/"+id+"/senders/review").param("account",""+outlook).param("senders",senders).param("inbox","true").with(authentication(auth)).with(csrfToken()))
+            .andExpect(status().isOk()).andReturn();
+        UUID addition=(UUID)((Map<?,?>)reviewed.getModelAndView().getModel().get("addition")).get("id");
+        var response=mockMvc.perform(post("/rules/"+id+"/senders/add").param("account",""+outlook).param("preview",addition.toString()).param("inbox","true").with(authentication(auth)).with(csrfToken()))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(writes[0]).isEqualTo(1);
+        if(outcome.equals("rejected")){
+            assertThat(rules.get(outlook,id).pending()).isNull();
+            assertThat(rules.get(outlook,id).state()).isEqualTo("ACTIVE");
+            assertThat(rules.get(outlook,id).definition().senders()).containsExactly(SENDER);
+            assertThat(response).contains("HTTP 400","data-addition-saved=\"false\"").doesNotContain("<h2>Sender added to rule</h2>");
+        }else if(outcome.equals("unavailable-readback")||outcome.equals("not-applied")){
+            assertThat(rules.get(outlook,id).pending()).isEqualTo("UPDATE_SENDERS");
+            assertThat(response).contains("Check rule status");
+            mockMvc.perform(get("/rules/"+id).with(authentication(auth))).andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("The rule update needs checking")))
+                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("Pause it to change its action"))))
+                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("name=\"senders\""))));
+            failRead[0]=false;
+            if(outcome.equals("not-applied"))jdbc.update("UPDATE automation_rules SET updated_at=now()-interval '3 minutes' WHERE id=?",id);
+            mockMvc.perform(post("/rules/"+id+"/check").param("account",""+outlook).param("inbox","true").with(authentication(auth)).with(csrfToken()))
+                .andExpect(status().isOk()).andExpect(view().name("rule-add-senders"))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString(outcome.equals("not-applied")?"Review addition again":"Sender added to rule")));
+            assertThat(rules.get(outlook,id).pending()).isNull();assertThat(rules.get(outlook,id).definition().senders()).hasSize(outcome.equals("not-applied")?1:3);
+            assertThat(writes[0]).isEqualTo(1);
+        }else{
+            assertThat(rules.get(outlook,id).state()).isEqualTo("ACTIVE");assertThat(rules.get(outlook,id).pending()).isNull();
+            assertThat(rules.get(outlook,id).definition().senders()).hasSize(3);
+            assertThat(response).contains("data-addition-saved=\"true\"");
+        }
+    }
+
     @Test void outlookOrganizeUsesNativeFolderAndReportsObservedMailWithoutChangingOldMessages(){
         long outlook=userAccounts.createAccount("outlook-organize@example.test","microsoft");
         var a=accounts.findById(outlook).orElseThrow();a.setScopes(List.of("MailboxSettings.ReadWrite"));accounts.save(a);

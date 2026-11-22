@@ -33,7 +33,7 @@ public class OutlookRuleProvider implements RuleProvider {
         out.sort(Comparator.comparingInt(r->r.raw().path("sequence").asInt()));return out;
     }
     private RuleDefinition compatible(JsonNode r,String archiveId){
-        if(r.path("isReadOnly").asBoolean()||r.path("hasError").asBoolean()||r.path("actions").path("stopProcessingRules").asBoolean())return null;
+        if(r.path("isReadOnly").asBoolean()||r.path("hasError").asBoolean()||r.path("actions").path("stopProcessingRules").asBoolean()&&!r.path("actions").path("delete").asBoolean())return null;
         var c=r.path("conditions");var ex=r.path("exceptions");var a=r.path("actions");
         if(extra(c,Set.of("fromAddresses","senderContains","subjectContains"))||extra(ex,Set.of("subjectContains"))
             ||extra(a,Set.of("delete","markAsRead","moveToFolder","stopProcessingRules")))return null;
@@ -70,7 +70,7 @@ public class OutlookRuleProvider implements RuleProvider {
         else {var from=c.putArray("fromAddresses");for(String sender:d.senders())from.addObject().putObject("emailAddress").put("address",sender);}
         if(!d.subject().isEmpty())d.subjects().forEach(c.putArray("subjectContains")::add);
         if(!d.exceptSubject().isEmpty())d.exceptions().forEach(r.putObject("exceptions").putArray("subjectContains")::add);
-        var actions=r.putObject("actions");actions.put("stopProcessingRules",false);
+        var actions=r.putObject("actions");actions.put("stopProcessingRules",d.trash());
         if(d.trash())actions.put("delete",true);if(d.read())actions.put("markAsRead",true);
         if(d.organize()) {
             r.put("_destinationName",d.destination());r.put("_destinationMode",d.destinationMode());
@@ -127,9 +127,13 @@ public class OutlookRuleProvider implements RuleProvider {
     public JsonNode withSenders(JsonNode raw,List<String> senders){
         ObjectNode payload=raw.deepCopy();var conditions=(ObjectNode)payload.path("conditions");
         if(senders.stream().anyMatch(v->v.startsWith("@"))){
-            conditions.putArray("fromAddresses");senders.forEach(conditions.putArray("senderContains")::add);
+            if(!conditions.path("fromAddresses").isEmpty())conditions.putArray("fromAddresses");
+            else conditions.remove("fromAddresses");
+            senders.forEach(conditions.putArray("senderContains")::add);
         }else{
-            conditions.putArray("senderContains");var from=conditions.putArray("fromAddresses");
+            if(!conditions.path("senderContains").isEmpty())conditions.putArray("senderContains");
+            else conditions.remove("senderContains");
+            var from=conditions.putArray("fromAddresses");
             for(String sender:senders)from.addObject().putObject("emailAddress").put("address",sender);
         }return payload;
     }
@@ -142,14 +146,53 @@ public class OutlookRuleProvider implements RuleProvider {
     public void remove(UserAccount a,String id){graph.request(a,HttpMethod.DELETE,path(id),null);}
     private String path(String id){return BASE+"/"+org.springframework.web.util.UriUtils.encodePathSegment(id,java.nio.charset.StandardCharsets.UTF_8);}
     public JsonNode behavior(JsonNode raw){
-        ObjectNode r=json.createObjectNode();for(String key:List.of("displayName","conditions","exceptions","actions","sequence"))
-            if(raw.has(key))r.set(key,raw.get(key));
+        // Outlook may renumber rules. Compare their content; preserve current order in native payloads.
+        ObjectNode r=json.createObjectNode();for(String key:List.of("displayName","conditions","exceptions","actions"))
+            if(raw.has(key))r.set(key,raw.get(key).deepCopy());
         // Graph materializes defaults omitted in create requests. Normalize these recursively.
         normalize(r);
+        // Graph may return an empty predicate block where the request omitted it.
+        // Compare the conditions it expresses, not the presence of the container.
+        for(String section:List.of("conditions","exceptions"))
+            if(r.path(section).isObject()&&r.path(section).isEmpty())r.remove(section);
         // Recipient display names are presentation; matching is determined by the address.
         for(String section:List.of("conditions","exceptions"))for(var recipient:r.path(section).path("fromAddresses"))
             if(recipient.path("emailAddress").isObject())((ObjectNode)recipient.path("emailAddress")).remove("name");
+        // These predicates are case-insensitive OR alternatives. Graph may uppercase
+        // or reorder them without changing which messages match.
+        for(String section:List.of("conditions","exceptions")){
+            var predicates=r.path(section);
+            for(String field:List.of("senderContains","subjectContains"))if(predicates.path(field).isArray()){
+                var values=new TreeSet<String>();
+                predicates.path(field).forEach(v->values.add(v.asText().toLowerCase(Locale.ROOT)));
+                var canonical=((ObjectNode)predicates).putArray(field);values.forEach(canonical::add);
+            }
+            if(predicates.path("fromAddresses").isArray()){
+                var addresses=new ArrayList<JsonNode>();
+                for(var recipient:predicates.path("fromAddresses")){
+                    var email=recipient.path("emailAddress");
+                    if(email.isObject()&&email.path("address").isTextual())
+                        ((ObjectNode)email).put("address",email.path("address").asText().toLowerCase(Locale.ROOT));
+                    addresses.add(recipient);
+                }
+                addresses.sort(Comparator.comparing(n->n.path("emailAddress").path("address").asText()));
+                var canonical=((ObjectNode)predicates).putArray("fromAddresses");addresses.forEach(canonical::add);
+            }
+        }
         return r;
+    }
+    public boolean creationMatches(JsonNode requested,JsonNode actual){
+        if(behavior(requested).equals(behavior(actual)))return true;
+        // Older pending deletion requests asked to continue processing. Outlook returned
+        // a terminal deletion rule. Confirm that exact receipt without hiding other changes;
+        // the returned snapshot retains the real setting for all subsequent comparisons.
+        if(!requested.path("actions").path("delete").asBoolean()
+                ||!actual.path("actions").path("delete").asBoolean()
+                ||requested.path("actions").path("stopProcessingRules").asBoolean()
+                ||!actual.path("actions").path("stopProcessingRules").asBoolean())return false;
+        ObjectNode expected=requested.deepCopy();
+        ((ObjectNode)expected.path("actions")).put("stopProcessingRules",true);
+        return behavior(expected).equals(behavior(actual));
     }
     private void normalize(JsonNode n){if(n.isObject()){
         var remove=new ArrayList<String>();n.fields().forEachRemaining(f->{var v=f.getValue();

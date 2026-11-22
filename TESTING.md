@@ -84,3 +84,11 @@ It checks multiple phrases, explicit duplicate destination selection, retained
 choices after a permission error, deferred creation, manual filing review and
 confirmation, Activity names, both selection menus, and desktop layout. It saves a
 draft and confirms one synthetic filing job; it never enables a native rule.
+
+`AutomationRulesJourneyTest` also follows the Outlook sender picker, review and
+update HTTP requests with simulated provider rejection, response loss and failed
+read-back. It checks recovery without another mailbox mutation, retry after a
+confirmed rejection, and checking an old pending update that left the original
+rule unchanged. `RuleDestinationProviderTest` checks that comparing Outlook rule
+behavior preserves the provider snapshot and that sender updates omit unused
+predicates while explicitly clearing a predicate when switching matching modes.

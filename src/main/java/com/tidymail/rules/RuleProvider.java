@@ -24,4 +24,5 @@ public interface RuleProvider {
     void resume(UserAccount account, String id);
     // Fingerprints omit mutable provider identity but retain every behavioral field.
     JsonNode behavior(JsonNode raw);
+    default boolean creationMatches(JsonNode requested,JsonNode actual){return behavior(requested).equals(behavior(actual));}
 }

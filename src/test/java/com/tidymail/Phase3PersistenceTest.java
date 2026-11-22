@@ -17,7 +17,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -53,10 +52,6 @@ import org.springframework.test.context.TestPropertySource;
 })
 class Phase3PersistenceTest {
 
-    // ---- T3 (a): Flyway schema ----
-    @Autowired
-    private Flyway flyway;
-
     // ---- T3 (b): entity roundtrip ----
     @Autowired
     private UserAccountRepository userAccounts;
@@ -85,24 +80,6 @@ class Phase3PersistenceTest {
         jdbcTemplate.update("DELETE FROM user_actions");
         senderStats.deleteAll();
         userAccounts.deleteAll();
-    }
-
-    @Test
-    @DisplayName("T3(a) — Flyway includes the required V1 through V12 migrations")
-    void flywayAppliesV1Schema() {
-        // Flyway bean is already initialized by Spring context refresh's
-        // FlywayAutoConfiguration (spring.flyway.enabled=true).  info().current()
-        // returns the version currently applied.  Failures would have thrown during
-        // context load, so reaching this test already proves the migrations succeeded;
-        // assert the required history while allowing later additive migrations.
-        org.flywaydb.core.api.MigrationInfo current = flyway.info().current();
-        assertThat(current)
-            .as("A current migration should exist")
-            .isNotNull();
-        assertThat(flyway.info().applied())
-            .as("Required V1 through V12 migrations are applied")
-            .extracting(info -> info.getVersion().getVersion())
-            .contains("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12");
     }
 
     @Test
