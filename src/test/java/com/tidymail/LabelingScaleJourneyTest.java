@@ -12,11 +12,13 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 import java.math.BigDecimal;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.jdbc.core.namedparam.*;
 
 /** Fully populated synthetic label/recommendation cache. No model-quality or live throughput claim. */
+@Tag("performance")
 class LabelingScaleJourneyTest extends PostgresJourneyTest {
     @Autowired DashboardRepository dashboard;
     @Autowired LabelingPipeline pipeline;

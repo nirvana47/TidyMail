@@ -95,6 +95,8 @@ class PersonalOutlookJourneyTest extends PostgresJourneyTest {
             .andExpect(status().isOk()).andExpect(content().string(org.hamcrest.Matchers.containsString("data-provider=\"microsoft\"")));
         mockMvc.perform(post("/dashboard/accounts/switch").param("account", Long.toString(foreign))
                 .session(session).with(auth).with(csrfToken())).andExpect(status().isNotFound());
+        mockMvc.perform(post("/dashboard/accounts/switch").param("account", "all")
+                .session(session).with(auth).with(csrfToken())).andExpect(status().isBadRequest());
         mockMvc.perform(post("/dashboard/accounts/switch").param("account", Long.toString(gmail))
                 .session(session).with(auth).with(csrfToken())).andExpect(status().is3xxRedirection());
         mockMvc.perform(get("/dashboard/api/page").session(session).with(auth))

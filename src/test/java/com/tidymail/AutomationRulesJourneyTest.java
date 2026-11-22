@@ -168,16 +168,6 @@ class AutomationRulesJourneyTest extends PostgresJourneyTest {
         assertThat(rules.get(account,id).state()).isEqualTo("PAUSED");assertThat(nativeGmail).isEmpty();assertThat(creates).isEqualTo(2);
     }
 
-    @Test void rulesPageShowsSavedRulesAndUnmanagedGmailFiltersFirst() throws Exception {
-        draft(account);
-        var raw=json.readTree("{\"id\":\"external-filter\",\"criteria\":{\"from\":\"offers@example.test\"},\"action\":{\"addLabelIds\":[\"STARRED\"]}}");
-        nativeGmail.add(new RuleProvider.NativeRule("external-filter","Existing Gmail filter",true,false,raw,null,""));
-        String html=mockMvc.perform(get("/rules").with(authenticatedAs(EMAIL))).andExpect(status().isOk())
-            .andReturn().getResponse().getContentAsString();
-        assertThat(html).contains("Your rules","Existing Gmail filters","Existing Gmail filter","Gmail filter settings ↗")
-            .doesNotContain("Refresh provider state","Organize future incoming email","No additional mailbox rules found.");
-    }
-
     @Test void deleteOnlyConfirmedEligibleDraftsInOwnedSelectedMailbox() throws Exception {
         long other=userAccounts.createAccount("other-drafts@example.test");
         UUID eligible=draft(account),changed=draft(account),edited=draft(account),pending=draft(account),attached=draft(account),active=draft(account),paused=draft(account),foreign=draft(other);

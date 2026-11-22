@@ -16,8 +16,10 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
 
+@Tag("performance")
 class DashboardPerformanceTest extends PostgresJourneyTest {
     @Autowired DashboardService dashboard;
     @Autowired com.tidymail.service.CorrespondentHistory relationships;
@@ -33,15 +35,16 @@ class DashboardPerformanceTest extends PostgresJourneyTest {
         String owner="dashboard-perf@example.test";long account=userAccounts.createAccount(owner);
         for(int size:new int[]{10000,Integer.getInteger("dashboard.performance.large-size",50000)}) {
             jdbc.update("DELETE FROM message_metadata WHERE account_id=?",account);
-            jdbc.update("""
+            // Match bounded sync commits instead of one giant trigger-heavy transaction.
+            for(int first=1;first<=size;first+=1000) jdbc.update("""
               INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,from_display_name,subject_header,
                 received_at,unread,labels,label_evidence_known,dashboard_from_address,dashboard_unit_kind,dashboard_unit_key,dashboard_identity_reason)
               SELECT ?,'google','synthetic-'||i,'sender'||(i%500)||'@example.test','Sender '||(i%500),
                 'Synthetic subject '||i,TIMESTAMPTZ '2026-10-28 12:00:00+00'-(i%100)*interval '1 hour',i%2=0,
                 CASE WHEN i%4=0 THEN ARRAY[]::text[] ELSE ARRAY['INBOX'] END,true,
                 'sender'||(i%500)||'@example.test','ADDRESS','sender'||(i%500)||'@example.test','Exact sender address'
-              FROM generate_series(1,?) i
-              """,account,size);
+              FROM generate_series(?,?) i
+              """,account,first,Math.min(size,first+999));
             jdbc.execute("ANALYZE");
             var all=new DashboardFilter("all","","","","UTC",0);
             var filtered=new DashboardFilter("all","sender1","2026-10-22","2026-10-28","UTC",0);
@@ -112,7 +115,8 @@ class DashboardPerformanceTest extends PostgresJourneyTest {
                 }
             }
             // Exercise category predicates over a fully classified index as well as the legacy/unclassified path.
-            jdbc.update("UPDATE message_metadata SET classification_category=CASE WHEN id%5=0 THEN 'MARKETING' ELSE 'PERSONAL' END,classification_kind='PERSON',classification_stream='GENERAL',classification_confidence=.99,classification_hash=classification_evidence_hash,classification_version=?,classified_at=now() WHERE account_id=?",com.tidymail.service.JevClassifier.VERSION,account);
+            for(int first=1;first<=size;first+=1000)
+                jdbc.update("UPDATE message_metadata SET classification_category=CASE WHEN id%5=0 THEN 'MARKETING' ELSE 'PERSONAL' END,classification_kind='PERSON',classification_stream='GENERAL',classification_confidence=.99,classification_hash=classification_evidence_hash,classification_version=?,classified_at=now() WHERE account_id=? AND provider='google' AND provider_message_id IN (SELECT 'synthetic-'||i FROM generate_series(?,?) i)",com.tidymail.service.JevClassifier.VERSION,account,first,Math.min(size,first+999));
             jdbc.execute("ANALYZE message_metadata");
             var category=new DashboardFilter("all","","","","UTC",0,"MARKETING");
             assertThat(dashboard.page(account,category).summary().get("messages")).isEqualTo((long)size/5);

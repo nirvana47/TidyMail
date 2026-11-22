@@ -58,10 +58,8 @@ public abstract class PostgresJourneyTest {
     protected UserAccountFixtures userAccounts;
 
     @BeforeEach
-    protected void resetState() {
+    protected void resetProvidersAndFixtures() {
         reset(gmailProvider, outlookProvider);
-        jdbc.execute("TRUNCATE TABLE user_accounts RESTART IDENTITY CASCADE");
-        jdbc.update("INSERT INTO classification_budget(id) VALUES(1) ON CONFLICT DO NOTHING");
         userAccounts = new UserAccountFixtures(jdbc);
     }
 

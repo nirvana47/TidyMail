@@ -50,5 +50,8 @@ class GmailBudgetAndCredentialsTest {
         assertThat(request.getNumberOfRetries()).isZero();
         assertThat(gmail.getRequestFactory().getTransport()).isSameAs(factory.buildFor(account).getRequestFactory().getTransport());
         verify(managed,times(2)).authorize(account);
+        var otherProvider=new UserAccount();otherProvider.setProvider("microsoft");
+        assertThatThrownBy(()->factory.buildFor(otherProvider)).isInstanceOf(GmailClientInitException.class);
+
     }
 }

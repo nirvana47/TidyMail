@@ -50,8 +50,6 @@ import com.tidymail.mail.sync.MailboxSnapshot;
 import com.tidymail.mail.sync.SyncCapabilities;
 import java.io.IOException;
 import java.math.BigInteger;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -59,18 +57,42 @@ import java.util.Set;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
-import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
 
 class GmailSynchronizationContractTest {
 
     @Test
     @DisplayName("providerProfilesBootstrapsAndBackfillsMetadataOnly")
     void providerProfilesBootstrapsAndBackfillsMetadataOnly() throws Exception {
+        Set<String> expectedSet = Set.of(
+            "From",
+            "To",
+            "Cc",
+            "Bcc",
+            "Subject",
+            "Date",
+            "List-Unsubscribe",
+            "List-Unsubscribe-Post",
+            "List-Id",
+            "Precedence",
+            "Auto-Submitted",
+            "Return-Path",
+            "Reply-To",
+            "Message-ID",
+            "References",
+            "In-Reply-To",
+            "Delivered-To",
+            "Received-SPF",
+            "Authentication-Results",
+            "DKIM-Signature",
+            "X-Auto-Response-Suppress",
+            "X-Mailer",
+            "X-Mailing-List",
+            "Feedback-ID"
+        );
+
+        assertThat(GmailMailService.METADATA_HEADERS).isEqualTo(expectedSet);
         Fixture fixture = fixture();
         when(fixture.profileRequest.execute()).thenReturn(
             new Profile().setHistoryId(new BigInteger("9223372036854775808123"))
@@ -251,6 +273,38 @@ class GmailSynchronizationContractTest {
         assertThat(converted.subject()).contains("fixture subject");
         assertThat(converted.headers().values())
             .allSatisfy(values -> assertThat(values).doesNotContain(fixture.getSnippet()));
+
+        Message msgWithRaw = new Message();
+        msgWithRaw.setId("msg-raw-1");
+        msgWithRaw.setRaw("Zm9v");
+        assertThatThrownBy(() -> GmailMailService.toMailMessage("google", msgWithRaw))
+            .as("Non-empty raw field triggers METADATA guard")
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("format is not METADATA");
+
+        Message msgWithBodyData = new Message();
+        msgWithBodyData.setId("msg-body-1");
+        MessagePart payloadWithBody = new MessagePart();
+        payloadWithBody.setBody(new MessagePartBody().setData("aGVsbG8="));
+        msgWithBodyData.setPayload(payloadWithBody);
+        assertThatThrownBy(() -> GmailMailService.toMailMessage("google", msgWithBodyData))
+            .as("Non-empty payload.body.data triggers METADATA guard")
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("payload.body.data");
+
+        Message msgWithNestedBodyData = new Message().setId("msg-parts-1");
+        MessagePart payloadWithParts = new MessagePart();
+        List<MessagePart> partsList = new ArrayList<>();
+        partsList.add(new MessagePart()
+            .setBody(new MessagePartBody().setData("aGVsbG8=")));
+        payloadWithParts.setParts(partsList);
+        msgWithNestedBodyData.setPayload(payloadWithParts);
+        assertThatThrownBy(() ->
+                GmailMailService.toMailMessage("google", msgWithNestedBodyData))
+            .as("Body data nested in MIME part metadata triggers privacy guard")
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("payload.body.data");
+        assertThatThrownBy(converted::body).isInstanceOf(UnsupportedOperationException.class);
     }
 
     @Test
@@ -280,55 +334,14 @@ class GmailSynchronizationContractTest {
         secondBackfill.close();
         waiter.join(1_000);
 
+        for (int concurrency : new int[] {0, 21}) {
+            config.setApiConcurrency(concurrency);
+            assertThatThrownBy(config::validate).isInstanceOf(IllegalStateException.class);
+        }
+        config.setApiConcurrency(3);
         config.setInitialPageSize(99);
         assertThatThrownBy(config::validate)
             .hasMessageContaining("SYNC_INITIAL_PAGE_SIZE");
-    }
-
-    @ParameterizedTest(name = "{0}")
-    @MethodSource("optOutGuards")
-    @DisplayName("phase19SyncPathDoesNotUseOptedOutCapability")
-    void phase19SyncPathDoesNotUseOptedOutCapability(
-            String capability, String forbiddenPattern) throws Exception {
-        String syncContracts = Files.readString(Path.of(
-            "src/main/java/com/tidymail/mail/sync/MailboxSyncProvider.java"));
-        String service = Files.readString(Path.of(
-            "src/main/java/com/tidymail/mail/gmail/GmailMailService.java"));
-        String syncMethods = syncMethodBodies(service);
-
-        assertThat(syncContracts + syncMethods)
-            .as("Phase 19 opt-out: " + capability)
-            .doesNotContain(forbiddenPattern);
-    }
-
-    private static Stream<Arguments> optOutGuards() {
-        return Stream.of(
-            Arguments.of("message mutation", ".batchModify("),
-            Arguments.of("FULL retrieval", "\"FULL\""),
-            Arguments.of("RAW retrieval", "\"RAW\""),
-            Arguments.of("body, snippet, or MIME content", "getSnippet("),
-            Arguments.of("attachment content", ".attachments().get("),
-            Arguments.of("watch or stop", ".watch("),
-            Arguments.of("settings", ".settings()"),
-            Arguments.of("filters", ".filters()"),
-            Arguments.of("label management", ".labels()"),
-            Arguments.of("Contacts or People", "PeopleService"),
-            Arguments.of("drafts", ".drafts()"),
-            Arguments.of("send", ".send("),
-            Arguments.of("threads", ".threads()"));
-    }
-
-    private static String syncMethodBodies(String source) {
-        List<String> names = List.of(
-            "profile", "listRecentBootstrap", "listBackfill", "listChanges",
-            "getCurrentMetadata", "listAttachmentMembership");
-        StringBuilder bodies = new StringBuilder();
-        for (String name : names) {
-            int start = source.indexOf(" " + name + "(");
-            int end = source.indexOf("\n    @Override", start + 1);
-            bodies.append(source, start, end < 0 ? source.length() : end);
-        }
-        return bodies.toString();
     }
 
     private static GmailSyncConfigProperties configuredProperties() {

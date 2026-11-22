@@ -1,3 +1,16 @@
+# Verification tools
+
+The `.cjs` files are desktop regression checks. Run them with intercepted synthetic
+responses or the isolated `DashboardBrowserFixture`; see [TESTING.md](../../TESTING.md).
+Java/Python pilots, probes and scoring scripts below preserve historical experiment
+reproducibility. They are not part of `mvn test` or `release-performance` and must
+not be bulk-run. The completed paid/live experiments do not authorize replay.
+The obsolete `SemanticQualificationContract` protocol is exercised only by the
+archived Phase 3 pilot; its old default unit suite has been retired. Production
+uses `RecommendationSemanticContract`, whose tests remain.
+`LabelingTrialExecution` intentionally requires its original V37 schema; it is a
+frozen experiment, not a current-schema smoke runner. Keep that guard intact.
+
 # Read-only email evidence probe
 
 The explicit `Phase3JevPilot --paid-heldback-once MANIFEST OUTPUT` mode validates the immutable held-back policy/source hashes and sixteen review IDs, includes approved standard Gmail categories, and refuses replay after a held-back ledger exists. `score_phase3_heldback.py RUN_DIRECTORY` scores per-property known references under those frozen thresholds without treating unresolved predictions or unknown answers as correct. A failed set cannot be tuned and replayed as independent held-back evidence. Future development manifests may opt into `admission_policy: header-context-v1` to defer replies/forwards before paid requests; this post-result policy is prohibited in the frozen held-back mode and is not wired into production classification.

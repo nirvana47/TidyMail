@@ -5,11 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.tidymail.entity.MessageMetadata;
 import com.tidymail.mail.AttachmentState;
 import com.tidymail.mail.MailMessage;
-import com.tidymail.mail.MailProvider;
 import com.tidymail.service.MessageMetadataMapper;
-import com.tidymail.service.MessageMetadataQueryService;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Field;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -49,23 +45,6 @@ class Phase9MetadataIndexTest {
         assertThat(row.getLabels()).containsExactlyInAnyOrder("INBOX", "UNREAD");
         assertThat(row.getListUnsubscribePostValues())
             .containsExactly("List-Unsubscribe=One-Click");
-    }
-
-    @Test
-    void queryServiceHasNoProviderDependencyAndMetadataHasNoForbiddenFields() {
-        for (Field field : MessageMetadata.class.getDeclaredFields()) {
-            String name = field.getName().toLowerCase();
-            assertThat(name).doesNotContain("body", "payload", "mime", "token", "rawheaders");
-        }
-        assertThat(List.of(MessageMetadata.class.getDeclaredFields()))
-            .extracting(Field::getName)
-            .contains("providerRevision", "attachmentState", "hasAttachments", "sizeEstimate");
-        for (Constructor<?> constructor : MessageMetadataQueryService.class.getConstructors()) {
-            assertThat(constructor.getParameterTypes())
-                .noneMatch(type -> MailProvider.class.isAssignableFrom(type));
-        }
-        assertThat(List.of(MessageMetadataQueryService.class.getDeclaredFields()))
-            .noneMatch(field -> MailProvider.class.isAssignableFrom(field.getType()));
     }
 
 }

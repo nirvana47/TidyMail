@@ -297,8 +297,8 @@ let previewIds = [], delaySelection = null, selectionStarted = null, detailFailu
       const bounds = await page.locator('#confirm').boundingBox(); assert(bounds.y >= 0 && bounds.y + bounds.height <= 800);
       await page.setViewportSize({ width: 1500, height: 1100 });
     }
-    assert.equal(previewIds.length, 69); assert.equal(new Set(previewIds).size, 69);
-    assert(previewIds.every(id => id.includes('linkedin.com')));
+    const expectedIds = messages.filter(m => [inmail, invitations].includes(m.address)).map(m => m.id);
+    assert.deepEqual([...previewIds].sort(), expectedIds.sort());
     await page.getByRole('button', { name: 'Back to selection', exact: true }).click();
     await addressBox(inmail).uncheck(); await selectedCount(33);
     await expect(addressBox(invitations)).toBeChecked();

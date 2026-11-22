@@ -83,17 +83,6 @@ class DashboardJobJourneyTest extends PostgresJourneyTest {
         assertThat(foreign).contains("No cleanup activity yet").doesNotContain("31 jobs");
     }
 
-    @Test void fiveHundredAndOneTargetsRunInBoundedBatchesAndRestoreProgressWithoutBrowser() {
-        var preview=preview(501);var job=jobs.confirm(account,preview.id());
-        for(int i=0;i<11;i++){ready(job.id());worker.runOnce();invariant(job.id());}
-        var result=invariant(job.id());assertThat(result.changed()).isEqualTo(501);assertThat(result.remaining()).isZero();assertThat(result.status()).isEqualTo("COMPLETED");
-        assertThat(jobs.list(account)).contains(result);
-        var capture=org.mockito.ArgumentCaptor.forClass(List.class);verify(gmailProvider,times(11)).markReadOnce(any(),capture.capture());
-        assertThat(capture.getAllValues()).allSatisfy(batch->assertThat(batch.size()).isBetween(1,50));
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM message_metadata WHERE unread",Long.class)).isZero();
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM cleanup_active_targets",Long.class)).isZero();
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM cleanup_job_events",Long.class)).isGreaterThan(20);
-    }
     @Test void concurrentDuplicateConfirmationReturnsOneJobAndOtherOverlappingPreviewConflicts() throws Exception {
         var preview=preview(3);var pool=Executors.newFixedThreadPool(2);
         try {

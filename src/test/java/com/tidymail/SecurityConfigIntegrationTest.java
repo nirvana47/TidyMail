@@ -74,9 +74,11 @@ class SecurityConfigIntegrationTest {
     @Test
     @WithMockUser(username = "test@example.com", roles = "USER")
     void logoutInvalidatesSessionAndRedirects() throws Exception {
-        mockMvc.perform(post("/logout").with(csrf()))
+        var session = new org.springframework.mock.web.MockHttpSession();
+        mockMvc.perform(post("/logout").session(session).with(csrf()))
             .andExpect(status().is3xxRedirection())
             .andExpect(redirectedUrl("/login?logout"));
+        assertThat(session.isInvalid()).isTrue();
     }
 
     @Test
@@ -120,10 +122,12 @@ class SecurityConfigIntegrationTest {
         assertThat(gProps.isMicrosoftConfigured()).isFalse();
         String[] expectedGoogleScopes = {
             "openid", "email", "profile",
-            "https://www.googleapis.com/auth/gmail.modify"
+            "https://www.googleapis.com/auth/gmail.modify",
+            "https://www.googleapis.com/auth/calendar.events.readonly"
         };
-        assertThat(expectedGoogleScopes).hasSize(4);
-        assertThat(expectedMicrosoftScopes).hasSize(6);
+        var google = new com.tidymail.security.SecurityConfig().clientRegistrationRepository(gProps)
+            .findByRegistrationId("google");
+        assertThat(google.getScopes()).containsExactlyInAnyOrder(expectedGoogleScopes);
     }
 
 }

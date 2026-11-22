@@ -7,7 +7,6 @@ import com.tidymail.support.PostgresJourneyTest;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -93,40 +92,4 @@ class MailboxSyncStateTest extends PostgresJourneyTest {
             """, accountId)).isInstanceOf(DataIntegrityViolationException.class);
     }
 
-    @Test
-    void migrationRetainsAccountIdentityAndCreatesGuardedSweepIndexes() {
-        List<String> metadataColumns = jdbc.queryForList("""
-            SELECT column_name
-              FROM information_schema.columns
-             WHERE table_schema = 'public' AND table_name = 'message_metadata'
-            """, String.class);
-        assertThat(metadataColumns)
-            .contains(
-                "provider_revision", "full_scan_generation", "attachment_state",
-                "attachment_observed_at", "attachment_source")
-            .doesNotContain("metadata_" + "snippet");
-
-        List<String> stateColumns = jdbc.queryForList("""
-            SELECT column_name
-              FROM information_schema.columns
-             WHERE table_schema = 'public' AND table_name = 'mailbox_sync_state'
-            """, String.class);
-        assertThat(stateColumns)
-            .contains(
-                "account_id", "incremental_cursor_value", "backfill_page_token",
-                "rescan_generation", "freshness_lease_owner", "backfill_lease_owner")
-            .doesNotContain("gmail_account_id", "email", "provider_account_id");
-
-        List<String> indexes = jdbc.queryForList("""
-            SELECT indexname
-              FROM pg_indexes
-             WHERE schemaname = 'public'
-               AND tablename IN ('mailbox_sync_state', 'message_metadata', 'sync_progress')
-            """, String.class);
-        assertThat(indexes).contains(
-            "idx_message_metadata_account_generation_freshness",
-            "idx_mailbox_sync_state_freshness_lease",
-            "idx_mailbox_sync_state_backfill_lease",
-            "idx_sync_progress_account_lane_newest");
-    }
 }

@@ -61,6 +61,9 @@ class RecommendationSemanticContractTest {
     }
 
     @Test void utf8LimitsAndExplicitSnippetStatesBoundEveryInputWithoutFullBodyFallback() {
+        assertThatThrownBy(() -> new SemanticQualificationContract.Text("Hidden text", SemanticQualificationContract.State.ABSENT))
+            .isInstanceOf(IllegalArgumentException.class);
+
         var e=evidence("😀".repeat(500),"😀".repeat(500),false);
         var state=contract.request(List.of(e),Variant.SNIPPET).path("state").path("email_0");
         assertThat(state.path("subject").asText().getBytes(java.nio.charset.StandardCharsets.UTF_8)).hasSize(1200);

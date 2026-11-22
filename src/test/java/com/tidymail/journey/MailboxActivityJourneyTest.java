@@ -8,8 +8,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.tidymail.support.PostgresJourneyTest;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.sql.Timestamp;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
@@ -32,7 +30,7 @@ class MailboxActivityJourneyTest extends PostgresJourneyTest {
     }
 
     @Test
-    void activityRouteRendersTruthfulAccountScopedStatus() throws Exception {
+    void activityShowsOnlyTheActiveMailboxDespiteLegacyAccountParameters() throws Exception {
         String email = "activity@example.test";
         long accountId = userAccounts.createAccount(email);
         long foreignId = userAccounts.createAccount("foreign@example.test");
@@ -56,7 +54,7 @@ class MailboxActivityJourneyTest extends PostgresJourneyTest {
             .contains(
                 "<title>TidyMail - Sync / Activity</title>",
                 "Mailbox status",
-                "<span>Sync / Activity</span>",
+                "<h1>Sync / Activity</h1>",
                 "aria-current=\"page\"",
                 "id=\"activity-status\"",
                 "Indexed messages",
@@ -85,10 +83,14 @@ class MailboxActivityJourneyTest extends PostgresJourneyTest {
             .contains("id=\"activity-status\"")
             .doesNotContain("<html", "workspace-rail", "<main");
 
-        mockMvc.perform(get("/activity/status")
+        String ignoredForeignSelection = mockMvc.perform(get("/activity/status")
                 .param("account", Long.toString(foreignId))
                 .with(authenticatedAs(email)))
-            .andExpect(status().isNotFound());
+            .andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+        assertThat(ignoredForeignSelection)
+            .contains("datetime=\"" + checkedAt)
+            .doesNotContain("foreign@example.test", "hidden-cursor");
     }
 
     @Test
@@ -170,7 +172,7 @@ class MailboxActivityJourneyTest extends PostgresJourneyTest {
     }
 
     @Test
-    void pollingPreservesFactsFocusAndServerAuthority() throws Exception {
+    void pollingStopsAtServerReportedCompletionWithoutExposingCursor() throws Exception {
         String email = "polling-activity@example.test";
         long accountId = userAccounts.createAccount(email);
 
@@ -206,29 +208,5 @@ class MailboxActivityJourneyTest extends PostgresJourneyTest {
             .contains("Mailbox activity is current", "Checked ")
             .doesNotContain("hx-trigger=", "server-only", "GMAIL_HISTORY_ID");
 
-        String script = Files.readString(
-            Path.of("src/main/resources/static/js/htmx-lite.js"));
-        assertThat(script)
-            .contains(
-                "function parsePollingTrigger(value)",
-                "/^every ([1-9][0-9]{0,2})s$/",
-                "seconds >= 1 && seconds <= 300",
-                "function schedulePolling(element, seconds)",
-                "state.inFlight",
-                "window.setTimeout",
-                "function parseSwapSpec(value)",
-                "outerHTML|none",
-                "function replaceAfterSettle",
-                "pendingResponse",
-                "focus({ preventScroll: true })",
-                "window.scrollTo(scrollPosition.x, scrollPosition.y)",
-                "function recordPollingFailure(element)",
-                "state.failures >= 2 ? 30 : state.baseInterval",
-                "Activity updates are temporarily unavailable. "
-                    + "This does not stop background sync.",
-                "removePollingWarning(element)",
-                "initializePolling(eventTarget)",
-                "disposeDisconnectedPolling()")
-            .doesNotContain("setInterval(");
     }
 }

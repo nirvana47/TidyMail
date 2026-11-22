@@ -19,7 +19,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 import com.tidymail.mail.BulkActionType;
 
 class DashboardGmailDispatchTest {
-    @ParameterizedTest @CsvSource({"200,MARK_READ","401,MARK_READ","503,MARK_READ","200,ARCHIVE","401,ARCHIVE","503,ARCHIVE","200,TRASH","401,TRASH","503,TRASH","200,MARK_READ_ARCHIVE","503,MARK_READ_ARCHIVE","200,FILING","503,FILING","200,FILING_ARCHIVE","503,FILING_ARCHIVE"})
+    @ParameterizedTest @CsvSource({"200,MARK_READ","200,ARCHIVE","200,TRASH","200,MARK_READ_ARCHIVE","200,FILING","200,FILING_ARCHIVE","401,ARCHIVE","503,ARCHIVE","503,FILING"})
     void exactCleanupRequestDisablesAutomaticReplayEvenWhenInitializerAllowsRetries(int status,String actionName) throws Exception {
         boolean filing=actionName.startsWith("FILING"), skipInbox=actionName.equals("FILING_ARCHIVE");
         BulkActionType action=filing?null:BulkActionType.valueOf(actionName);

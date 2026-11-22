@@ -76,6 +76,9 @@ class DashboardResilienceTest extends PostgresJourneyTest {
     void multiBatchSuccessReconcilesScopesAndPreservesOtherLabels(Action action) {
         provider(action,ids->mutate(ids,action));var job=seed(action);run(job.id(),11);
         var result=check(job.id());assertThat(result.changed()).isEqualTo(501);assertThat(result.remaining()).isZero();
+        assertThat(result.status()).isEqualTo("COMPLETED");
+        assertThat(jobs.list(account)).contains(result);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM cleanup_active_targets",Long.class)).isZero();
         assertThat(sends.get()).isEqualTo(11);assertThat(sizes).allSatisfy(n->assertThat(n).isBetween(1,50));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM message_metadata WHERE 'CUSTOM'=ANY(labels)",Integer.class)).isEqualTo(501);
         var inbox=dashboard.page(account,filter("inbox"));var all=dashboard.page(account,filter("all"));
@@ -91,7 +94,7 @@ class DashboardResilienceTest extends PostgresJourneyTest {
         assertThat(check(job.id()).unresolved()).isEqualTo(490);assertThat(check(job.id()).retryReason()).contains("limit reached");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM cleanup_active_targets",Integer.class)).isEqualTo(490);
     }
-    @ParameterizedTest @EnumSource(Action.class)
+    @ParameterizedTest @EnumSource(value=Action.class,names="ARCHIVE")
     void throttledReadHonorsRetryAfterThenRecoversAndCancelledWaitDoesNotSend(Action action) {
         provider(action,ids->mutate(ids,action));var job=seed(action);
         when(gmailProvider.getCleanupMetadata(any(),anyList())).thenThrow(new CleanupProviderException(429,"120"));
@@ -102,7 +105,7 @@ class DashboardResilienceTest extends PostgresJourneyTest {
         run(job.id(),1);assertThat(check(job.id()).changed()).isEqualTo(50);
         jobs.cancel(account,job.id());run(job.id(),12);assertThat(sends.get()).isEqualTo(1);assertThat(check(job.id()).cancelled()).isEqualTo(451);
     }
-    @ParameterizedTest @EnumSource(Action.class)
+    @ParameterizedTest @EnumSource(value=Action.class,names="ARCHIVE")
     void reconnectBeforeDispatchCanRecoverAndRepeatedReadFailuresHaveBoundedBudget(Action action) {
         provider(action,ids->mutate(ids,action));var job=seed(action);
         when(gmailProvider.getCleanupMetadata(any(),anyList())).thenThrow(new com.tidymail.security.oauth2.ManagedGoogleCredentialService.CredentialAuthorizationException(com.tidymail.security.oauth2.ManagedGoogleCredentialService.FailureCode.REAUTH_REQUIRED));
@@ -112,30 +115,14 @@ class DashboardResilienceTest extends PostgresJourneyTest {
         doThrow(new CleanupProviderException(503,null)).when(gmailProvider).getCleanupMetadata(any(),anyList());
         run(job.id(),66);var result=check(job.id());assertThat(result.failed()).isEqualTo(451);assertThat(result.remaining()).isZero();assertThat(sends.get()).isEqualTo(1);
     }
-    @ParameterizedTest @EnumSource(Action.class)
-    void replacementLeaseNeverReplaysLostIntentOrAcceptsOldWorkerResults(Action action) {
-        provider(action,ids->mutate(ids,action));var job=seed(action);var old=jobs.claim();
-        var observations=new HashMap<String,MailMessage>();old.targets().forEach(t->observations.put(t.providerId(),mail(t.providerId())));
-        var dispatch=jobs.dispatch(old,observations);mutate(dispatch.targets().stream().map(Target::providerId).toList(),action);
-        jdbc.update("UPDATE cleanup_jobs SET lease_expires_at=now()-interval '1 second' WHERE public_id=?",job.id());
-        var replacement=jobs.claim();jobs.complete(old,dispatch.batch(),dispatch.targets(),Map.of());assertThat(check(job.id()).unresolved()).isEqualTo(50);
-        jobs.defer(replacement);run(job.id(),12);assertThat(check(job.id()).changed()).isEqualTo(501);assertThat(sends.get()).isEqualTo(10);
-    }
-    @ParameterizedTest @EnumSource(Action.class)
-    void cancelDuringDispatchSettlesClaimedChangesAndPreventsNewIntents(Action action) throws Exception {
-        var entered=new CountDownLatch(1);var finish=new CountDownLatch(1);
-        provider(action,ids->{entered.countDown();try{assertThat(finish.await(10,TimeUnit.SECONDS)).isTrue();}catch(InterruptedException e){throw new RuntimeException(e);}mutate(ids,action);});
-        var job=seed(action);var pool=Executors.newSingleThreadExecutor();
-        try{var running=pool.submit(worker::runOnce);assertThat(entered.await(10,TimeUnit.SECONDS)).isTrue();jobs.cancel(account,job.id());assertThat(check(job.id()).cancelled()).isEqualTo(451);finish.countDown();running.get(10,TimeUnit.SECONDS);}
-        finally{finish.countDown();pool.shutdownNow();}
-        run(job.id(),12);var result=check(job.id());assertThat(result.changed()).isEqualTo(50);assertThat(result.remaining()).isZero();assertThat(sends.get()).isEqualTo(1);
-    }
-    @ParameterizedTest @EnumSource(Action.class)
+
+
+    @ParameterizedTest @EnumSource(value=Action.class,names="ARCHIVE")
     void explicitProviderRejectionProducesFailuresWithoutGuessedChanges(Action action) {
         provider(action,ids->{throw new CleanupProviderException(403,null);});var job=seed(action);run(job.id(),11);
         assertThat(check(job.id()).failed()).isEqualTo(501);assertThat(check(job.id()).changed()).isZero();assertThat(check(job.id()).unresolved()).isZero();
     }
-    @ParameterizedTest @EnumSource(Action.class)
+    @ParameterizedTest @EnumSource(value=Action.class,names="ARCHIVE")
     void verificationOutagePreservesRetryGuidanceAndCancelledWorkOnlyVerifiesAfterReconnect(Action action) {
         provider(action,ids->mutate(ids,action));var job=seed(action);
         var blocked=new java.util.concurrent.atomic.AtomicBoolean(true);

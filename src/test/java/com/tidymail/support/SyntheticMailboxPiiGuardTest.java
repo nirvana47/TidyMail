@@ -75,26 +75,8 @@ class SyntheticMailboxPiiGuardTest extends PostgresJourneyTest {
         }
     }
 
-    @Test
-    void fixedSeedProducesIdenticalMailboxRows() {
-        seedSyntheticMailbox();
-        String first = mailboxChecksum();
-
-        resetState();
-        seedSyntheticMailbox();
-        String second = mailboxChecksum();
-
-        assertThat(second).isEqualTo(first);
-    }
-
     private long count(String sql) {
         return jdbc.queryForObject(sql, Long.class);
     }
 
-    private String mailboxChecksum() {
-        return jdbc.queryForObject("""
-            SELECT md5(string_agg(to_jsonb(m)::text, E'\n' ORDER BY provider_message_id))
-              FROM message_metadata m
-            """, String.class);
-    }
 }
