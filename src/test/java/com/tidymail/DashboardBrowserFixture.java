@@ -251,7 +251,7 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
                 byte[] body = response.getContentAsByteArray();
                 if (exchange.getRequestURI().getPath().equals("/dashboard")) {
                     String html=new String(body,java.nio.charset.StandardCharsets.UTF_8);
-                    body=html.replace("<h1>Mailbox</h1>","<h1>Mailbox</h1><small data-browser-fixture>Synthetic test mailbox</small>").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                    body=html.replace("<main class=\"app\">","<main class=\"app\"><small data-browser-fixture>Synthetic test mailbox</small>").getBytes(java.nio.charset.StandardCharsets.UTF_8);
                 }
                 exchange.sendResponseHeaders(response.getStatus(), body.length == 0 ? -1 : body.length);
                 if (body.length > 0)

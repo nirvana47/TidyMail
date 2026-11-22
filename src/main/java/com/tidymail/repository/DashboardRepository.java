@@ -332,7 +332,12 @@ public class DashboardRepository {
         Map<String, Object> state = jdbc.queryForMap(
                 """
                         SELECT a.email,a.provider,a.oauth_status,s.lifecycle,s.backfill_status,s.initial_batch_completed_at,
-                          s.incremental_last_success_at,s.error_code FROM user_accounts a LEFT JOIN mailbox_sync_state s ON s.account_id=a.id
+                          s.incremental_last_success_at,s.error_code,s.gmail_backfill_phase,s.gmail_scope_total,
+                          (SELECT status FROM sync_progress WHERE account_id=a.id AND job_type='MAILBOX_SYNC'
+                            ORDER BY id DESC LIMIT 1) latest_status,
+                          (SELECT status FROM sync_progress WHERE account_id=a.id AND job_type='MAILBOX_SYNC'
+                            AND lane IN ('BACKFILL','RESCAN') ORDER BY id DESC LIMIT 1) import_status
+                        FROM user_accounts a LEFT JOIN mailbox_sync_state s ON s.account_id=a.id
                         WHERE a.id=:account
                         """,
                 p);

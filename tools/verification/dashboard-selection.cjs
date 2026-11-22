@@ -13,17 +13,36 @@ const messages = [[inmail, 36, 'linkedin'], [invitations, 33, 'linkedin'], ['new
   .flatMap(([address, count, groupId]) => Array.from({ length: count }, (_, i) => ({
     id: `${address}-${i}`, address, groupId, subject: `${address} message ${i}`, unread: i % 2 === 0,
     receivedAt: '2026-11-14T12:00:00Z', category: 'UNCLASSIFIED', displayName: address === inmail ? 'Vashu Walia' : '',
-    attachmentState: 'ABSENT', snippetState: 'ABSENT'
+    attachmentState: 'ABSENT', snippetState: 'ABSENT', contact: true,
+    gmailWebLink: 'https://mail.google.com/mail/?authuser=fixture%40example.test#all/synthetic-message',
+    outlookWebLink: 'https://outlook.office.com/mail/deeplink/read/synthetic-message'
   })));
 // A fully expanded group must be taller than the viewport to expose focus scrolling.
 for (let i = 0; i < 40; i++) messages.push({ ...messages[0], id: `extra-${i}`, address: `extra${i}@linkedin.com` });
-let paginationMode = true;
+let paginationMode = true, fixtureProvider = 'google';
+let fixtureSync = { email: 'fixture@example.test', gmail_scope_total: 100, import_status: 'RUNNING' };
 const paginationGroups = Array.from({ length: 53 }, (_, i) => ({ ...groups[0], id: `paging-${i}`, label: `Sender ${i}`, addresses: 1 }));
 let previewIds = [], delaySelection = null, selectionStarted = null, detailFailure = false, delayDetails = null, detailsStarted = null;
 (async () => {
   const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
   try {
     const page = await browser.newPage({ viewport: { width: 1500, height: 1100 } });
+    const screenshots = process.env.TIDYMAIL_UI_SCREENSHOTS;
+    if (screenshots) fs.mkdirSync(screenshots, { recursive: true });
+    const shot = name => screenshots ? page.screenshot({ path: path.join(screenshots, name + '.png') }) : Promise.resolve();
+    const checkDropdowns = async () => {
+      const dropdowns = await page.locator('select:not([multiple]):not([size]), select:not([multiple])[size="1"]').evaluateAll(elements => elements.map(e => {
+        const css = getComputedStyle(e);
+        return { name: e.id || e.name || e.getAttribute('aria-label'), appearance: css.appearance,
+          image: css.backgroundImage, padding: parseFloat(css.paddingRight) };
+      }));
+      assert(dropdowns.length > 0);
+      for (const dropdown of dropdowns) {
+        assert.equal(dropdown.appearance, 'none', dropdown.name + ': native arrow is still visible');
+        assert.match(dropdown.image, /svg/, dropdown.name + ': missing inset chevron');
+        assert(dropdown.padding >= 34, dropdown.name + ': arrow crowds the text');
+      }
+    };
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.route('**/*', async route => {
@@ -36,7 +55,7 @@ let previewIds = [], delaySelection = null, selectionStarted = null, detailFailu
           .replace('th:src="@{/static/js/inbox-rules.js}"', 'src="/static/js/inbox-rules.js"')
           .replace('th:href="@{/static/css/rules.css}"', 'href="/static/css/rules.css"')
           .replace('<aside th:replace="~{fragments/app-sidebar :: sidebar(\'mailbox\', \'\')}"></aside>', fs.readFileSync(path.join(root, 'src/main/resources/templates/fragments/app-sidebar.html'), 'utf8').match(/<aside[\s\S]*?<\/aside>/)[0].replace('th:attr="aria-current=${active == \'mailbox\' ? \'page\' : null}"', 'aria-current="page"'))
-          .replace('<body ', '<body data-provider="google" data-account="fixture" ')
+          .replace('<body ', `<body data-provider="${fixtureProvider}" data-account="fixture" `)
           .replace('name="_csrf_header"', 'name="_csrf_header" content="X-CSRF-TOKEN"');
         return route.fulfill({ contentType: 'text/html', body: html });
       }
@@ -54,11 +73,11 @@ let previewIds = [], delaySelection = null, selectionStarted = null, detailFailu
         const size = Number(url.searchParams.get('pageSize') || 10), offset = Number(url.searchParams.get('page') || 0) * size;
         return send({ groups: paginationGroups.slice(offset, offset + size), revision: 1, classificationRevision: 1,
           filter: { labels: '' }, summary: { messages: 53, unread: 53, groups: 53, known_bytes: 0 },
-          coverage: { indexed: 53 }, sync: { email: 'fixture@example.test' } });
+          coverage: { indexed: 53 }, sync: fixtureSync });
       }
       if (endpoint === 'page') return send({ groups, revision: 1, classificationRevision: 1,
         filter: { labels: '' }, summary: { messages: 113, unread: 57, groups: 2, known_bytes: 0 },
-        coverage: { indexed: 113 }, sync: { email: 'fixture@example.test', initial_batch_completed_at: '2026-11-14T12:00:00Z' } });
+        coverage: { indexed: 113 }, sync: fixtureSync });
       if (endpoint === 'selection') {
         const request = route.request().postDataJSON();
         const rows = messages.filter(m => request.groups.includes(m.groupId) && (!request.address || request.address === m.address) && (!request.unreadOnly || m.unread));
@@ -67,7 +86,8 @@ let previewIds = [], delaySelection = null, selectionStarted = null, detailFailu
       }
       if (endpoint.startsWith('groups/')) {
         const [, group, kind] = endpoint.split('/');
-        const rows = messages.filter(m => m.groupId === group);
+        const rows = paginationMode ? Array.from({ length: 25 }, (_, i) => ({ ...messages[0], groupId: group,
+          id: group + '-' + i, subject: `Email ${i + 1} from ${group}` })) : messages.filter(m => m.groupId === group);
         if (kind === 'addresses') return send({ revision: 1, addresses: [...new Set(rows.map(m => m.address))].map(address => ({
           address, messages: rows.filter(m => m.address === address).length,
           displayName: address === inmail ? 'Vashu Walia' : ''
@@ -92,6 +112,40 @@ let previewIds = [], delaySelection = null, selectionStarted = null, detailFailu
     const selectedCount = count => expect(page.locator('#selectionCount')).toHaveText(`${count} messages selected`);
     const expand = label => page.getByRole('button', { name: `Show sender addresses for ${label}`, exact: true }).click();
     await page.goto('https://tidymail.test/');
+    await expect(page.locator('#senders > tr')).toHaveCount(20);
+    await expect(page.locator('#senderPageSize')).toHaveValue('20');
+    await checkDropdowns();
+    assert.equal(await page.locator('#senderPageSize').evaluate(e => getComputedStyle(e).appearance), 'none');
+    assert.match(await page.locator('#senderPageSize').evaluate(e => getComputedStyle(e).backgroundImage), /svg/);
+    await expect(page.locator('#mailboxAddress')).toHaveText('(fixture@example.test)');
+    await expect(page.locator('#search')).toHaveAttribute('placeholder', 'Search…');
+    await expect(page.locator('.metrics')).toContainText('Total emails');
+    await expect(page.locator('#groupCount')).toHaveCount(0);
+    await expect(page.locator('#senderTable thead')).not.toContainText('Inbox');
+    await expect(page.locator('#syncLink')).toHaveAttribute('href', '/activity/sync');
+    await expect(page.locator('#importProgress')).toBeVisible();
+    await expect(page.locator('#importMeter')).toHaveAttribute('value', '53');
+    await shot('import-progress');
+    fixtureSync = { ...fixtureSync, gmail_scope_total: 40, import_status: 'FAILED' };
+    await page.reload(); await expect(page.locator('#syncStatus')).toContainText('automatic retry pending');
+    await expect(page.locator('#importProgressText')).toContainText('retry pending');
+    await expect(page.locator('#importMeter')).not.toHaveAttribute('value');
+    await shot('import-retry');
+    fixtureSync = { ...fixtureSync, import_status: 'QUEUED', gmail_scope_total: 100 };
+    await page.reload(); await expect(page.locator('#syncStatus')).toContainText('Import queued');
+    fixtureSync = { ...fixtureSync, initial_batch_completed_at: '2026-11-14T12:00:00Z', backfill_status: 'COMPLETE', import_status: 'COMPLETE' };
+    await page.reload(); await expect(page.locator('#syncStatus')).toContainText('Last refreshed');
+    await expect(page.locator('#importProgress')).toBeHidden();
+    await shot('pagination-dropdown-arrow');
+    await page.locator('#senderPageSize').selectOption('50');
+    await expect(page.locator('#senders > tr')).toHaveCount(50);
+    await page.locator('[data-focus-key=sender-paging-49]').click();
+    await expect(page.locator('#detailContent a.message-subject').first()).toHaveText('Email 1 from paging-49');
+    const pane = await page.locator('#detail').boundingBox();
+    assert(pane.y >= 0 && pane.y < 40, `Detail pane scrolled out of view: ${pane.y}`);
+    assert(pane.y + pane.height <= 1101, 'Detail pane extends below the viewport');
+    await shot('sender-row-50');
+    await page.locator('#senderPageSize').selectOption('10');
     await expect(page.locator('#senders > tr')).toHaveCount(10);
     const header=page.getByRole('checkbox',{name:'Select all senders on this page',exact:true});
     await header.check();await expect(page.locator('#groupingCount')).toHaveText('10 sender groups selected');
@@ -121,10 +175,33 @@ let previewIds = [], delaySelection = null, selectionStarted = null, detailFailu
     await expect(page.locator('#pageLabel')).toHaveText('1–10 of 53');
     paginationMode = false;
     await page.reload();
+    const subjectLink = page.locator('#detailContent a.message-subject').first();
+    await expect(subjectLink).toHaveAttribute('href', /mail.google.com/);
+    await expect(subjectLink).toHaveAttribute('target', '_blank');
+    await shot('gmail-subject-links');
+    const labels = page.locator('#detailContent .label-summary').first();
+    await expect(labels).toContainText('Why?'); await labels.click();
+    await expect(page.locator('#detailContent details.evidence').first()).toHaveAttribute('open', '');
+    assert.equal(await labels.evaluate(e => getComputedStyle(e).listStyleType), 'none');
+    assert.equal(await labels.evaluate(e => getComputedStyle(e, '::after').content), 'none');
+    assert(await page.locator('#detailContent').evaluate(e => e.scrollWidth <= e.clientWidth), 'Message content overflows horizontally');
+    fixtureProvider = 'microsoft'; await page.reload();
+    await expect(subjectLink).toHaveAttribute('href', /outlook.office.com/);
+    await shot('outlook-subject-links');
+    fixtureProvider = 'google'; await page.reload();
 
     // Real keyboard-operated overlays and filter changes must preserve existing scope rules.
     await page.locator('#filtersOpen').click();
     await expect(page.locator('#filtersDialog')).toBeVisible();
+    await checkDropdowns();
+    await page.locator('#labelFilter').evaluate(e => e.open = true);
+    await shot('filter-dropdown-arrows');
+    await page.locator('#labelMatch').selectOption('any');
+    await expect(page.locator('#labelMatch')).toHaveValue('any');
+    await page.locator('#labelMatch').selectOption('all');
+    await page.locator('#importance').selectOption('IMPORTANT');
+    await expect(page.locator('#importance')).toHaveValue('IMPORTANT');
+    await page.locator('#importance').selectOption('');
     await page.locator('#start').fill('2026-01-01');
     await page.locator('#start').dispatchEvent('change');
     await page.keyboard.press('Escape');
@@ -280,7 +357,8 @@ let previewIds = [], delaySelection = null, selectionStarted = null, detailFailu
     await page.locator('#inboxRule [data-close]').click();
     await page.getByRole('button',{name:'Discard saved selection',exact:true}).click();
     await expect(page.locator('#savedRuleSelection')).toBeHidden();
+    await checkDropdowns();
     assert.deepEqual(errors, []);
-    console.log('PASS: details failure/timeout and retry recovery, stable scroll position and checkbox focus in a 42-address group, address/message synchronization, additive selection, paging, collapse, group boundary, exact Trash preview, unread scope, filter reset, stale response rejection, and inline rule action/sender transfer with validation and selection preservation.');
+    console.log('PASS: 20-row default, account heading, simplified counts/search, Gmail/Outlook subject links, label explanations, sticky pane at row 50, import/error/retry/recovery display; details failure/timeout and retry recovery, stable scroll position and checkbox focus in a 42-address group, address/message synchronization, additive selection, paging, collapse, group boundary, exact Trash preview, unread scope, filter reset, stale response rejection, and inline rule action/sender transfer with validation and selection preservation.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

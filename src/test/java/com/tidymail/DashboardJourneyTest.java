@@ -76,6 +76,22 @@ class DashboardJourneyTest extends PostgresJourneyTest {
     }
 
     @Test
+    void dashboardReportsInitialImportFailureAndAccountScopedRecovery() throws Exception {
+        jdbc.update("INSERT INTO mailbox_sync_state(account_id,provider,gmail_scope_total) VALUES(?,'google',5000)", account);
+        jdbc.update("INSERT INTO sync_progress(account_id,job_type,lane,phase,status) VALUES(?,'MAILBOX_SYNC','BACKFILL','FAILED','FAILED')", account);
+        var failed = dashboard.page(account, filter("inbox", "")).sync();
+        assertThat(failed).containsEntry("import_status", "FAILED").containsEntry("latest_status", "FAILED")
+                .containsEntry("gmail_scope_total", 5000L).containsEntry("email", OWNER);
+        long other = userAccounts.createAccount("other-sync@example.test");
+        assertThat(dashboard.page(other, filter("inbox", "")).sync()).containsEntry("import_status", null);
+        jdbc.update("INSERT INTO sync_progress(account_id,job_type,lane,phase,status) VALUES(?,'MAILBOX_SYNC','BACKFILL','PROVIDER','RUNNING')", account);
+        assertThat(dashboard.page(account, filter("inbox", "")).sync()).containsEntry("import_status", "RUNNING");
+        String html = mockMvc.perform(get("/dashboard").with(authenticatedAs(OWNER)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(html).contains("(" + OWNER + ")", "href=\"/activity/sync\"");
+    }
+
+    @Test
     void gmailDetailsLinkToTheExactMessageInTheConnectedAccount() {
         message("18c123abc456def0", "sender@example.test", List.of("INBOX"), true, List.of(), true, NOW);
         jdbc.update("UPDATE message_metadata SET provider_thread_id='different-thread' WHERE account_id=?", account);

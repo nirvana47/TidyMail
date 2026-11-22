@@ -142,11 +142,11 @@ html {
     padding-left:16px;
     width:38px
 }
-#senderTable td:nth-child(n+3):nth-child(-n+5) {
+#senderTable td:nth-child(n+3):nth-child(-n+4) {
     font-variant-numeric:tabular-nums;
     text-align:right
 }
-#senderTable th:nth-child(n+3):nth-child(-n+5) {
+#senderTable th:nth-child(n+3):nth-child(-n+4) {
     text-align:right
 }
 #senderTable tr.focused>td {
@@ -370,7 +370,7 @@ th[aria-sort=descending] .column-sort {
 .label-summary {
     display:flex;
     flex-wrap:wrap;
-    gap:5px;
+    gap:4px;
     align-items:center;
     list-style:none
 }
@@ -384,10 +384,6 @@ th[aria-sort=descending] .column-sort {
     font-size:11px;
     background:#edf2fc;
     color:#315c9c
-}
-.label-summary:after {
-    content:'⌄';
-    margin-left:3px
 }
 .detail .paging {
     flex-wrap:wrap
@@ -591,6 +587,9 @@ th[aria-sort=descending] .column-sort {
     grid-template-columns:repeat(2,minmax(0,1fr));
     gap:6px 12px
 }
+#gmailLabelChoices {
+    display:contents
+}
 .label-choices label {
     font-size:12px;
     margin:0;
@@ -752,7 +751,7 @@ secondary evidence stays available on demand. */
 .detail {
     display:flex;
     flex-direction:column;
-    max-height:max(400px,calc(100dvh - 230px))
+    max-height:calc(100dvh - 24px - var(--dock-height,0px))
 }
 .detail-head,.detail>.evidence,.detail>.tabs {
     flex-shrink:0
@@ -837,17 +836,7 @@ secondary evidence stays available on demand. */
 @media(max-width:1200px) { #senderTable th, #senderTable td { padding:6px; } }
 @media(max-width:950px) { .detail { max-height:650px; } }
 
-/* Keep the native select interaction, with a consistent inset chevron. */
-.filter-controls select {
-    appearance:none;
-    -webkit-appearance:none;
-    padding-right:34px;
-    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23596579' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 10 5 5 5-5'/%3E%3C/svg%3E");
-    background-repeat:no-repeat;
-    background-position:right 10px center;
-    background-size:16px;
-    max-width:230px;
-}
+.filter-controls select { max-width:230px; }
 
 [data-destination-picker], #filingDestinationPicker { display:grid; gap:7px; }
 [data-destination-picker] > input, [data-destination-picker] > select,
@@ -856,3 +845,17 @@ secondary evidence stays available on demand. */
 [data-destination-picker] .destination-skip input, #filingDestinationPicker .destination-skip input { order:-1; width:17px; }
 [data-destination-picker] > button, #filingDestinationPicker > button { justify-self:start; }
 #filingDestination { width:min(560px,calc(100vw - 64px)); }
+
+.mailbox-heading { display:flex; align-items:center; flex-wrap:wrap; gap:4px 16px; min-width:0; }
+.mailbox-heading h1 { margin:0; }
+#mailboxAddress { font-size:14px; font-weight:400; color:var(--muted); overflow-wrap:anywhere; }
+.sync-link { font-size:13px; text-decoration:none; }
+.sync-link:hover { text-decoration:underline; }
+.import-progress { flex-basis:100%; display:flex; align-items:center; gap:10px; font-size:12px; color:var(--muted); }
+.import-progress progress { width:140px; height:8px; flex-shrink:0; }
+.message-subject { color:inherit; text-decoration:none; font-weight:600; overflow-wrap:anywhere; }
+a.message-subject:hover { color:var(--blue); text-decoration:underline; }
+.label-explanation { font-size:11px; color:var(--muted); text-decoration:underline; text-underline-offset:2px; }
+.label-summary:hover .label-explanation, details[open]>.label-summary .label-explanation { color:var(--blue); }
+
+@media(min-width:951px) { .detail { position:sticky; top:12px; } }

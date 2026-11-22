@@ -2,7 +2,7 @@
 (() => {
   const outlook = document.body.dataset.provider === 'microsoft';
   const $ = id => document.getElementById(id);
-  const state = { scope: 'inbox', suggestion: '', page: 0, pageSize: 10, messagePage: 0, address: null, tab: 'messages', data: null, focused: null, details: null, action: 'MARK_READ', preview: null, targetPage: 0, revision: 0 };
+  const state = { scope: 'inbox', suggestion: '', page: 0, pageSize: 20, messagePage: 0, address: null, tab: 'messages', data: null, focused: null, details: null, action: 'MARK_READ', preview: null, targetPage: 0, revision: 0 };
   const selected = new Map(), expanded = new Map(), senderSelection = new Map();
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
   let composition = null, selectionGeneration = 0, senderSelectionVersion = 0;
@@ -206,13 +206,7 @@
       const data = await api('page?' + query()); if (request !== listRequest || epoch !== filterEpoch) return;
       if (background && (document.querySelector('dialog[open]') || selectionBusy || previewLoading)) return;
       const sync = data.sync;
-      $('syncStatus').textContent = sync.oauth_status === 'REAUTH_REQUIRED' || sync.lifecycle === 'REAUTH_REQUIRED'
-        ? 'Reconnect required' : sync.error_code || sync.lifecycle === 'ERROR' ? 'Sync needs attention'
-        : !sync.initial_batch_completed_at ? 'Importing mail…' : sync.backfill_status === 'RUNNING'
-        ? 'Importing older mail…' : `Last refreshed ${refreshAge(sync.incremental_last_success_at || sync.initial_batch_completed_at)}`;
-      if (outlook && sync.backfill_status !== 'COMPLETE' && !sync.error_code && sync.oauth_status !== 'REAUTH_REQUIRED')
-        $('syncStatus').textContent = `Importing mail · ${fmt(data.coverage.indexed)} indexed`;
-      $('syncStatus').dataset.state = /required|attention/i.test($('syncStatus').textContent) ? 'attention' : /Importing/i.test($('syncStatus').textContent) ? 'pending' : 'ready';
+      renderSync(sync, data.coverage);
       if (background && !forceDetails && JSON.stringify(data) === JSON.stringify(state.data)) return;
       // Status text is not message evidence. Keep mailbox freshness timestamps and
       // all existing row/count/revision signals; these are not a complete row version.
@@ -233,7 +227,7 @@
       $('accountEmail').textContent = data.sync.email;
       $('accountEmail').title = data.sync.email;
       $('settingsAccountEmail').textContent = data.sync.email;
-      $('matching').textContent = fmt(data.summary.messages); $('unreadCount').textContent = fmt(data.summary.unread); $('groupCount').textContent = fmt(data.summary.groups);
+      $('matching').textContent = fmt(data.summary.messages); $('unreadCount').textContent = fmt(data.summary.unread);
       const c = data.coverage;
       $('sizeCoverage').textContent = outlook && c.outlook_unknown_sizes
         ? `Size unavailable for ${fmt(c.outlook_unknown_sizes)} received messages.` : '';
@@ -274,6 +268,28 @@
         }
         updateSelection();
       }
+    }
+  }
+  function renderSync(sync, coverage) {
+    $('mailboxAddress').textContent = sync.email ? `(${sync.email})` : '';
+    const reconnect = sync.oauth_status === 'REAUTH_REQUIRED' || sync.lifecycle === 'REAUTH_REQUIRED';
+    const importing = !sync.initial_batch_completed_at || sync.backfill_status !== 'COMPLETE';
+    const failed = sync.error_code || sync.lifecycle === 'ERROR' || sync.latest_status === 'FAILED'
+      || (importing && sync.import_status === 'FAILED');
+    const waiting = importing && sync.import_status === 'QUEUED';
+    const phase = sync.gmail_backfill_phase === 'ALL_MAIL' ? 'All Mail' : 'Inbox';
+    $('syncStatus').textContent = reconnect ? 'Reconnect required'
+      : failed ? 'Sync interrupted · automatic retry pending'
+      : importing ? `${waiting ? 'Import queued' : 'Importing ' + (outlook ? 'mail' : phase)} · ${fmt(coverage.indexed)} emails indexed`
+      : `Last refreshed ${refreshAge(sync.incremental_last_success_at || sync.initial_batch_completed_at)}`;
+    $('syncStatus').dataset.state = reconnect || failed ? 'attention' : importing ? 'pending' : 'ready';
+    $('importProgress').hidden = !importing;
+    if (importing) {
+      const indexed = Number(coverage.indexed), total = Number(sync.gmail_scope_total);
+      const estimated = !outlook && total > indexed;
+      $('importProgressText').textContent = `${fmt(indexed)}${estimated ? ' of ~' + fmt(total) : ''} emails indexed${estimated ? ' (estimated total)' : ' · counting total…'}${reconnect ? ' · reconnect to continue' : failed ? ' · interrupted; retry pending' : ''}`;
+      if (estimated) $('importMeter').value = Math.min(99.99, 100 * indexed / total);
+      else $('importMeter').removeAttribute('value');
     }
   }
   function refreshAge(raw) {
@@ -340,10 +356,10 @@
       cell.append(senderCheckbox);
       row.append(cell);
       const sender = node('td'), focus = node('button', undefined, 'sender-focus'), badge = node('span', g.label.slice(0, 1).toUpperCase(), 'brand'), text = node('span', undefined, 'sender-label');
-      text.append(node('strong', g.label), node('small', g.address || `${g.addresses} sender ${g.addresses === 1 ? 'address' : 'addresses'}`, 'muted')); focus.title = `${bytesText(g.knownBytes)} estimated${g.unknownSizes ? ' · '+fmt(g.unknownSizes)+' sizes unknown' : ''}`; if (g.pending) text.append(node('small', `${fmt(g.pending)} cleanup pending / unresolved`, 'pending')); focus.dataset.focusKey = 'sender-' + g.id; focus.append(badge, text); focus.onclick = () => focusGroup(g); sender.append(focus); row.append(sender, node('td', fmt(g.messages)), node('td', fmt(g.unread)), node('td', fmt(g.inbox)), node('td', dateText(g.latest)));
+      text.append(node('strong', g.label), node('small', g.address || `${g.addresses} sender ${g.addresses === 1 ? 'address' : 'addresses'}`, 'muted')); focus.title = `${bytesText(g.knownBytes)} estimated${g.unknownSizes ? ' · '+fmt(g.unknownSizes)+' sizes unknown' : ''}`; if (g.pending) text.append(node('small', `${fmt(g.pending)} cleanup pending / unresolved`, 'pending')); focus.dataset.focusKey = 'sender-' + g.id; focus.append(badge, text); focus.onclick = () => focusGroup(g); sender.append(focus); row.append(sender, node('td', fmt(g.messages)), node('td', fmt(g.unread)), node('td', dateText(g.latest)));
       const expandCell = node('td'); if (g.addresses > 1) { const expand = node('button', expanded.has(g.id) ? '⌃' : '⌄'); expand.setAttribute('aria-label', `Show sender addresses for ${g.label}`); expand.setAttribute('aria-expanded', String(expanded.has(g.id))); expand.onclick = () => expandGroup(g); expandCell.append(expand); } row.append(expandCell); body.append(row);
       if (expanded.has(g.id)) {
-        const detail = node('tr', undefined, 'address-row'), td = node('td'); td.colSpan = 7;
+        const detail = node('tr', undefined, 'address-row'), td = node('td'); td.colSpan = 6;
         for (const address of expanded.get(g.id)) { const a = node('div', undefined, 'inline-address'); a.append(addressCheckbox(g, address), addressLink(g,address)); td.append(a); } detail.append(td); body.append(detail);
       }
     });
@@ -477,7 +493,8 @@
         const row = node('div', undefined, 'message-row'), text = node('div', undefined, 'message-text');
         const recommendation = (detail.recommendations || []).find(r => r.message === m.id);
         const senderName = m.displayName?.trim();
-        text.append(node('span', m.subject || '(No subject)', 'message-subject'));
+        const subject = messageLink(m, m.subject || '(No subject)') || node('span', m.subject || '(No subject)');
+        subject.classList.add('message-subject'); text.append(subject);
         const meta = node('div', undefined, 'message-meta');
         meta.append(node('span', senderName ? `${senderName} · ${m.address}` : m.address), node('span', `${dateText(m.receivedAt)} · ${m.unread ? 'Unread' : 'Read'}`));
         text.append(meta);
@@ -728,6 +745,7 @@
     const summary = node('summary', undefined, 'label-summary');
     summary.setAttribute('aria-label', 'Inspect labels: ' + [...labels].join(', '));
     for (const label of labels) summary.append(node('span', label, 'message-tag'));
+    summary.append(node('span', 'Why?', 'label-explanation'));
     detail.append(summary);
     for (const label of labels)
       detail.append(node('small', label + ' — ' + (reasons.get(label) || 'From existing saved classification or message evidence.'), 'muted'));
@@ -844,6 +862,17 @@
     };
     box.append(check); text.append(box);
   }
+  function messageLink(message, label) {
+    const raw = outlook ? message.outlookWebLink : message.gmailWebLink;
+    if (!raw) return null;
+    let url; try { url = new URL(raw); } catch (_) { return null; }
+    const hosts = outlook ? ['outlook.live.com', 'outlook.office.com', 'outlook.office365.com'] : ['mail.google.com'];
+    if (url.protocol !== 'https:' || !hosts.includes(url.hostname) || url.username || url.password) return null;
+    const link = node('a', label); link.href = url.href; link.target = '_blank'; link.rel = 'noopener noreferrer';
+    link.title = outlook ? 'Open in Outlook' : 'Open in Gmail';
+    link.setAttribute('aria-label', `${label} · ${link.title}`); link.dataset.focusKey = 'message-open-' + message.id;
+    return link;
+  }
   function appendEvidence(text,m) {
     if (state.suggestion === 'large' && m.sent) text.append(node('small', 'Sent', 'evidence'));
     if (m.sizeEstimate > 1000000) text.append(node('small', 'Large email', 'evidence'));
@@ -854,16 +883,8 @@
     if (outlook) {
       if (m.outlookFolder) text.append(node('small', 'Folder · ' + m.outlookFolder, 'muted'));
       if (m.outlookCategories?.length) text.append(node('small', 'Outlook categories · ' + m.outlookCategories.join(', '), 'muted'));
-      if (m.outlookWebLink) {
-        const link = node('a', 'Open in Outlook'); link.href = m.outlookWebLink;
-        link.target = '_blank'; link.rel = 'noopener noreferrer'; text.append(link);
-      }
       appendCalendarResponse(text, m);
       return;
-    }
-    if (m.gmailWebLink) {
-      const link = node('a', 'Open in Gmail'); link.href = m.gmailWebLink;
-      link.target = '_blank'; link.rel = 'noopener noreferrer'; text.append(link);
     }
     appendCalendarResponse(text, m);
     const details=node('details'), summary=node('summary','Email details'), output=node('div'), check=node('button','Check details');

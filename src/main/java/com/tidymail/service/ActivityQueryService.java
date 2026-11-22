@@ -125,19 +125,25 @@ public class ActivityQueryService {
                     null, true);
         }
 
-        if (state != null && "ERROR".equals(state.lifecycle())) {
+        boolean failedWork = progress.stream().findFirst()
+                .map(row -> "FAILED".equals(row.status())).orElse(false);
+        if (state == null || !"COMPLETE".equals(state.backfillStatus())) {
+            failedWork |= progress.stream().filter(row -> "BACKFILL".equals(row.lane()))
+                    .findFirst().map(row -> "FAILED".equals(row.status())).orElse(false);
+        }
+        if (failedWork || state != null && "ERROR".equals(state.lifecycle())) {
             return model(
                     "error", "Sync paused after a recoverable error",
                     "Mailbox sync paused",
                     "Sync paused after a recoverable error. Your indexed data is still available. "
                             + "Retry now or wait for the next automatic attempt.",
-                    indexed, null,
-                    initialBatch(state), freshness(state.incrementalLastSuccessAt(), now),
-                    state.incrementalLastSuccessAt(), rescan(state, now),
+                    indexed, listingProgress(state, indexed),
+                    initialBatch(state), freshness(state == null ? null : state.incrementalLastSuccessAt(), now),
+                    state == null ? null : state.incrementalLastSuccessAt(), rescan(state, now),
                     lanes(state, progress, now), events(progress, now),
                     new Action("Retry sync", "/api/metadata-sync", true,
                             "Retry Gmail sync for " + account.getEmail()),
-                    hasAutomaticRetry(progress) ? 30 : null, true);
+                    30, true);
         }
 
         ListingProgress listing = listingProgress(state, indexed);
@@ -350,13 +356,6 @@ public class ActivityQueryService {
                 .filter(row -> lane.equals(row.lane()))
                 .findFirst()
                 .map(row -> "QUEUED".equals(row.status()) || "RUNNING".equals(row.status()))
-                .orElse(false);
-    }
-
-    /** Returns true if any progress row is eligible for automatic retry. */
-    private static boolean hasAutomaticRetry(List<ProgressRow> progress) {
-        return progress.stream().findFirst()
-                .map(row -> "QUEUED".equals(row.status()) && row.retryCode() != null)
                 .orElse(false);
     }
 

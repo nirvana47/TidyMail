@@ -134,6 +134,22 @@ class MailboxActivityJourneyTest extends PostgresJourneyTest {
     }
 
     @Test
+    void failedFirstImportShowsRetryAndKeepsPollingUntilRecovery() throws Exception {
+        String email = "failed-import@example.test";
+        long account = userAccounts.createAccount(email);
+        jdbc.update("INSERT INTO mailbox_sync_state(account_id,provider) VALUES(?,'google')", account);
+        jdbc.update("INSERT INTO sync_progress(account_id,job_type,lane,phase,status) VALUES(?,'MAILBOX_SYNC','BACKFILL','FAILED','FAILED')", account);
+        assertThat(activityStatus(email)).contains("Sync paused after a recoverable error", "Retry sync",
+                "every 30s", "<progress max=\"100\"", "value=\"/activity/sync\"");
+        mockMvc.perform(post("/api/metadata-sync").param("account", Long.toString(account))
+                .param("returnTo", "/activity/sync").with(authenticatedAs(email)).with(csrf()))
+                .andExpect(status().is3xxRedirection()).andExpect(redirectedUrl("/activity/sync"));
+        jdbc.update("INSERT INTO sync_progress(account_id,job_type,lane,phase,status) VALUES(?,'MAILBOX_SYNC','BACKFILL','PROVIDER','RUNNING')", account);
+        assertThat(activityStatus(email)).contains("Preparing your cleanup workspace", "every 5s")
+                .doesNotContain("Sync paused after a recoverable error");
+    }
+
+    @Test
     void retrySyncRequiresCsrfAndReturnsToActivity() throws Exception {
         String email = "retry-activity@example.test";
         long accountId = userAccounts.createAccount(email);

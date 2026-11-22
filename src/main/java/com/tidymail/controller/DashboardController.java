@@ -72,6 +72,7 @@ public class DashboardController {
         var active = accountRepository.findById(account(auth)).orElseThrow();
         model.addAttribute("mailboxAccounts", accountRepository.findAllByOwnerKeyOrderByIdAsc(active.getOwnerKey()));
         model.addAttribute("activeAccount", active.getId());
+        model.addAttribute("mailboxEmail", active.getEmail());
         model.addAttribute("outlook", "microsoft".equals(active.getProvider()));
         model.addAttribute("outlookAvailable", availability.isMicrosoftConfigured());
         return "dashboard";

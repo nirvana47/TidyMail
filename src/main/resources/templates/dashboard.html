@@ -18,15 +18,18 @@
     <aside th:replace="~{fragments/app-sidebar :: sidebar('mailbox', '')}"></aside>
     <main class="app">
         <header class="app-header row spread">
-            <div class="row"><h1>Mailbox</h1><span id="syncStatus" class="sync-line" role="status">Checking sync…</span></div>
+            <div class="mailbox-heading"><h1>Mailbox <span id="mailboxAddress" th:text="|(${mailboxEmail})|"></span></h1>
+                <a id="syncLink" class="sync-link" href="/activity/sync" aria-label="View mailbox sync details"><span id="syncStatus" class="sync-line" role="status">Checking sync…</span><span aria-hidden="true"> ↗</span></a>
+                <div id="importProgress" class="import-progress" hidden><label id="importProgressText" for="importMeter"></label><progress id="importMeter" max="100" aria-labelledby="importProgressText"></progress></div>
+            </div>
             <div class="row"><button id="settingsOpen" class="quiet">Account &amp; settings</button></div>
         </header>
         <section class="filters" aria-label="Mailbox filters">
             <div class="row">
                 <div class="scope" role="group" aria-label="Mail scope"><button class="active" data-scope="inbox"
                         aria-pressed="true">Inbox</button><button data-scope="all" aria-pressed="false">All mail</button></div>
-                <label class="search"><input id="search" type="search" aria-label="Search senders or messages"
-                        placeholder="Search senders or messages…" maxlength="200"></label>
+                <label class="search"><input id="search" type="search" aria-label="Search"
+                        placeholder="Search…" maxlength="200"></label>
             </div>
             <div class="filter-controls row">
                 <button id="filtersOpen" aria-haspopup="dialog">Filters <span id="filterCount" class="count-badge" hidden></span></button>
@@ -44,9 +47,8 @@
             </div>
             <div class="mailbox-overview">
             <div class="metrics">
-                <div class="metric"><b id="matching">—</b><span class="muted">Matching messages</span></div>
+                <div class="metric"><b id="matching">—</b><span class="muted">Total emails</span></div>
                 <div class="metric"><b id="unreadCount">—</b><span class="muted">Unread messages</span></div>
-                <div class="metric"><b id="groupCount">—</b><span class="muted">Sender groups</span></div>
             </div>
             <details class="coverage"><summary>Index coverage</summary><p id="coverage"></p></details>
         <details id="composition" class="surface composition">
@@ -94,7 +96,7 @@
                                 <th>Sender</th>
                                 <th aria-sort="descending"><button id="sortMessages" class="column-sort" aria-label="Sort by message count, highest first">Total ↓</button></th>
                                 <th aria-sort="none"><button id="sortUnread" class="column-sort" aria-label="Sort by unread count, highest first">Unread ↕</button></th>
-                                <th>Inbox</th><th>Latest message</th>
+                                <th>Latest message</th>
                                 <th></th>
                             </tr>
                         </thead>
@@ -102,7 +104,7 @@
                     </table>
                 </div>
                 <div id="empty" class="empty" role="status">Loading indexed mail…</div>
-                <div class="paging muted"><span id="sortSummary">Sorted by message count</span><label>Rows <select id="senderPageSize" aria-label="Senders per page"><option value="10" selected>10</option><option value="20">20</option><option value="50">50</option></select></label><button id="prevPage"
+                <div class="paging muted"><span id="sortSummary">Sorted by message count</span><label>Rows <select id="senderPageSize" aria-label="Senders per page"><option value="10">10</option><option value="20" selected>20</option><option value="50">50</option></select></label><button id="prevPage"
                         aria-label="Previous sender page" disabled>‹</button><span id="pageLabel">0 of 0</span><button
                         id="nextPage" aria-label="Next sender page" disabled>›</button></div>
             </div>
@@ -137,7 +139,6 @@
     </main>
     <dialog id="filtersDialog" aria-labelledby="filtersTitle">
         <div class="dialog-heading row spread"><h2 id="filtersTitle">Filter emails</h2><button data-close="filtersDialog" aria-label="Close filters">×</button></div>
-            <section class="filter-fields"><h3>Email size</h3><label><input type="checkbox" id="largeEmails"> Large emails (&gt;1 MB)</label><p class="muted" th:text="${outlook ? 'Includes archived received mail.' : 'Includes archived and Sent mail.'}"></p></section>
             <section class="filter-fields"><h3>Dates and recommendations</h3>
               <div class="row">
                 <label>From <input type="date" id="start"></label><label>Through <input type="date" id="end"></label>
@@ -153,6 +154,7 @@
                 </select></label>
               </div>
             </section>
+            <section class="filter-fields"><h3>Email size</h3><label><input type="checkbox" id="largeEmails"> Large emails (&gt;1 MB)</label><p class="muted" th:text="${outlook ? 'Includes archived received mail.' : 'Includes archived and Sent mail.'}"></p></section>
             <details class="evidence" id="labelFilter" open>
                 <summary id="labelSummary">Labels</summary>
                 <div class="row">
@@ -190,8 +192,8 @@
                     <label hidden><input type="checkbox" name="labelFilter" value="SENT">Sent</label>
                     <label><input type="checkbox" name="labelFilter" value="OTHER">Other</label>
                     <label><input type="checkbox" name="labelFilter" value="UNCLASSIFIED">Unclassified</label>
+                    <div id="gmailLabelChoices"></div>
                 </div>
-                <div class="label-choices" id="gmailLabelChoices"></div>
                 <label id="shoppingExclusions" hidden><input type="checkbox" id="excludeProtectedShopping">Exclude Receipt and Security</label>
                 <p class="muted" id="localLabelProgress">Messages with labels still pending may not appear in filtered results. Calendar labels are checked in the background and include confirmed status from the last hour; unchecked or uncertain events remain unlabelled. Gmail checks your primary calendar.</p>
             </details>
