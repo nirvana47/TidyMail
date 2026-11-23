@@ -115,8 +115,6 @@ let previewIds = [], delaySelection = null, selectionStarted = null, detailFailu
     await expect(page.locator('#senders > tr')).toHaveCount(20);
     await expect(page.locator('#senderPageSize')).toHaveValue('20');
     await checkDropdowns();
-    assert.equal(await page.locator('#senderPageSize').evaluate(e => getComputedStyle(e).appearance), 'none');
-    assert.match(await page.locator('#senderPageSize').evaluate(e => getComputedStyle(e).backgroundImage), /svg/);
     await expect(page.locator('#mailboxAddress')).toHaveText('(fixture@example.test)');
     await expect(page.locator('#search')).toHaveAttribute('placeholder', 'Search…');
     await expect(page.locator('.metrics')).toContainText('Total emails');

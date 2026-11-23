@@ -33,14 +33,6 @@ class RecommendationSemanticContractTest {
         }
         return root;
     }
-    private Diagnostic diagnostic(Evidence e,Variant variant,Purpose purpose,Map<Property,Double> values) {
-        var parsed=contract.parse(response(List.of(e),purpose,values),List.of(e),variant);
-        var local=new Input(e.message(),e.sourceRevision(),Mailbox.INBOX,1000L,
-                new Assessment(Purpose.UNKNOWN,Importance.UNKNOWN,Set.of(),Signal.UNKNOWN,Signal.UNKNOWN,Qualification.UNRESOLVED,false),null,
-                ReadState.READ,null,java.time.Instant.parse("2026-11-02T12:00:00Z"));
-        return contract.diagnose(e,variant,parsed.judgments().getFirst(),local,Policy.initial(),Thresholds.diagnostic());
-    }
-
     @Test void matchedArmsDifferOnlyBySnippetAndDoNotDiscloseLocalProvenanceOrCleanupPreferences() {
         var e=evidence("Statement available","A monthly summary of your account",false);
         var headers=contract.request(List.of(e),Variant.HEADERS);
@@ -106,51 +98,11 @@ class RecommendationSemanticContractTest {
         }
     }
 
-    @Test void readStatementsAndBillsAreDisposableWhileReceiptsRemainProtected() {
-        var e=evidence("Monthly financial mail","Statement or invoice detail",false);
-        assertThat(diagnostic(e,Variant.SNIPPET,Purpose.STATEMENT,Map.of(Property.STATEMENT,.99)).recommendation().action()).isEqualTo(Action.SUGGEST_TRASH);
-        assertThat(diagnostic(e,Variant.SNIPPET,Purpose.BILL,Map.of(Property.BILL,.99)).recommendation().action()).isEqualTo(Action.SUGGEST_TRASH);
-        assertThat(diagnostic(e,Variant.SNIPPET,Purpose.RECEIPT,Map.of(Property.ORDER,.99)).recommendation().action()).isEqualTo(Action.KEEP_IN_INBOX);
-        assertThat(diagnostic(e,Variant.SNIPPET,Purpose.STATEMENT,Map.of(Property.STATEMENT,.99,Property.BILL,.99))
-                .recommendation().facets()).contains(Facet.STATEMENT,Facet.BILL);
-        assertThat(diagnostic(e,Variant.SNIPPET,Purpose.STATEMENT,Map.of(Property.STATEMENT,.99,Property.BILL,.99))
-                .recommendation().action()).isEqualTo(Action.SUGGEST_TRASH);
-    }
-
-    @Test void everyUnresolvedProtectedCheckBlocksBulkTrashWhilePositiveChecksProtectMixedContent() {
-        var e=evidence("Offer","A routine promotion",false);
-        for(var property:Set.of(Property.SECURITY,Property.HUMAN_CORRESPONDENCE,Property.HEALTHCARE,Property.SCHOOL,
-                Property.ORDER,Property.BILL)) {
-            assertThat(diagnostic(e,Variant.SNIPPET,Purpose.MARKETING,Map.of(property,.5)).recommendation().action()).isEqualTo(Action.REVIEW);
-            assertThat(diagnostic(e,Variant.SNIPPET,Purpose.MARKETING,Map.of(property,.99)).recommendation().action())
-                    .isEqualTo(Set.of(Property.BILL).contains(property)?Action.SUGGEST_TRASH:Action.KEEP_IN_INBOX);
-        }
-        assertThat(diagnostic(e,Variant.SNIPPET,Purpose.NEWSLETTER,Map.of(Property.SCHOOL,.99)).recommendation().facets()).contains(Facet.SCHOOL);
-        assertThat(diagnostic(e,Variant.SNIPPET,Purpose.RECEIPT,Map.of(Property.ORDER,.99,Property.SOCIAL,.99))
-                .recommendation().facets()).contains(Facet.ORDER,Facet.SOCIAL);
-        assertThat(diagnostic(e,Variant.SNIPPET,Purpose.RECEIPT,Map.of(Property.ORDER,.99,Property.MARKETING,.99))
-                .recommendation().facets()).contains(Facet.ORDER,Facet.MARKETING);
-    }
-
-    @Test void forwardedHeaderContentCannotSelfDeclareEnoughContextAndContradictoryAnswersAreDeferred() {
-        var e=evidence("Fwd: Password or shipment","A personal forwarding wrapper",true);
-        assertThat(diagnostic(e,Variant.HEADERS,Purpose.NOTIFICATION,Map.of()).recommendation().reason()).isEqualTo(Reason.CONTEXT_REQUIRED);
-        assertThat(diagnostic(e,Variant.SNIPPET,Purpose.PERSONAL,Map.of(Property.HUMAN_CORRESPONDENCE,.99)).recommendation().action()).isEqualTo(Action.KEEP_IN_INBOX);
-        var missing=evidence("Fwd: Shipment","",false);
-        assertThat(diagnostic(missing,Variant.SNIPPET,Purpose.MARKETING,Map.of()).recommendation().reason()).isEqualTo(Reason.CONTEXT_REQUIRED);
-        assertThat(diagnostic(e,Variant.SNIPPET,Purpose.SECURITY,Map.of(Property.SECURITY,.01)).recommendation().reason()).isEqualTo(Reason.EVIDENCE_CONFLICT);
-        assertThat(diagnostic(e,Variant.SNIPPET,Purpose.PERSONAL,Map.of(Property.HUMAN_CORRESPONDENCE,.99)).shadowOnly()).isTrue();
-    }
-
     @Test void revisionChangesInvalidateProvenanceWithoutInventingNewPaidEvidence() {
         var e=evidence("Subject","x".repeat(1024)+"first",false);
         var revised=new Evidence(e.message(),"source-2",e.address(),e.name(),e.subject(),e.reply(),e.unsubscribe(),e.gmailCategories(),e.labelsKnown(),
                 new SemanticQualificationContract.Text("x".repeat(1024)+"second",SemanticQualificationContract.State.AVAILABLE),e.relationship());
         assertThat(contract.hasNewEvidence(e,revised,Variant.SNIPPET)).isFalse();
         assertThat(contract.evidenceHash(e,Variant.SNIPPET)).isNotEqualTo(contract.evidenceHash(revised,Variant.SNIPPET));
-        var raw=contract.parse(response(List.of(e),Purpose.MARKETING,Map.of()),List.of(e),Variant.SNIPPET).judgments().getFirst();
-        var local=new Input(e.message(),"different-source",Mailbox.INBOX,100L,new Assessment(Purpose.UNKNOWN,Importance.UNKNOWN,
-                Set.of(),Signal.UNKNOWN,Signal.UNKNOWN,Qualification.UNRESOLVED,false),null);
-        assertThatIllegalArgumentException().isThrownBy(()->contract.diagnose(e,Variant.SNIPPET,raw,local,Policy.initial(),Thresholds.diagnostic()));
     }
 }

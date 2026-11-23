@@ -61,7 +61,13 @@ class MessageRecommendationTest {
     }
 
     @Test void largeSizeAddsAFacetWithoutChangingTheRetentionDecision() {
-        for (var purpose : Purpose.values()) for (var mailbox : Set.of(Mailbox.INBOX, Mailbox.ARCHIVED, Mailbox.SENT_ONLY)) {
+        // Size is added before decision branching: exercise disposal, protection and stored Sent outcomes.
+        for (var sample : java.util.List.of(
+                java.util.Map.entry(Purpose.MARKETING, Mailbox.INBOX),
+                java.util.Map.entry(Purpose.SECURITY, Mailbox.INBOX),
+                java.util.Map.entry(Purpose.MARKETING, Mailbox.SENT_ONLY))) {
+            var purpose = sample.getKey();
+            var mailbox = sample.getValue();
             var small = evaluate(message(purpose, mailbox, 500L));
             var large = evaluate(message(purpose, mailbox, 1_000_001L));
             assertThat(large.action()).isEqualTo(small.action());

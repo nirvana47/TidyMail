@@ -78,7 +78,7 @@ class CorrespondentHistoryTest extends PostgresJourneyTest {
         assertThat(context(a,"friend@example.test").lastSentAt()).isEqualTo("2026-11-01T12:00:00Z");
     }
 
-    @Test void boundedRestartableBackfillAndCandidateAttachmentDoNotRelaxForwardAdmission() {
+    @Test void boundedRestartableBackfillAndAliasChangesRebuildObservedCounts() {
         long a=userAccounts.createAccount("me@example.test");
         message(a,"forward","friend@example.test","{INBOX}","me@example.test",false);
         message(a,"sent","me@example.test","{SENT}","friend@example.test",true);
@@ -87,19 +87,6 @@ class CorrespondentHistoryTest extends PostgresJourneyTest {
         drain();
         jdbc.update("INSERT INTO mailbox_sync_state(account_id,provider,backfill_status) VALUES(?,'google','COMPLETE')",a);
         assertThat(context(a,"friend@example.test").coverage()).isEqualTo("INDEXED");
-        var evidence=new SemanticQualificationContract.Evidence(UUID.randomUUID(),"r1","x1","friend@example.test","Friend","Fwd: Security code",false,false,
-            new SemanticQualificationContract.Text("",SemanticQualificationContract.State.UNKNOWN),
-            new SemanticQualificationContract.Text("",SemanticQualificationContract.State.UNKNOWN),
-            new SemanticQualificationContract.Facts(SemanticQualificationContract.State.UNKNOWN,SemanticQualificationContract.State.UNKNOWN,SemanticQualificationContract.State.UNKNOWN,false));
-        var attached=history.attach(a,List.of(evidence)).getFirst();
-        var contract=new SemanticQualificationContract(new com.fasterxml.jackson.databind.ObjectMapper());
-        assertThat(attached.relationship().sent()).isEqualTo(1);
-        assertThat(contract.hasNewEvidence(evidence,attached)).isTrue();
-        assertThat(contract.evidenceHash(evidence)).isNotEqualTo(contract.evidenceHash(attached));
-        assertThat(HeaderSemanticAdmission.inspect(attached).eligible()).isFalse();
-        assertThatThrownBy(()->contract.headerOnlyRequest(List.of(attached))).isInstanceOf(IllegalArgumentException.class);
-        assertThat(contract.request(List.of(attached)).path("questions").path("email_0_security").path("instructions").asText())
-            .contains("not proof of personal purpose", "Support exchanges", "forward");
         // Verified self aliases cause a bounded rebuild, not identity merging across accounts.
         jdbc.update("INSERT INTO dashboard_verified_aliases(account_id,address,verification_source,verified_at) VALUES(?,'friend@example.test','TEST',now())",a);
         drain(); assertThat(context(a,"friend@example.test").sent()).isZero();

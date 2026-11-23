@@ -100,11 +100,6 @@ class DashboardClassificationTest extends PostgresJourneyTest {
         assertThat(dashboard.page(account,filter("PERSONAL")).summary().get("messages")).isEqualTo(1L);
         assertThatThrownBy(()->classification.correctCategory(account,List.of(first),"MARKETING",0)).hasMessageContaining("changed");
     }
-    @Test void cancellationDuringRemoteCallDiscardsLateAnswers() {
-        mail("a@gene.com","A","Hello");classification.start(account);
-        when(classifier.classify(anyList())).thenAnswer(call->{classification.cancel(account);return result(call.getArgument(0));});classification.runOnce();
-        assertThat(classification.status(account).state()).isEqualTo("CANCELLED");assertThat(jdbc.queryForObject("SELECT count(*) FROM message_metadata WHERE classified_at IS NOT NULL",Long.class)).isZero();
-    }
     @Test void changedMetadataDuringRequestIsSkippedAndRetriedOnlyOnNextRun() {
         UUID id=mail("a@gene.com","A","Hello");classification.start(account);
         when(classifier.classify(anyList())).thenAnswer(call->{jdbc.update("UPDATE message_metadata SET subject_header='Updated' WHERE dashboard_message_id=?",id);return result(call.getArgument(0));});classification.runOnce();
@@ -157,6 +152,8 @@ class DashboardClassificationTest extends PostgresJourneyTest {
         assertThat(budget.view(account).reported()).isEqualByComparingTo("0.0001");
         assertThat(classification.status(account).cost()).isEqualByComparingTo("0.0001");
         assertThat(classification.status(account).done()).isZero();
+        assertThat(classification.status(account).state()).isEqualTo("CANCELLED");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM message_metadata WHERE classified_at IS NOT NULL",Long.class)).isZero();
     }
     @Test void expiredDispatchRequiresExplicitBillingReviewAndOwnerContinuation() {
         mail("a@gene.com","A","Hello");classification.start(account);

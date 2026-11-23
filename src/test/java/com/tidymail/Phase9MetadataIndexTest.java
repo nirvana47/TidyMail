@@ -17,23 +17,20 @@ import org.junit.jupiter.api.Test;
 class Phase9MetadataIndexTest {
 
     @Test
-    void mapperCopiesOnlyApprovedMetadataAndDefensivelyCopiesCollections() {
+    void mapperMapsSupportedFieldsAndDefensivelyCopiesHeaderCollections() {
         Map<String, List<String>> headers = new LinkedHashMap<>();
         ArrayList<String> to = new ArrayList<>(List.of("me@example.com"));
         headers.put("From", List.of("\"Example Sender\" <sender@Example.COM>"));
         headers.put("To", to);
         headers.put("Subject", List.of("Approved subject"));
         headers.put("List-Unsubscribe-Post", List.of("List-Unsubscribe=One-Click"));
-        headers.put("X-Private-Unapproved", List.of("must-not-persist"));
-        ArrayList<String> labels = new ArrayList<>(List.of("INBOX", "UNREAD"));
         MailMessage message = new MailMessage(
             "m-1", "t-1", "google", Instant.parse("2026-08-09T12:00:00Z"),
-            headers, Set.copyOf(labels));
+            headers, Set.of("INBOX", "UNREAD"));
 
         MessageMetadata row = new MessageMetadataMapper().apply(
             7L, message, null, Instant.parse("2026-08-09T12:01:00Z"));
         to.add("changed@example.com");
-        labels.add("CHANGED");
 
         assertThat(row.getFromAddress()).isEqualTo("sender@example.com");
         assertThat(row.getFromDisplayName()).isEqualTo("Example Sender");

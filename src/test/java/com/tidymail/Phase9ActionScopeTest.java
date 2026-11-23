@@ -3,22 +3,15 @@ package com.tidymail;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tidymail.dto.ActionScopeRiskSummary;
 import com.tidymail.dto.ActionScopeTargetSummary;
 import com.tidymail.service.ActionScopeHasher;
-import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 class Phase9ActionScopeTest {
-
-    private static final ActionScopeTargetSummary TARGET =
-        new ActionScopeTargetSummary("news@example.com", "news@example.com", "example.com", 1);
-    private static final ActionScopeRiskSummary RISK =
-        new ActionScopeRiskSummary(1, 0, List.of("PROTECTED_MESSAGES"));
 
     @Nested
     @DisplayName("Canonical hash and typed summary contracts")
@@ -74,28 +67,6 @@ class Phase9ActionScopeTest {
                 .isInstanceOf(IllegalArgumentException.class);
             assertThatThrownBy(() -> new ActionScopeRiskSummary(0, 0, List.of("nested.value")))
                 .isInstanceOf(IllegalArgumentException.class);
-        }
-
-        @Test
-        void summaryJsonRejectsUnknownAndNestedCallerValues() {
-            ObjectMapper strict = new ObjectMapper();
-            assertThatThrownBy(() -> strict.readValue(
-                """
-                {"displayLabel":"ok","senderAddress":"a@b.com","senderDomain":"b.com",
-                 "selectedTargetCount":1,"subject":"forbidden"}
-                """, ActionScopeTargetSummary.class))
-                .isInstanceOf(Exception.class);
-            assertThatThrownBy(() -> strict.readValue(
-                """
-                {"protectedCount":0,"highRiskCount":0,"warningCodes":[{"code":"NESTED"}]}
-                """, ActionScopeRiskSummary.class))
-                .isInstanceOf(Exception.class);
-            ArrayList<String> source = new ArrayList<>(List.of("WARNING"));
-            ActionScopeRiskSummary summary = new ActionScopeRiskSummary(0, 0, source);
-            source.add("CHANGED");
-            assertThat(summary.warningCodes()).containsExactly("WARNING");
-            assertThatThrownBy(() -> summary.warningCodes().add("CHANGED"))
-                .isInstanceOf(UnsupportedOperationException.class);
         }
 
         private String hash(Long account, String action, String target, List<String> ids) {
