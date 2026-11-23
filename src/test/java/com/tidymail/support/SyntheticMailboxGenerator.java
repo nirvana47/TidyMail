@@ -51,10 +51,6 @@ public final class SyntheticMailboxGenerator {
         this.accounts = accounts;
     }
 
-    public SeedResult seed() {
-        return seed(DEFAULT_SEED, DEFAULT_ROW_COUNT);
-    }
-
     public SeedResult seed(int rowCount) {
         return seed(DEFAULT_SEED, rowCount);
     }

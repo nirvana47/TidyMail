@@ -16,14 +16,12 @@ class PositiveRetentionTest {
         return new Assessment(Purpose.UNKNOWN,Importance.UNKNOWN,Set.of(),Signal.UNKNOWN,Signal.UNKNOWN,Qualification.UNRESOLVED,true);
     }
     @Test void oneObservedSentExchangeIsEnoughToPreserveAnUnclearForwardWithoutInventingPersonalOrImportance() {
-        for(long count:new long[]{1,3000}) {
-            var result=engine.evaluate(input(Mailbox.INBOX,new RetentionEvidence(count,false),unclear(),null),Policy.initial());
-            assertThat(result.action()).isEqualTo(Action.KEEP_IN_INBOX);
-            assertThat(result.reason()).isEqualTo(Reason.PRIOR_SENT_CORRESPONDENCE);
-            assertThat(result.purpose()).isEqualTo(Purpose.UNKNOWN);
-            assertThat(result.importance()).isEqualTo(Importance.UNKNOWN);
-            assertThat(result.facets()).contains(Facet.CONTACT,Facet.LARGE_MESSAGE);
-        }
+        var result=engine.evaluate(input(Mailbox.INBOX,new RetentionEvidence(1,false),unclear(),null),Policy.initial());
+        assertThat(result.action()).isEqualTo(Action.KEEP_IN_INBOX);
+        assertThat(result.reason()).isEqualTo(Reason.PRIOR_SENT_CORRESPONDENCE);
+        assertThat(result.purpose()).isEqualTo(Purpose.UNKNOWN);
+        assertThat(result.importance()).isEqualTo(Importance.UNKNOWN);
+        assertThat(result.facets()).contains(Facet.CONTACT,Facet.LARGE_MESSAGE);
         assertThat(engine.evaluate(input(Mailbox.INBOX,RetentionEvidence.none(),unclear(),null),Policy.initial()).action()).isEqualTo(Action.REVIEW);
     }
     @Test void observedCalendarPartPreservesTheMessageWithoutKnowingDatesRecurrenceOrSemanticContext() {

@@ -21,6 +21,7 @@ class JevClassifierTest {
     }
     void answer(ObjectNode answers,String id,List<String> options,String choice,double p){var node=answers.putObject(id);node.put("type","choice").put("choice",choice).put("confidence",p);var probs=node.putObject("probabilities");for(String option:options)probs.put(option,option.equals(choice)?p:(1-p)/(options.size()-1));}
     @Test void requestPinsPrivacyRouteAndSendsOnlyBoundedMetadata() throws Exception {
+        var submitted = evidence();
         var builder=RestClient.builder();var server=MockRestServiceServer.bindTo(builder).build();var classifier=new JevClassifier("test-secret",json,builder);
         server.expect(requestTo("https://openrouter.ai/api/alpha/decisions")).andExpect(header("Authorization","Bearer test-secret"))
             .andExpect(header("X-OpenRouter-Cache","false")).andExpect(request->{
@@ -28,12 +29,12 @@ class JevClassifierTest {
                 assertThat(payload.path("provider").path("zdr").asBoolean()).isTrue();assertThat(payload.path("provider").path("allow_fallbacks").asBoolean()).isFalse();
                 assertThat(payload.path("provider").path("data_collection").asText()).isEqualTo("deny");
                 assertThat(payload.path("provider").path("only").get(0).asText()).isEqualTo("typesafe");
-                String body=payload.toString();assertThat(body).doesNotContain("test-secret","local-hash",evidence().id().toString(),"body_html","access_token");
+                String body=payload.toString();assertThat(body).doesNotContain("test-secret","local-hash",submitted.id().toString(),"body_html","access_token");
                 assertThat(payload.path("state").path("email_0").path("sender_name").asText()).isEqualTo("Shivani Tewari");
                 assertThat(payload.path("questions").size()).isEqualTo(3);
                 assertThat(payload.path("questions").path("email_0_kind").path("instructions").asText()).contains("untrusted","Never infer two addresses");
             }).andRespond(withSuccess(response().toString(),MediaType.APPLICATION_JSON));
-        var result=classifier.classify(List.of(evidence()));assertThat(result.decisions().getFirst().category()).isEqualTo("PERSONAL");server.verify();
+        var result=classifier.classify(List.of(submitted));assertThat(result.decisions().getFirst().category()).isEqualTo("PERSONAL");server.verify();
     }
     @Test void uncertaintyIsExplicitAndCategoriesAreNotInvented() {
         var root=response();answer((ObjectNode)root.path("answers"),"email_0_category",JevClassifier.CATEGORIES,"PERSONAL",.6);

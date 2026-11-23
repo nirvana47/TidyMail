@@ -81,16 +81,8 @@ public abstract class PostgresJourneyTest {
         return csrf();
     }
 
-    protected SyntheticMailboxGenerator.SeedResult seedSyntheticMailbox() {
-        return new SyntheticMailboxGenerator(jdbc, userAccounts).seed();
-    }
-
     protected SyntheticMailboxGenerator.SeedResult seedSyntheticMailbox(int rowCount) {
         return new SyntheticMailboxGenerator(jdbc, userAccounts).seed(rowCount);
-    }
-
-    protected SyntheticMailboxGenerator.SeedResult seedSyntheticMailbox(long seed, int rowCount) {
-        return new SyntheticMailboxGenerator(jdbc, userAccounts).seed(seed, rowCount);
     }
 
     protected interface TestGmailProvider extends MailProvider, MailboxSyncProvider {

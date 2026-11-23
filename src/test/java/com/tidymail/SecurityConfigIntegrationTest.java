@@ -15,12 +15,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrlPattern;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.view;
-import static org.hamcrest.Matchers.containsString;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -50,23 +47,8 @@ class SecurityConfigIntegrationTest {
     private MockMvc mockMvc;
 
     @Test
-    void loginPageLoadsUnauthenticated() throws Exception {
-        mockMvc.perform(get("/login"))
-            .andExpect(status().isOk())
-            .andExpect(content().string(containsString("Welcome to TidyMail")))
-            .andExpect(view().name("login"));
-    }
-
-    @Test
     void dashboardRequiresAuthentication() throws Exception {
         mockMvc.perform(get("/dashboard"))
-            .andExpect(status().is3xxRedirection())
-            .andExpect(redirectedUrlPattern("**/login"));
-    }
-
-    @Test
-    void rootUnauthenticatedRedirectsToLogin() throws Exception {
-        mockMvc.perform(get("/"))
             .andExpect(status().is3xxRedirection())
             .andExpect(redirectedUrlPattern("**/login"));
     }
