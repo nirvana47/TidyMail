@@ -63,8 +63,9 @@
   let detailError = null;
   const fmt = number => Number(number).toLocaleString();
   function node(tag, text, className) { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (className) e.className = className; return e; }
-  function notice(text, activity = false) {
+  function notice(text, activity = false, source = '') {
     $('notice').hidden = false; $('notice').textContent = text;
+    $('notice').dataset.source = source;
     $('notice').classList.toggle('notice-link', activity);
     if (activity) {
       const button = node('button', text + ' · View Activity →', 'notice-action');
@@ -73,7 +74,17 @@
       $('notice').replaceChildren(button);
     }
     const dialog = document.querySelector('dialog[open]');
-    if (dialog) { let feedback = dialog.querySelector('.dialog-notice'); if (!feedback) { feedback = node('p', undefined, 'notice dialog-notice'); feedback.setAttribute('role', 'status'); dialog.querySelector('h2').parentElement.after(feedback); } feedback.textContent = text; }
+    if (dialog) { let feedback = dialog.querySelector('.dialog-notice'); if (!feedback) { feedback = node('p', undefined, 'notice dialog-notice'); feedback.setAttribute('role', 'status'); dialog.querySelector('h2').parentElement.after(feedback); } feedback.textContent = text; feedback.dataset.source = source; }
+  }
+  function clearPageError() {
+    if ($('notice').dataset.source === 'page') { $('notice').hidden = true; $('notice').textContent = ''; }
+    document.querySelectorAll('.dialog-notice[data-source="page"]').forEach(feedback => feedback.remove());
+  }
+  function dateFilterError() {
+    if (!$('start').validity.valid || !$('end').validity.valid) return 'Enter a complete date, or clear the date field.';
+    if ($('start').value && $('end').value && $('start').valueAsNumber > $('end').valueAsNumber)
+      return 'From must be on or before Through.';
+    return '';
   }
   async function api(path, body, signal) {
     const headers = { 'Accept': 'application/json', 'X-TidyMail-Account': document.body.dataset.account };
@@ -203,8 +214,11 @@
     const request = ++listRequest, epoch = filterEpoch; listLoading = true;
     if (!background) { $('senderTable').setAttribute('aria-busy', 'true'); renderSelectionControls(); }
     try {
+      const dateError = dateFilterError();
+      if (dateError) throw new Error(dateError);
       const data = await api('page?' + query()); if (request !== listRequest || epoch !== filterEpoch) return;
       if (background && (document.querySelector('dialog[open]') || selectionBusy || previewLoading)) return;
+      clearPageError();
       const sync = data.sync;
       renderSync(sync, data.coverage);
       if (background && !forceDetails && JSON.stringify(data) === JSON.stringify(state.data)) return;
@@ -257,7 +271,7 @@
         if (current) state.focused = current;
         if (epoch === filterEpoch && refreshDetails) return loadDetails(true);
       }
-    } catch (error) { if (request === listRequest) { notice(error.message); $('empty').hidden = false; $('empty').textContent = 'Could not load indexed mail. Change filters or reload to try again.'; } }
+    } catch (error) { if (request === listRequest) { notice(error.message, false, 'page'); $('empty').hidden = false; $('empty').textContent = 'Could not load indexed mail. Change filters or reload to try again.'; } }
     finally {
       if (forceDetails && !pageApplied) detailRefreshPending = true;
       if (request === listRequest) {

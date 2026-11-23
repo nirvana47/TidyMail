@@ -23,6 +23,7 @@ let paginationMode = true, fixtureProvider = 'google';
 let fixtureSync = { email: 'fixture@example.test', gmail_scope_total: 100, import_status: 'RUNNING' };
 const paginationGroups = Array.from({ length: 53 }, (_, i) => ({ ...groups[0], id: `paging-${i}`, label: `Sender ${i}`, addresses: 1 }));
 let previewIds = [], delaySelection = null, selectionStarted = null, detailFailure = false, delayDetails = null, detailsStarted = null;
+let pageFailure = false, pageRequests = 0;
 (async () => {
   const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
   try {
@@ -69,6 +70,10 @@ let previewIds = [], delaySelection = null, selectionStarted = null, detailFailu
       const endpoint = url.pathname.replace('/dashboard/api/', '');
       if (endpoint === 'jobs') return send([]);
       if (endpoint === 'recommendations') return send({ enabled: false, labeling: {} });
+      if (endpoint === 'page') {
+        pageRequests++;
+        if (pageFailure) { pageFailure = false; return route.fulfill({ status: 400, json: { message: 'Invalid dashboard filters' } }); }
+      }
       if (endpoint === 'page' && paginationMode) {
         const size = Number(url.searchParams.get('pageSize') || 10), offset = Number(url.searchParams.get('page') || 0) * size;
         return send({ groups: paginationGroups.slice(offset, offset + size), revision: 1, classificationRevision: 1,
@@ -200,6 +205,28 @@ let previewIds = [], delaySelection = null, selectionStarted = null, detailFailu
     await page.locator('#importance').selectOption('IMPORTANT');
     await expect(page.locator('#importance')).toHaveValue('IMPORTANT');
     await page.locator('#importance').selectOption('');
+    // Recover in the actual open dialog, where both copies of an error used to stick.
+    pageFailure = true;
+    await page.locator('#start').fill('2025-01-01');
+    await page.locator('#start').dispatchEvent('change');
+    await expect(page.locator('#filtersDialog .dialog-notice')).toHaveText('Invalid dashboard filters');
+    await page.locator('#end').fill('2025-12-31');
+    await page.locator('#end').dispatchEvent('change');
+    await expect(page.locator('#notice')).toBeHidden();
+    await expect(page.locator('#filtersDialog .dialog-notice')).toHaveCount(0);
+    await expect(page.locator('#senders > tr').first()).toBeVisible();
+    const requestsBeforeInvalid = pageRequests;
+    await page.locator('#end').fill('2024-12-31');
+    await page.locator('#end').dispatchEvent('change');
+    await expect(page.locator('#filtersDialog .dialog-notice')).toHaveText('From must be on or before Through.');
+    assert.equal(pageRequests, requestsBeforeInvalid, 'Reversed dates must not be sent to the server');
+    await page.locator('#end').fill('2025-01-01');
+    await page.locator('#end').dispatchEvent('change');
+    await expect(page.locator('#notice')).toBeHidden();
+    await expect(page.locator('#filtersDialog .dialog-notice')).toHaveCount(0);
+    await page.locator('#end').fill('');
+    await page.locator('#end').dispatchEvent('change');
+    await expect(page.locator('#senders')).not.toHaveAttribute('aria-busy', 'true');
     await page.locator('#start').fill('2026-01-01');
     await page.locator('#start').dispatchEvent('change');
     await page.keyboard.press('Escape');
