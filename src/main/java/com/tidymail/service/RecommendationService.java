@@ -126,16 +126,17 @@ public class RecommendationService {
         var ids = bounded(account, messages);
         if (ids.isEmpty())
             return List.of();
-        Map<UUID,String> calendarLabels = new HashMap<>();
+        Map<UUID, String> calendarLabels = new HashMap<>();
         named.query("""
-            SELECT m.dashboard_message_id,cr.response_state FROM calendar_response_checks cr
-            JOIN message_metadata m USING(account_id,provider_message_id)
-            WHERE cr.account_id=:account AND m.dashboard_message_id IN (:ids)
-              AND cr.checked_at>=CAST(:now AS timestamptz)-interval '1 hour'
-              AND cr.response_state IN ('RESPONDED','NEEDS_RESPONSE','CANCELLED')
-            """,new MapSqlParameterSource("account",account).addValue("ids",ids)
-                .addValue("now",java.sql.Timestamp.from(clock.instant())), row -> {
-                    calendarLabels.put(row.getObject("dashboard_message_id",UUID.class),"CALENDAR_"+row.getString("response_state"));
+                SELECT m.dashboard_message_id,cr.response_state FROM calendar_response_checks cr
+                JOIN message_metadata m USING(account_id,provider_message_id)
+                WHERE cr.account_id=:account AND m.dashboard_message_id IN (:ids)
+                  AND cr.checked_at>=CAST(:now AS timestamptz)-interval '1 hour'
+                  AND cr.response_state IN ('RESPONDED','NEEDS_RESPONSE','CANCELLED')
+                """, new MapSqlParameterSource("account", account).addValue("ids", ids)
+                .addValue("now", java.sql.Timestamp.from(clock.instant())), row -> {
+                    calendarLabels.put(row.getObject("dashboard_message_id", UUID.class),
+                            "CALENDAR_" + row.getString("response_state"));
                 });
         return load(account, ids).stream().map(s -> {
             Freshness freshness = s.savedHash() == null ? Freshness.PENDING
@@ -156,11 +157,11 @@ public class RecommendationService {
                 reasons.putIfAbsent("CALENDAR_INVITE", "A calendar part was observed in stored evidence.");
             var labels = new TreeSet<>(labels(s.input()));
             labels.addAll(reasons.keySet());
-            labels.removeAll(Set.of("CALENDAR_INVITE","PAST_EVENT"));
-            String calendarLabel=calendarLabels.get(s.input().message());
-            if(calendarLabel!=null) {
+            labels.removeAll(Set.of("CALENDAR_INVITE", "PAST_EVENT"));
+            String calendarLabel = calendarLabels.get(s.input().message());
+            if (calendarLabel != null) {
                 labels.add(calendarLabel);
-                reasons.put(calendarLabel,"Confirmed by a calendar check within the last hour.");
+                reasons.put(calendarLabel, "Confirmed by a calendar check within the last hour.");
             }
             return new View(s.input().message(), freshness,
                     freshness == Freshness.CURRENT ? decode(s.savedResult(), Result.class) : null, s.correction(),
@@ -182,7 +183,8 @@ public class RecommendationService {
         // Exclusions and unknown mailbox state cannot silently enter an experimental
         // paid scope.
         return load(account, ids, true).stream()
-                .filter(s -> s.semanticEvidence() != null && s.input().mailbox() != Mailbox.EXCLUDED && s.input().mailbox() != Mailbox.UNKNOWN
+                .filter(s -> s.semanticEvidence() != null && s.input().mailbox() != Mailbox.EXCLUDED
+                        && s.input().mailbox() != Mailbox.UNKNOWN
                         && s.input().mailbox() != Mailbox.SENT_ONLY)
                 .map(s -> new SemanticPreparation(s.semanticEvidence(), s.input(), s.policy())).toList();
     }
@@ -481,7 +483,8 @@ public class RecommendationService {
             var delivered = strings(r.getArray("delivered_to_values"));
             var mailbox = mailbox(labels, r.getBoolean("label_evidence_known"), delivered, owners);
             boolean gmail = "google".equals(r.getString("provider"));
-            if (!gmail && labels.contains("SENT")) mailbox = Mailbox.SENT_ONLY;
+            if (!gmail && labels.contains("SENT"))
+                mailbox = Mailbox.SENT_ONLY;
             boolean received = mailbox != Mailbox.EXCLUDED && mailbox != Mailbox.SENT_ONLY
                     && mailbox != Mailbox.UNKNOWN;
             String override = r.getString("classification_override");

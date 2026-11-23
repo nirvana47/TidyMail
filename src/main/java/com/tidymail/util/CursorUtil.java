@@ -6,7 +6,8 @@ import java.util.Base64;
 /**
  * Utility for encoding and decoding pagination cursors.
  *
- * <p>Product functionality supported: inbox cleanup results pagination — bundles
+ * <p>
+ * Product functionality supported: inbox cleanup results pagination — bundles
  * the provider page token, local message offset, and sort key into a single
  * URL-safe cursor string so paged cleanup lists resume exactly where they left
  * off.
@@ -27,7 +28,8 @@ public final class CursorUtil {
      * The decoded form of a cursor: the provider page token, local offset, and
      * local sort key.
      */
-    public static record CursorParts(String googlePageToken, long localOffset, String localSort) {}
+    public static record CursorParts(String googlePageToken, long localOffset, String localSort) {
+    }
 
     /** Decodes a cursor string back into its parts, rejecting malformed input. */
     public static CursorParts decode(String encoded) {

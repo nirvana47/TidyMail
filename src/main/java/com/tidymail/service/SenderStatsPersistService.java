@@ -18,7 +18,8 @@ import org.springframework.transaction.annotation.Transactional;
  * Persists per-sender statistics snapshots and builds the Senders dashboard
  * response from stored stats, with sorting and domain rollups.
  *
- * <p>Product functionality supported: the <em>Senders</em> flow's persisted
+ * <p>
+ * Product functionality supported: the <em>Senders</em> flow's persisted
  * sender stats and dashboard listing.
  */
 @Service
@@ -41,8 +42,8 @@ public class SenderStatsPersistService {
             boolean hasPrecedenceBulk,
             Instant oldestMessageAt,
             Instant newestMessageAt,
-            int replyCount
-    ) {}
+            int replyCount) {
+    }
 
     /** Upserts a snapshot of sender stats for an account. */
     @Transactional
@@ -86,10 +87,10 @@ public class SenderStatsPersistService {
         List<SenderStat> stats = new ArrayList<>(findByAccountSortedByCount(accountId));
         Comparator<SenderStat> order = switch (sort == null ? "" : sort) {
             case "oldestFirst" -> Comparator.comparing(
-                SenderStat::getOldestMessageAt, Comparator.nullsLast(Comparator.naturalOrder()));
+                    SenderStat::getOldestMessageAt, Comparator.nullsLast(Comparator.naturalOrder()));
             case "scoreDesc" -> Comparator.comparingInt(this::bulkMarketingScore).reversed();
             default -> Comparator.comparing(
-                SenderStat::getTotalCount, Comparator.nullsLast(Comparator.reverseOrder()));
+                    SenderStat::getTotalCount, Comparator.nullsLast(Comparator.reverseOrder()));
         };
         stats.sort(order.thenComparing(SenderStat::getFromAddress));
 
@@ -97,32 +98,31 @@ public class SenderStatsPersistService {
         Map<String, DomainAccumulator> domains = new HashMap<>();
         for (SenderStat stat : stats) {
             cards.add(new SenderCard(
-                stat.getFromAddress(),
-                stat.getFromDisplayName(),
-                stat.getFromDomain(),
-                stat.getTotalCount(),
-                stat.getUnreadCount(),
-                stat.getOldestMessageAt(),
-                stat.getNewestMessageAt(),
-                stat.getReplyCount(),
-                bulkMarketingScore(stat),
-                Boolean.TRUE.equals(stat.getHasListUnsubscribe()),
-                Boolean.TRUE.equals(stat.getHasPrecedenceBulk()),
-                List.of()
-            ));
+                    stat.getFromAddress(),
+                    stat.getFromDisplayName(),
+                    stat.getFromDomain(),
+                    stat.getTotalCount(),
+                    stat.getUnreadCount(),
+                    stat.getOldestMessageAt(),
+                    stat.getNewestMessageAt(),
+                    stat.getReplyCount(),
+                    bulkMarketingScore(stat),
+                    Boolean.TRUE.equals(stat.getHasListUnsubscribe()),
+                    Boolean.TRUE.equals(stat.getHasPrecedenceBulk()),
+                    List.of()));
             if (stat.getFromDomain() != null) {
                 DomainAccumulator domain = domains.computeIfAbsent(
-                    stat.getFromDomain(), ignored -> new DomainAccumulator());
+                        stat.getFromDomain(), ignored -> new DomainAccumulator());
                 domain.messageCount += stat.getTotalCount();
                 domain.senderCount++;
             }
         }
 
         List<DomainRollup> rollups = domains.entrySet().stream()
-            .map(entry -> new DomainRollup(
-                entry.getKey(), entry.getValue().messageCount, entry.getValue().senderCount))
-            .sorted(Comparator.comparingInt(DomainRollup::countAcrossAllSenders).reversed())
-            .toList();
+                .map(entry -> new DomainRollup(
+                        entry.getKey(), entry.getValue().messageCount, entry.getValue().senderCount))
+                .sorted(Comparator.comparingInt(DomainRollup::countAcrossAllSenders).reversed())
+                .toList();
         int totalMessages = stats.stream().mapToInt(SenderStat::getTotalCount).sum();
         return new SenderPageResponse(List.copyOf(cards), null, cards.size(), totalMessages, rollups);
     }
@@ -130,8 +130,10 @@ public class SenderStatsPersistService {
     /** Computes a 0-3 bulk-marketing score for a stored stat. */
     private int bulkMarketingScore(SenderStat stat) {
         int score = 0;
-        if (Boolean.TRUE.equals(stat.getHasListUnsubscribe())) score++;
-        if (Boolean.TRUE.equals(stat.getHasPrecedenceBulk())) score++;
+        if (Boolean.TRUE.equals(stat.getHasListUnsubscribe()))
+            score++;
+        if (Boolean.TRUE.equals(stat.getHasPrecedenceBulk()))
+            score++;
         if (stat.getReplyCount() == 0
                 && stat.getOldestMessageAt() != null
                 && stat.getTotalCount() > 1

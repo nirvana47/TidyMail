@@ -12,21 +12,22 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * Manages the authenticated user's session state: which connected mailbox account
- * is active, how new accounts are attached to an owner, and how the active account
+ * Manages the authenticated user's session state: which connected mailbox
+ * account
+ * is active, how new accounts are attached to an owner, and how the active
+ * account
  * is resolved from a request.
  *
- * <p>Product functionality supported: multi-account support across the workspace,
+ * <p>
+ * Product functionality supported: multi-account support across the workspace,
  * including login, adding accounts, and per-request account selection.
  */
 @Service
 public class AccountSessionService {
 
     static final String OWNER_KEY = AccountSessionService.class.getName() + ".OWNER_KEY";
-    static final String ACTIVE_ACCOUNT_ID =
-        AccountSessionService.class.getName() + ".ACTIVE_ACCOUNT_ID";
-    static final String PENDING_ADD_OWNER_KEY =
-        AccountSessionService.class.getName() + ".PENDING_ADD_OWNER_KEY";
+    static final String ACTIVE_ACCOUNT_ID = AccountSessionService.class.getName() + ".ACTIVE_ACCOUNT_ID";
+    static final String PENDING_ADD_OWNER_KEY = AccountSessionService.class.getName() + ".PENDING_ADD_OWNER_KEY";
 
     private final UserAccountRepository accounts;
 
@@ -34,7 +35,10 @@ public class AccountSessionService {
         this.accounts = accounts;
     }
 
-    /** Completes a login, attaching any pending owner key and activating the account. */
+    /**
+     * Completes a login, attaching any pending owner key and activating the
+     * account.
+     */
     @org.springframework.transaction.annotation.Transactional
     public AccountSession initializeLogin(
             HttpServletRequest request, OAuth2AuthenticationToken authentication) {
@@ -42,16 +46,18 @@ public class AccountSessionService {
         HttpSession session = request.getSession();
         Object pending = session.getAttribute(PENDING_ADD_OWNER_KEY);
         session.removeAttribute(PENDING_ADD_OWNER_KEY);
-        if (pending instanceof PendingLink link && link.provider().equals(authentication.getAuthorizedClientRegistrationId())
-                && link.expires().isAfter(java.time.Instant.now()) && !link.owner().equals(authenticated.getOwnerKey())) {
+        if (pending instanceof PendingLink link
+                && link.provider().equals(authentication.getAuthorizedClientRegistrationId())
+                && link.expires().isAfter(java.time.Instant.now())
+                && !link.owner().equals(authenticated.getOwnerKey())) {
             var ids = java.util.stream.Stream.of(authenticated.getId(), link.sourceAccount()).distinct().toList();
             var locked = accounts.findAllForUpdateByIdInOrderByIdAsc(ids);
             var target = locked.stream().filter(a -> a.getId().equals(ids.getFirst())).findFirst().orElseThrow();
             boolean sourceStillOwned = locked.stream().anyMatch(a -> a.getId().equals(link.sourceAccount())
-                && a.getOwnerKey().equals(link.owner()));
+                    && a.getOwnerKey().equals(link.owner()));
             String standalone = "microsoft".equals(target.getProvider())
-                ? "microsoft:" + target.getProviderAccountId()
-                : target.getEmail().strip().toLowerCase(java.util.Locale.ROOT) + ":" + target.getProvider();
+                    ? "microsoft:" + target.getProviderAccountId()
+                    : target.getEmail().strip().toLowerCase(java.util.Locale.ROOT) + ":" + target.getProvider();
             if (sourceStillOwned && standalone.equals(target.getOwnerKey())
                     && accounts.findAllByOwnerKeyOrderByIdAsc(standalone).size() == 1) {
                 target.setOwnerKey(link.owner());
@@ -67,12 +73,16 @@ public class AccountSessionService {
     public void beginAddAccount(HttpServletRequest request, OAuth2AuthenticationToken authentication, String provider) {
         UserAccount source = authenticatedAccount(authentication);
         request.getSession().setAttribute(PENDING_ADD_OWNER_KEY,
-            new PendingLink(source.getId(), source.getOwnerKey(), provider, java.time.Instant.now().plusSeconds(600)));
+                new PendingLink(source.getId(), source.getOwnerKey(), provider,
+                        java.time.Instant.now().plusSeconds(600)));
     }
 
-    private record PendingLink(Long sourceAccount, String owner, String provider, java.time.Instant expires) {}
+    private record PendingLink(Long sourceAccount, String owner, String provider, java.time.Instant expires) {
+    }
 
-    /** Resolves the active account for a request, honoring the requested selection. */
+    /**
+     * Resolves the active account for a request, honoring the requested selection.
+     */
     public AccountSession resolve(
             HttpSession session,
             OAuth2AuthenticationToken authentication,
@@ -81,13 +91,13 @@ public class AccountSessionService {
         List<UserAccount> owned = accounts.findAllByOwnerKeyOrderByIdAsc(ownerKey);
         if (owned.isEmpty()) {
             throw new ResponseStatusException(
-                HttpStatus.NOT_FOUND, "No connected account is owned by this user");
+                    HttpStatus.NOT_FOUND, "No connected account is owned by this user");
         }
 
         String requested = requestedSelection == null ? "" : requestedSelection.trim();
         if ("all".equalsIgnoreCase(requested)) {
             throw new ResponseStatusException(
-                HttpStatus.BAD_REQUEST, "All-account scope is not supported");
+                    HttpStatus.BAD_REQUEST, "All-account scope is not supported");
         }
 
         Long selected = requestedAccountId(requested);
@@ -101,10 +111,10 @@ public class AccountSessionService {
         if (selected == null) {
             UserAccount authenticated = authenticatedAccount(authentication);
             selected = owned.stream()
-                .filter(account -> account.getId().equals(authenticated.getId()))
-                .map(UserAccount::getId)
-                .findFirst()
-                .orElse(owned.getFirst().getId());
+                    .filter(account -> account.getId().equals(authenticated.getId()))
+                    .map(UserAccount::getId)
+                    .findFirst()
+                    .orElse(owned.getFirst().getId());
         }
 
         Long activeId = selected;
@@ -118,7 +128,10 @@ public class AccountSessionService {
         return new AccountSession(ownerKey, activeId);
     }
 
-    /** Returns the owner key for the session, falling back to the authenticated account. */
+    /**
+     * Returns the owner key for the session, falling back to the authenticated
+     * account.
+     */
     public String ownerKey(
             HttpSession session, OAuth2AuthenticationToken authentication) {
         UserAccount authenticated = authenticatedAccount(authentication);
@@ -132,17 +145,21 @@ public class AccountSessionService {
     private UserAccount authenticatedAccount(OAuth2AuthenticationToken authentication) {
         String provider = authentication.getAuthorizedClientRegistrationId();
         return accounts.findByProviderAndProviderAccountId(provider, authentication.getName())
-            .or(() -> {
-                if (!"google".equals(provider)) return java.util.Optional.empty();
-                String email = authentication.getPrincipal().getAttribute("email");
-                return email == null ? java.util.Optional.empty()
-                    : accounts.findByEmailAndProviderIgnoreCase(email, provider);
-            })
-            .orElseThrow(() -> new ResponseStatusException(
-                HttpStatus.UNAUTHORIZED, "Authenticated account is not connected"));
+                .or(() -> {
+                    if (!"google".equals(provider))
+                        return java.util.Optional.empty();
+                    String email = authentication.getPrincipal().getAttribute("email");
+                    return email == null ? java.util.Optional.empty()
+                            : accounts.findByEmailAndProviderIgnoreCase(email, provider);
+                })
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.UNAUTHORIZED, "Authenticated account is not connected"));
     }
 
-    /** Parses a requested account selector, returning null for the default/current scope. */
+    /**
+     * Parses a requested account selector, returning null for the default/current
+     * scope.
+     */
     private static Long requestedAccountId(String requested) {
         if (requested.isEmpty()
                 || "current".equalsIgnoreCase(requested)

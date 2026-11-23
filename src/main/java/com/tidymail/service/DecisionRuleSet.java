@@ -6,10 +6,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The deterministic, non-AI heuristics that classify senders and unread messages
- * into types, risks, categories, and recommendations with human-readable reasons.
+ * The deterministic, non-AI heuristics that classify senders and unread
+ * messages
+ * into types, risks, categories, and recommendations with human-readable
+ * reasons.
  *
- * <p>Product functionality supported: the <em>Senders</em> and <em>Unread</em>
+ * <p>
+ * Product functionality supported: the <em>Senders</em> and <em>Unread</em>
  * flows' recommendations.
  */
 public final class DecisionRuleSet {
@@ -100,7 +103,7 @@ public final class DecisionRuleSet {
             recommendationReason = ReasonCode.ROUTINE_CLEANUP;
         }
         return new SenderDecision(
-            type, risk, recommendation, distinct(typeReason, riskReason, recommendationReason));
+                type, risk, recommendation, distinct(typeReason, riskReason, recommendationReason));
     }
 
     /** Classifies an unread message and its thread state. */
@@ -121,9 +124,10 @@ public final class DecisionRuleSet {
 
         boolean hasInboundReference = facts.referencesSignal() || facts.inReplyToSignal();
         ThreadState threadState = facts.authorizedThreadCount() > 1 || hasInboundReference
-            ? ThreadState.THREADED : ThreadState.SINGLE;
+                ? ThreadState.THREADED
+                : ThreadState.SINGLE;
         boolean waitingOnMe = category == UnreadCategory.ONE_TO_ONE
-            && threadState == ThreadState.THREADED && hasInboundReference;
+                && threadState == ThreadState.THREADED && hasInboundReference;
 
         UnreadRecommendation recommendation;
         ReasonCode recommendationReason;
@@ -148,16 +152,18 @@ public final class DecisionRuleSet {
         } else {
             recommendation = UnreadRecommendation.MARK_READ;
             recommendationReason = facts.protectedSender()
-                ? ReasonCode.PROTECTED_SENDER : ReasonCode.RECENT_UNREAD;
+                    ? ReasonCode.PROTECTED_SENDER
+                    : ReasonCode.RECENT_UNREAD;
         }
 
         ArrayList<ReasonCode> reasons = new ArrayList<>();
         reasons.add(categoryReason);
         reasons.add(threadState == ThreadState.THREADED
-            ? ReasonCode.HAS_THREAD_REFERENCES : ReasonCode.NO_REPLY_SIGNAL);
+                ? ReasonCode.HAS_THREAD_REFERENCES
+                : ReasonCode.NO_REPLY_SIGNAL);
         reasons.add(recommendationReason);
         return new UnreadDecision(
-            category, threadState, waitingOnMe, recommendation, List.copyOf(reasons.stream().distinct().toList()));
+                category, threadState, waitingOnMe, recommendation, List.copyOf(reasons.stream().distinct().toList()));
     }
 
     /** Returns the distinct reason codes in order. */
@@ -167,21 +173,21 @@ public final class DecisionRuleSet {
 
     /** Requires a non-null classification instant. */
     private static void requireNow(Instant now) {
-        if (now == null) throw new IllegalArgumentException("Classification instant is required");
+        if (now == null)
+            throw new IllegalArgumentException("Classification instant is required");
     }
 
     /** The metadata facts used to classify a sender. */
     public record SenderFacts(
-        boolean listSignal,
-        boolean automatedSignal,
-        boolean returnPathSignal,
-        boolean messageIdSignal,
-        boolean threadSignal,
-        boolean protectedSender,
-        long totalCount,
-        long unreadCount,
-        Instant newestReceivedAt
-    ) {
+            boolean listSignal,
+            boolean automatedSignal,
+            boolean returnPathSignal,
+            boolean messageIdSignal,
+            boolean threadSignal,
+            boolean protectedSender,
+            long totalCount,
+            long unreadCount,
+            Instant newestReceivedAt) {
         public SenderFacts {
             if (totalCount < 0 || unreadCount < 0 || unreadCount > totalCount) {
                 throw new IllegalArgumentException("Invalid sender counts");
@@ -191,14 +197,13 @@ public final class DecisionRuleSet {
 
     /** The metadata facts used to classify an unread message. */
     public record UnreadFacts(
-        boolean listSignal,
-        boolean automatedSignal,
-        boolean referencesSignal,
-        boolean inReplyToSignal,
-        boolean protectedSender,
-        long authorizedThreadCount,
-        Instant receivedAt
-    ) {
+            boolean listSignal,
+            boolean automatedSignal,
+            boolean referencesSignal,
+            boolean inReplyToSignal,
+            boolean protectedSender,
+            long authorizedThreadCount,
+            Instant receivedAt) {
         public UnreadFacts {
             if (authorizedThreadCount < 0) {
                 throw new IllegalArgumentException("Thread count cannot be negative");
@@ -208,11 +213,10 @@ public final class DecisionRuleSet {
 
     /** The classification result for a sender. */
     public record SenderDecision(
-        SenderType type,
-        SenderRisk risk,
-        SenderRecommendation recommendation,
-        List<ReasonCode> reasons
-    ) {
+            SenderType type,
+            SenderRisk risk,
+            SenderRecommendation recommendation,
+            List<ReasonCode> reasons) {
         public SenderDecision {
             reasons = List.copyOf(reasons);
         }
@@ -220,27 +224,41 @@ public final class DecisionRuleSet {
 
     /** The classification result for an unread message. */
     public record UnreadDecision(
-        UnreadCategory category,
-        ThreadState threadState,
-        boolean waitingOnMe,
-        UnreadRecommendation recommendation,
-        List<ReasonCode> reasons
-    ) {
+            UnreadCategory category,
+            ThreadState threadState,
+            boolean waitingOnMe,
+            UnreadRecommendation recommendation,
+            List<ReasonCode> reasons) {
         public UnreadDecision {
             reasons = List.copyOf(reasons);
         }
     }
 
     /** The inferred sender types. */
-    public enum SenderType { LIST, AUTOMATED, TRANSACTIONAL, PERSONAL, UNKNOWN }
+    public enum SenderType {
+        LIST, AUTOMATED, TRANSACTIONAL, PERSONAL, UNKNOWN
+    }
+
     /** The sender risk levels. */
-    public enum SenderRisk { HIGH, MEDIUM, LOW }
+    public enum SenderRisk {
+        HIGH, MEDIUM, LOW
+    }
+
     /** The recommended handling for a sender. */
-    public enum SenderRecommendation { TRASH, ARCHIVE, MARK_READ, REVIEW, KEEP }
+    public enum SenderRecommendation {
+        TRASH, ARCHIVE, MARK_READ, REVIEW, KEEP
+    }
+
     /** The inferred unread message categories. */
-    public enum UnreadCategory { LIST, AUTOMATED, ONE_TO_ONE }
+    public enum UnreadCategory {
+        LIST, AUTOMATED, ONE_TO_ONE
+    }
+
     /** The thread shape of an unread message. */
-    public enum ThreadState { THREADED, SINGLE }
+    public enum ThreadState {
+        THREADED, SINGLE
+    }
+
     /** The recommended handling for an unread message. */
     public enum UnreadRecommendation {
         REPLY_REQUIRED, REVIEW, KEEP, MARK_READ, ARCHIVE, TRASH
