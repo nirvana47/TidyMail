@@ -9,17 +9,14 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
-import java.util.regex.Pattern;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public class DashboardRepository {
-    private static final Pattern BRAND_SEPARATORS = Pattern.compile("[^a-z0-9]");
     private final NamedParameterJdbcTemplate jdbc;
     private final com.tidymail.service.ProviderDeepLinkService providerLinks;
     private final com.fasterxml.jackson.databind.ObjectMapper json;
@@ -120,23 +117,18 @@ public class DashboardRepository {
                       """+LABEL_MATCH+"""
                     ))
         """;
-    private static final String ADDRESS_MEMBERSHIP = """
-                    LEFT JOIN sender_address_units split ON split.account_id=link.account_id
-                      AND split.source_unit_id=link.unit_id AND split.address=m.dashboard_from_address AND split.active
-                    """;
-    private static final String EFFECTIVE_UNIT = "COALESCE(split.unit_id, link.unit_id)";
     private static final String GROUPING_LOOKUP = """
                     JOIN LATERAL (
                       SELECT g.public_id group_public_id,g.group_key,g.label group_label
                       FROM sender_units u JOIN sender_group_members member ON member.account_id=u.account_id AND member.unit_id=u.id
                       JOIN sender_groups g ON g.account_id=member.account_id AND g.id=member.group_id
-                      WHERE u.account_id=link.account_id AND u.id="""+EFFECTIVE_UNIT+"""
+                      WHERE u.account_id=link.account_id AND u.id=link.unit_id
                         OFFSET 0
                     ) identity ON true
         """;
     private static final String GROUPING_JOINS = """
                     JOIN message_sender_units link ON link.account_id=m.account_id AND link.metadata_id=m.id
-                    """+ADDRESS_MEMBERSHIP+GROUPING_LOOKUP;
+                    """+GROUPING_LOOKUP;
     private static final String GROUPING_FIELDS = "identity.group_public_id,identity.group_key,identity.group_label";
     private static final String DISPLAY_ADDRESS = "COALESCE(m.dashboard_from_address,m.from_address,'Unknown sender')";
     // dashboard_from_address is the conservative parser result, even when List-ID evidence is ambiguous.
@@ -205,7 +197,7 @@ public class DashboardRepository {
             .replace(LABELING_CATEGORY, CATEGORY);
     private static final String BASIC_FILTERED = KEYED_BASIC_FILTERED
             .replace(GROUPING_LOOKUP,"""
-                JOIN sender_units u ON u.account_id=link.account_id AND u.id="""+EFFECTIVE_UNIT+"""
+                JOIN sender_units u ON u.account_id=link.account_id AND u.id=link.unit_id
 
                 JOIN sender_group_members member ON member.account_id=u.account_id AND member.unit_id=u.id
                 JOIN sender_groups g ON g.account_id=member.account_id AND g.id=member.group_id
@@ -398,7 +390,6 @@ public class DashboardRepository {
 
     /**
      * Read the whole indexed group so filters cannot hide conflicting names.
-     * Combine and Split labels are saved corrections.
      */
     private Map<UUID, String> displayNames(long account, List<UUID> groups) {
         if (groups.isEmpty()) return Map.of();
@@ -411,11 +402,6 @@ public class DashboardRepository {
                     FILTER (WHERE sender.name IS NOT NULL) AS saved_names,
                   CASE WHEN g.group_key LIKE 'address:%' THEN substring(g.group_key FROM 9) END AS exact_address,
                   CASE
-                    WHEN split_part(g.group_key,':',1) IN ('domain','organization','classified-domain')
-                      THEN split_part(g.group_key,':',2)
-                    WHEN min(sender.domain)=max(sender.domain) THEN min(sender.domain)
-                  END AS sender_host,
-                  CASE
                   WHEN split_part(g.group_key,':',1) IN ('domain','organization','classified-domain')
                     THEN split_part(g.group_key,':',2)
                   WHEN min(sender.address)=max(sender.address) THEN min(sender.address)
@@ -425,8 +411,7 @@ public class DashboardRepository {
                 END AS display_name
                 FROM message_metadata m
                 JOIN message_sender_units link ON link.account_id=m.account_id AND link.metadata_id=m.id
-                """+ADDRESS_MEMBERSHIP+"""
-                JOIN sender_group_members member ON member.account_id=link.account_id AND member.unit_id="""+EFFECTIVE_UNIT+"""
+                JOIN sender_group_members member ON member.account_id=link.account_id AND member.unit_id=link.unit_id
                 JOIN sender_groups g ON g.account_id=member.account_id AND g.id=member.group_id
                 CROSS JOIN LATERAL (
                   SELECT NULLIF(btrim(m.from_display_name),'') AS name,
@@ -434,13 +419,9 @@ public class DashboardRepository {
                     NULLIF(lower(split_part(COALESCE(NULLIF(m.dashboard_from_address,''),m.from_address),'@',2)),'') AS domain
                 ) sender
                 WHERE m.account_id=:account AND g.public_id IN (:groups)
-                  AND g.group_key NOT LIKE 'manual:%'
-                  AND NOT (g.group_key LIKE 'separate:%' AND split_part(g.group_key,':',3) IN ('first','rest'))
                 GROUP BY g.public_id,g.group_key
                 )
-                SELECT public_id,saved_names,display_name,exact_address,
-                  CASE WHEN cardinality(saved_names)>1
-                    THEN split_part(dashboard_organization_domain(sender_host),'.',1) END AS brand_key
+                SELECT public_id,saved_names,display_name,exact_address
                 FROM evidence
                 """, p, (org.springframework.jdbc.core.RowCallbackHandler) r -> {
                     var id = uuid(r, "public_id");
@@ -450,44 +431,12 @@ public class DashboardRepository {
                         return;
                     }
                     var saved = r.getArray("saved_names");
-                    names.put(id, senderName(saved == null ? new String[0] : (String[]) saved.getArray(),
-                            r.getString("brand_key"), r.getString("display_name")));
+                    var providerNames = saved == null ? new String[0] : (String[]) saved.getArray();
+                    names.put(id, providerNames.length == 1 ? providerNames[0] : r.getString("display_name"));
                 });
         var addressNames = senderAddressNames(account, exactAddresses.values().stream().distinct().toList());
         exactAddresses.forEach((id, address) -> names.put(id, addressNames.getOrDefault(address, address)));
         return names;
-    }
-
-    private static String senderName(String[] savedNames, String brandKey, String fallback) {
-        if (savedNames.length == 1) return savedNames[0];
-        if (brandKey == null) return fallback;
-        String normalizedKey = normalizedBrand(brandKey);
-        String brand = null;
-        for (String name : savedNames) {
-            if (!normalizedKey.equals(normalizedBrand(name))) continue;
-            if (hasMixedCase(name)) return name;
-            if (brand == null) brand = name;
-        }
-        if (brand == null) return fallback;
-
-        // A longer saved name can preserve the brand's spelling when the exact name is all caps.
-        for (String name : savedNames) {
-            int length = brand.length();
-            if (name.length() > length && Character.isWhitespace(name.charAt(length))
-                    && name.regionMatches(true, 0, brand, 0, length)) {
-                String prefix = name.substring(0, length);
-                if (hasMixedCase(prefix)) return prefix;
-            }
-        }
-        return brand;
-    }
-
-    private static String normalizedBrand(String name) {
-        return BRAND_SEPARATORS.matcher(name.toLowerCase(Locale.ROOT)).replaceAll("");
-    }
-
-    private static boolean hasMixedCase(String name) {
-        return name.chars().anyMatch(Character::isUpperCase) && name.chars().anyMatch(Character::isLowerCase);
     }
 
     public long revision(long account) {
@@ -565,26 +514,6 @@ public class DashboardRepository {
         return new Addresses(addresses, revision(account), classificationRevision(account));
     }
 
-    public Grouping grouping(long account, UUID group) {
-        var p = new MapSqlParameterSource("account", account).addValue("group", group);
-        requireGroup(p);
-        var units = jdbc.query("""
-                SELECT u.public_id,u.kind,u.canonical_key,u.evidence_reason,
-                    COALESCE(array_agg(DISTINCT m.dashboard_from_address ORDER BY m.dashboard_from_address)
-                        FILTER (WHERE m.dashboard_from_address IS NOT NULL), ARRAY[]::text[]) addresses
-                FROM message_metadata m
-                JOIN message_sender_units link ON link.account_id=m.account_id AND link.metadata_id=m.id
-                """+ADDRESS_MEMBERSHIP+"""
-                JOIN sender_group_members member ON member.account_id=link.account_id AND member.unit_id="""+EFFECTIVE_UNIT+"""
-                JOIN sender_units u ON u.account_id=member.account_id AND u.id=member.unit_id
-                JOIN sender_groups g ON g.account_id=member.account_id AND g.id=member.group_id
-                WHERE m.account_id=:account AND g.public_id=:group
-                GROUP BY u.id ORDER BY u.canonical_key
-                """, p, (r,n) -> new Unit(uuid(r,"public_id"),r.getString("kind"),r.getString("canonical_key"),
-                    r.getString("evidence_reason"),List.of((String[])r.getArray("addresses").getArray())));
-        return new Grouping(units, revision(account), classificationRevision(account));
-    }
-
     private void requireGroup(MapSqlParameterSource parameters) {
         if (jdbc.queryForObject("SELECT count(*) FROM sender_groups WHERE account_id=:account AND public_id=:group", parameters,
                 Long.class) == 0)
@@ -650,10 +579,6 @@ public class DashboardRepository {
     }
 
     private static String groupingEvidence(String key) {
-        if (key.startsWith("manual:"))
-            return "Manually merged — saved account correction";
-        if (key.startsWith("separate:"))
-            return "Kept separate by your saved correction";
         if (key.startsWith("classified-domain:"))
             return "Grouped by Jev classification of organization and service";
         if (key.startsWith("organization:"))
@@ -679,8 +604,6 @@ public class DashboardRepository {
     public record Address(String address, long messages, long unread,String displayName) {
     }
 
-    public record Unit(UUID id, String kind, String key, String reason, List<String> addresses) {
-    }
 
     public record Selected(UUID id, UUID groupId,  String address) {
     }
@@ -697,7 +620,6 @@ public class DashboardRepository {
 
     public record Addresses(List<Address> addresses, long revision, long classificationRevision) {}
 
-    public record Grouping(List<Unit> units, long revision, long classificationRevision) {}
 
     public record Page(List<Group> groups, Map<String, Object> summary, Map<String, Object> coverage,
             Map<String, Object> sync, long revision, DashboardFilter filter,long classificationRevision) {

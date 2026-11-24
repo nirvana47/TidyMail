@@ -14,7 +14,7 @@ import org.springframework.web.client.RestClient;
 
 class JevClassifierTest {
     ObjectMapper json=new ObjectMapper();
-    JevClassifier.Evidence evidence(){return new JevClassifier.Evidence(UUID.randomUUID(),"local-hash","shivani.tewari@gene.com","Shivani Tewari","Dinner tonight?","ADDRESS",List.of("CATEGORY_PERSONAL"),true,false);}
+    JevClassifier.Evidence evidence(){return new JevClassifier.Evidence(UUID.randomUUID(),"local-hash","taylor.work@example.com","Taylor Example","Synthetic project discussion","ADDRESS",List.of("CATEGORY_PERSONAL"),true,false);}
     ObjectNode response() {
         var root=json.createObjectNode();root.put("model",JevClassifier.MODEL+"-20261014");root.put("provider","TypeSafe");root.putObject("usage").put("cost",.0001);
         var answers=root.putObject("answers");answer(answers,"email_0_category",JevClassifier.CATEGORIES,"PERSONAL",.98);answer(answers,"email_0_kind",JevClassifier.KINDS,"PERSON",.98);answer(answers,"email_0_stream",JevClassifier.STREAMS,"GENERAL",.98);return root;
@@ -30,7 +30,7 @@ class JevClassifierTest {
                 assertThat(payload.path("provider").path("data_collection").asText()).isEqualTo("deny");
                 assertThat(payload.path("provider").path("only").get(0).asText()).isEqualTo("typesafe");
                 String body=payload.toString();assertThat(body).doesNotContain("test-secret","local-hash",submitted.id().toString(),"body_html","access_token");
-                assertThat(payload.path("state").path("email_0").path("sender_name").asText()).isEqualTo("Shivani Tewari");
+                assertThat(payload.path("state").path("email_0").path("sender_name").asText()).isEqualTo("Taylor Example");
                 assertThat(payload.path("questions").size()).isEqualTo(3);
                 assertThat(payload.path("questions").path("email_0_kind").path("instructions").asText()).contains("untrusted","Never infer two addresses");
             }).andRespond(withSuccess(response().toString(),MediaType.APPLICATION_JSON));
@@ -44,7 +44,7 @@ class JevClassifierTest {
         assertThat(decision.judgments().get("purpose").probabilities()).containsEntry("PERSONAL",.6);
         assertThat(decision.judgments().get("senderKind").confidence()).isEqualTo(.98);
         assertThat(decision.judgments().get("senderKind").effective()).isEqualTo("PERSON");
-        ((ObjectNode)root.path("answers").path("email_0_kind")).put("choice","Shivani Tewari");
+        ((ObjectNode)root.path("answers").path("email_0_kind")).put("choice","Taylor Example");
         assertThatThrownBy(()->JevClassifier.parse(root,1)).isInstanceOf(JevClassifier.Unavailable.class);
     }
     @Test void highReportedConfidenceCannotOverrideWeakProbability() {

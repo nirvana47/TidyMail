@@ -23,7 +23,6 @@ class Phase2IdentificationJourneyTest extends PostgresJourneyTest {
     @Autowired MessageEvidenceService evidence;
     @Autowired DashboardRepository dashboard;
     @Autowired ReviewedPatternService patterns;
-    @Autowired DashboardGroupingService grouping;
     @Autowired ObjectMapper json;
     long account;
     @BeforeEach void setup(){account=userAccounts.createAccount(OWNER);reset(reader,classifier);}
@@ -175,23 +174,13 @@ class Phase2IdentificationJourneyTest extends PostgresJourneyTest {
         assertThat(dashboard.details(account,filter("",""),group.id(),0).messages().stream().filter(m->m.id().equals(ordinary)).findFirst().orElseThrow().reviewedPattern()).isNull();
         verifyNoInteractions(reader,classifier,gmailProvider);
     }
-    @Test void personalCompanyAndPersonalMailboxIdentitiesSurviveMetadataRefreshAndSavedMerges() {
+    @Test void personalCompanyAndPersonalMailboxIdentitiesSurviveMetadataRefresh() {
         UUID work=mail("work","alex@gene.com","Family invitation","Alex","PERSONAL");
         mail("coworker","taylor@gene.com","Team update","Taylor",null);
         mail("home","alex@gmail.com","Family update","Alex","PERSONAL");
         var page=dashboard.page(account,filter("",""));
         assertThat(page.groups()).hasSize(3);
         jdbc.update("UPDATE message_metadata SET raw_from_values=ARRAY['Alex <alex@gene.com>'] WHERE dashboard_message_id=?",work);
-        assertThat(dashboard.page(account,filter("","")).groups()).hasSize(3);
-        var unit=jdbc.queryForObject("SELECT public_id FROM sender_units WHERE account_id=? AND canonical_key='alex@gene.com'",UUID.class,account);
-        var home=jdbc.queryForObject("SELECT public_id FROM sender_units WHERE account_id=? AND canonical_key='alex@gmail.com'",UUID.class,account);
-        grouping.correct(account,new DashboardGroupingService.Correction("MERGE",List.of(unit,home),"Explicit Alex link",null,dashboard.revision(account)),true);
-        assertThat(dashboard.page(account,filter("","")).groups()).hasSize(2);
-        jdbc.update("UPDATE message_metadata SET classification_override='PERSONAL' WHERE dashboard_message_id=?",work);
-        grouping.rebuild(account);
-        assertThat(dashboard.page(account,filter("","")).groups()).hasSize(2);
-        UUID correction=jdbc.queryForObject("SELECT public_id FROM sender_group_corrections WHERE account_id=? AND kind='MERGE' AND active",UUID.class,account);
-        grouping.correct(account,new DashboardGroupingService.Correction("RESET",List.of(),null,correction,dashboard.revision(account)),true);
         assertThat(dashboard.page(account,filter("","")).groups()).hasSize(3);
         verifyNoInteractions(reader,classifier,gmailProvider);
     }

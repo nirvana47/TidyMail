@@ -21,7 +21,6 @@ public class DashboardService {
     public DashboardRepository.Details details(long account,DashboardFilter filter,UUID group,int page,String address) { return repository.details(account,filter,group,page,address); }
     public DashboardRepository.Details details(long account,DashboardFilter filter,UUID group,int page,String address,boolean unreadOnly) { var details=repository.details(account,filter,group,page,address,unreadOnly); return details.withRecommendations(recommendations.read(account,details.messages().stream().map(DashboardRepository.Message::id).toList())); }
     public DashboardRepository.Addresses addresses(long account,DashboardFilter filter,UUID group) { return repository.addresses(account,filter,group); }
-    public DashboardRepository.Grouping grouping(long account,UUID group) { return repository.grouping(account,group); }
     public List<DashboardRepository.Selected> selection(long account,DashboardFilter filter,List<UUID> groups,String address,long revision) {
         return selection(account,filter,groups,address,revision,false);
     }

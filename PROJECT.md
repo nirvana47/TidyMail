@@ -121,3 +121,14 @@ unsaved-edit protection. Sign-in and retained workspace pages use related stylin
 The full surface inventory and remaining deeper tool/legacy work are recorded in
 `docs/UI-POLISH-PLAN.md`; this initial pass is not a claim that every state has been
 visually audited. Verification uses synthetic providers and isolated test data.
+
+## Sender views — November 23, 2026
+
+The user retired manual saved sender groups: Combine, Split, Rename and Reset,
+including their UI, endpoints, service and dedicated tests. Automatic domain
+rows and the Sender address view remain. Names come from provider email metadata,
+with address/domain fallbacks; guessed brand names are removed. V51 restores old
+saved membership to automatic grouping and removes the three manual-group tables.
+This describes the source change; the active app/retained database has not been
+restarted or upgraded by the isolated verification. See [workflows](WORKFLOWS.md)
+and [test review](WORKFLOW-TEST-REVIEW.md) for current requirements and evidence.

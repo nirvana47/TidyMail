@@ -6,6 +6,11 @@ Optional [Jev classification](docs/JEV-CLASSIFICATION.md) adds message categorie
 
 Start with [local setup](DEPLOY.md). Read [PROJECT.md](PROJECT.md) for product and privacy behavior.
 
+Read [What people should be able to do in TidyMail](WORKFLOWS.md) for the current
+cleanup workflows and [what the tests check](WORKFLOW-TEST-REVIEW.md) for the
+remaining gaps. These collect existing decisions; they do not declare every
+workflow verified or restart paused classification work.
+
 The agreed next MVP is a simpler sender dashboard with Inbox / All received mail,
 bulk Gmail actions, and live background-action progress. See the
 [MVP plan](docs/MVP-PLAN.md) for scope and preserve-first testing decisions.

@@ -24,18 +24,17 @@ class DashboardClassificationTest extends PostgresJourneyTest {
     @MockBean JevClassifier classifier;
     @Autowired DashboardClassificationService classification;
     @Autowired DashboardRepository dashboard;
-    @Autowired DashboardGroupingService grouping;
     @Autowired DashboardPreviewService previews;
     @Autowired DashboardJobService jobs;
     long account;
     @Test void explicitPersonalIdentitySurvivesLaterAutomatedClassificationRegrouping() {
         when(classifier.classify(anyList())).thenAnswer(call->result(call.getArgument(0),"PERSONAL","AUTOMATED","BANKING"));
         UUID person=mail("alex@chase.com","Alex","Work update");
-        mail("alerts@chase.com","Chase","Account update");
+        mail("alerts@chase.com","Sample Contact","Account update");
         finish();
         classification.correctCategory(account,List.of(person),"PERSONAL",dashboard.revision(account));
         assertThat(jdbc.queryForObject("SELECT automatic_group_key FROM sender_units WHERE account_id=? AND canonical_key='alex@chase.com'",String.class,account)).isEqualTo("address:alex@chase.com");
-        mail("statements@chase.com","Chase","Another update");
+        mail("statements@chase.com","Sample Contact","Another update");
         finish();
         assertThat(jdbc.queryForObject("SELECT automatic_group_key FROM sender_units WHERE account_id=? AND canonical_key='alex@chase.com'",String.class,account)).isEqualTo("address:alex@chase.com");
         assertThat(jdbc.queryForObject("SELECT count(DISTINCT group_id) FROM sender_group_members WHERE account_id=?",Long.class,account)).isEqualTo(2);
@@ -70,7 +69,7 @@ class DashboardClassificationTest extends PostgresJourneyTest {
     }
     void finish(){classification.start(account);for(int i=0;i<20&&Set.of("RUNNING","QUEUED").contains(classification.status(account).state());i++)classification.runOnce();assertThat(classification.status(account).state()).isEqualTo("COMPLETE");}
     @Test void confirmedCleanupTargetsStayFixedWhenClassificationChangesGroupsAndCategories() {
-        UUID id=mail("a@gene.com","Shivani Tewari","Hello");
+        UUID id=mail("a@gene.com","Taylor Example","Hello");
         var preview=previews.create(account,new DashboardPreviewService.Request(filter(""),List.of(id),"MARK_READ",0));
         var job=jobs.confirm(account,preview.id());
         var before=jdbc.queryForList("SELECT message_id,provider_message_id FROM cleanup_job_targets WHERE job_id=? ORDER BY ordinal",job.id());
@@ -86,11 +85,9 @@ class DashboardClassificationTest extends PostgresJourneyTest {
         Evidence e=(Evidence)capture.getValue().getFirst();assertThat(e.name()).isEqualTo("A Person");assertThat(e.subject()).isEqualTo("Hello");assertThat(e.gmailCategories()).containsExactly("CATEGORY_PERSONAL");
         clearInvocations(classifier);classification.start(account);assertThat(classification.status(account).total()).isZero();classification.runOnce();verify(classifier,never()).classify(anyList());
     }
-    @Test void manualGroupingAndCategoryCorrectionsWinAndStaleInputsAreReclassified() {
+    @Test void savedCategoryCorrectionsWinAndStaleInputsAreReclassified() {
         when(classifier.classify(anyList())).thenAnswer(call->result(call.getArgument(0),"MARKETING","AUTOMATED","BANKING"));
-        UUID first=mail("a@chase.com","Chase","offer"),second=mail("b@e.chase.com","Chase","offer");
-        UUID unit=jdbc.queryForObject("SELECT public_id FROM sender_units WHERE account_id=? AND canonical_key='a@chase.com'",UUID.class,account);
-        grouping.correct(account,new DashboardGroupingService.Correction("SEPARATE",List.of(unit),null,null,0),true);
+        UUID first=mail("a@chase.com","Sample Contact","offer"),second=mail("b@e.chase.com","Sample Contact","offer");
         classification.correctCategory(account,List.of(first),"PERSONAL",dashboard.revision(account));finish();
         assertThat(dashboard.page(account,filter("")).summary().get("groups")).isEqualTo(2L);
         assertThat(dashboard.page(account,filter("PERSONAL")).summary().get("messages")).isEqualTo(1L);

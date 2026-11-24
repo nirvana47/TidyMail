@@ -32,7 +32,7 @@ class DashboardMigrationTest {
         jdbc.update("INSERT INTO message_metadata(account_id,provider,provider_message_id,labels) VALUES(?,'google','retained-rule-upgrade',ARRAY['INBOX'])", account);
         String savedRules = jdbc.queryForObject("SELECT to_jsonb(r)::text FROM automation_rules r WHERE account_id=?", String.class, account);
         String mail = jdbc.queryForObject("SELECT to_jsonb(m)::text FROM message_metadata m WHERE account_id=?", String.class, account);
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(2);
         assertThat(jdbc.queryForObject("SELECT to_regclass('automation_rule_suggestion_dismissals') IS NULL", Boolean.class)).isTrue();
         assertThat(jdbc.queryForObject("SELECT to_jsonb(r)::text FROM automation_rules r WHERE account_id=?", String.class, account)).isEqualTo(savedRules);
         assertThat(jdbc.queryForObject("SELECT to_jsonb(m)::text FROM message_metadata m WHERE account_id=?", String.class, account)).isEqualTo(mail);
@@ -113,7 +113,7 @@ class DashboardMigrationTest {
         assertThat(flyway(null).validateWithResult().validationSuccessful).isTrue();
     }
 
-    @Test void retainedV28PersonalCorrectionsRepairCompanyGroupingWithoutChangingManualMembership() {
+    @Test void retainedV28PersonalCorrectionsRepairCompanyGroupingAndRetainEmailIdentity() {
         flyway("28").clean();flyway("28").migrate();
         var jdbc=new JdbcTemplate(new DriverManagerDataSource(POSTGRES.getJdbcUrl(),POSTGRES.getUsername(),POSTGRES.getPassword()));
         long account=new UserAccountFixtures(jdbc).createAccount("personal-upgrade@example.test");
@@ -123,11 +123,6 @@ class DashboardMigrationTest {
             VALUES(?,'google',?,?,?,'ADDRESS',?,ARRAY['INBOX'],true,'PERSONAL')
             """,account,address,address,address,address);
         assertThat(jdbc.queryForObject("SELECT count(DISTINCT group_id) FROM sender_group_members",Long.class)).isEqualTo(1);
-        jdbc.update("INSERT INTO sender_groups(account_id,group_key,label) VALUES(?,'separate:retained','Saved separation')",account);
-        jdbc.update("""
-            UPDATE sender_group_members SET group_id=(SELECT id FROM sender_groups WHERE account_id=? AND group_key='separate:retained')
-            WHERE unit_id=(SELECT id FROM sender_units WHERE account_id=? AND canonical_key='taylor@gene.com')
-            """,account,account);
         var before=jdbc.queryForList("SELECT dashboard_message_id,classification_override FROM message_metadata ORDER BY id");
         assertThat(flyway("29").migrate().migrationsExecuted).isEqualTo(1);
         assertThat(jdbc.queryForList("SELECT dashboard_message_id,classification_override FROM message_metadata ORDER BY id")).isEqualTo(before);
@@ -135,9 +130,9 @@ class DashboardMigrationTest {
         assertThat(jdbc.queryForObject("""
             SELECT g.group_key FROM sender_group_members member JOIN sender_groups g ON g.id=member.group_id
             JOIN sender_units u ON u.id=member.unit_id WHERE u.canonical_key='taylor@gene.com'
-            """,String.class)).isEqualTo("separate:retained");
+            """,String.class)).isEqualTo("address:taylor@gene.com");
     }
-    @Test void retainedV29MarketplaceRelaysRepairWithoutReclassifyingMessagesOrOverridingCorrections() {
+    @Test void retainedV29MarketplaceRelaysRepairWithoutReclassifyingMessages() {
         flyway("29").clean();flyway("29").migrate();
         var jdbc=new JdbcTemplate(new DriverManagerDataSource(POSTGRES.getJdbcUrl(),POSTGRES.getUsername(),POSTGRES.getPassword()));
         long account=new UserAccountFixtures(jdbc).createAccount("relay-upgrade@example.test");
@@ -147,11 +142,6 @@ class DashboardMigrationTest {
             VALUES(?,'google',?,?,?,'ADDRESS',?,ARRAY['INBOX'],true,'NOTIFICATION')
             """,account,address,address,address,address);
         assertThat(jdbc.queryForObject("SELECT count(DISTINCT group_id) FROM sender_group_members",Long.class)).isEqualTo(1);
-        jdbc.update("INSERT INTO sender_groups(account_id,group_key,label) VALUES(?,'separate:relay','Saved relay separation')",account);
-        jdbc.update("""
-            UPDATE sender_group_members SET group_id=(SELECT id FROM sender_groups WHERE account_id=? AND group_key='separate:relay')
-            WHERE unit_id=(SELECT id FROM sender_units WHERE account_id=? AND canonical_key='alias-b@marketplace.amazon.com')
-            """,account,account);
         var before=jdbc.queryForList("SELECT dashboard_message_id,classification_override FROM message_metadata ORDER BY id");
         assertThat(flyway(null).migrate().success).isTrue();
         assertThat(jdbc.queryForList("SELECT dashboard_message_id,classification_override FROM message_metadata ORDER BY id")).isEqualTo(before);
@@ -160,11 +150,11 @@ class DashboardMigrationTest {
         assertThat(jdbc.queryForObject("""
             SELECT g.group_key FROM sender_group_members member JOIN sender_groups g ON g.id=member.group_id
             JOIN sender_units u ON u.id=member.unit_id WHERE u.canonical_key='alias-b@marketplace.amazon.com'
-            """,String.class)).isEqualTo("separate:relay");
+            """,String.class)).isEqualTo("address:alias-b@marketplace.amazon.com");
     }
 
     @Test
-    void retainedV24OrganizationRepairPreservesExplicitSeparationAndMessageCategories() {
+    void retainedV24OrganizationRepairPreservesMessageCategories() {
         flyway("24").clean(); flyway("24").migrate();
         var jdbc=new JdbcTemplate(new DriverManagerDataSource(POSTGRES.getJdbcUrl(),POSTGRES.getUsername(),POSTGRES.getPassword()));
         long account=new UserAccountFixtures(jdbc).createAccount("organization-upgrade@example.test");
@@ -176,16 +166,11 @@ class DashboardMigrationTest {
                 """,account,address,address,address,address);
         }
         jdbc.update("UPDATE sender_units SET automatic_group_key='address:'||canonical_key WHERE account_id=?",account);
-        jdbc.update("INSERT INTO sender_groups(account_id,group_key,label) VALUES(?,'separate:fixture','Keep this person separate')",account);
-        jdbc.update("""
-            UPDATE sender_group_members SET group_id=(SELECT id FROM sender_groups WHERE account_id=? AND group_key='separate:fixture')
-            WHERE unit_id=(SELECT id FROM sender_units WHERE account_id=? AND canonical_key='personal@quora.com')
-            """,account,account);
         assertThat(flyway(null).migrate().success).isTrue();
         assertThat(jdbc.queryForObject("""
             SELECT count(DISTINCT g.group_key) FROM sender_group_members member JOIN sender_groups g ON g.id=member.group_id
             WHERE member.account_id=?
-            """,Long.class,account)).isEqualTo(2);
+            """,Long.class,account)).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM message_metadata WHERE account_id=? AND classification_override='SECURITY'",Long.class,account)).isEqualTo(3);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM message_evidence",Long.class)).isZero();
     }
@@ -290,9 +275,9 @@ class DashboardMigrationTest {
     }
 
     @Test
-    void organizationUpgradeRegroupsRetainedAddressesAndPreservesManualMembership() {
-        flyway("19").clean();
-        flyway("19").migrate();
+    void removingSavedGroupsRestoresDomainsAndPreservesMail() {
+        flyway("50").clean();
+        flyway("50").migrate();
         var jdbc = new JdbcTemplate(
                 new DriverManagerDataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword()));
         long account = new UserAccountFixtures(jdbc).createAccount("regroup@example.test");
@@ -317,24 +302,32 @@ class DashboardMigrationTest {
                 account, "separate:" + correction, unit);
         var messageIds = jdbc.queryForList("SELECT dashboard_message_id FROM message_metadata ORDER BY id");
         var unitIds = jdbc.queryForList("SELECT id,public_id FROM sender_units ORDER BY id");
+        long split = jdbc.queryForObject("""
+            INSERT INTO sender_units(account_id,kind,canonical_key,automatic_group_key,automatic_label,evidence_reason)
+            VALUES(?,'SPLIT_ADDRESS','retired-split','domain:chase.com','Saved split','Retired manual split') RETURNING id
+            """, Long.class, account);
+        jdbc.update("INSERT INTO sender_address_units(account_id,source_unit_id,address,unit_id,active) VALUES(?,?, 'special@notify.chase.com',?,true)",account,unit,split);
+        jdbc.update("INSERT INTO sender_group_members SELECT ?,?,id FROM sender_groups WHERE account_id=? AND group_key=?",account,split,account,"separate:"+correction);
+        jdbc.update("INSERT INTO sender_separations VALUES(?,?,?)",account,Math.min(unit,split),Math.max(unit,split));
         assertThat(flyway(null).migrate().success).isTrue();
         assertThat(jdbc.queryForObject("SELECT count(DISTINCT group_id) FROM sender_group_members", Long.class))
-                .isEqualTo(2);
+                .isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM sender_units WHERE automatic_group_key='domain:chase.com'",
                 Long.class)).isEqualTo(3);
         assertThat(jdbc.queryForObject(
                 "SELECT g.group_key FROM sender_group_members m JOIN sender_groups g ON m.group_id=g.id WHERE m.unit_id=?",
-                String.class, unit)).isEqualTo("separate:" + correction);
+                String.class, unit)).isEqualTo("domain:chase.com");
         assertThat(jdbc.queryForObject("SELECT grouping_revision FROM dashboard_account_settings WHERE account_id=?",
-                Long.class, account)).isEqualTo(1);
+                Long.class, account)).isGreaterThan(0);
         assertThat(jdbc.queryForList("SELECT dashboard_message_id FROM message_metadata ORDER BY id"))
                 .isEqualTo(messageIds);
         assertThat(jdbc.queryForList("SELECT id,public_id FROM sender_units ORDER BY id")).isEqualTo(unitIds);
         jdbc.update("UPDATE message_metadata SET dashboard_unit_key=dashboard_unit_key");
         assertThat(jdbc.queryForObject("SELECT count(DISTINCT group_id) FROM sender_group_members", Long.class))
-                .isEqualTo(2);
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM sender_group_corrections WHERE active", Long.class))
                 .isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM sender_units WHERE kind='SPLIT_ADDRESS'", Long.class)).isZero();
+        for (String table : java.util.List.of("sender_group_corrections","sender_separations","sender_address_units"))
+            assertThat(jdbc.queryForObject("SELECT to_regclass(?) IS NULL",Boolean.class,table)).isTrue();
     }
 
     @Test

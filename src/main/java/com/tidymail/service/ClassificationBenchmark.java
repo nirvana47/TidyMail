@@ -120,7 +120,7 @@ public class ClassificationBenchmark implements ApplicationRunner {
             {"news@substack.com","Weekly Journal","Your weekly editorial newsletter","NEWSLETTER","AUTOMATED"},
             {"opaque1@txt.voice.google.com","Alex","New text message: are you coming tonight?","PERSONAL","RELAY"},
             {"opaque2@txt.voice.google.com","Alex","New text message: see you at six","PERSONAL","RELAY"},
-            {"alerts@chase.com","Chase","Your monthly statement is ready","NOTIFICATION","AUTOMATED"},
+            {"alerts@chase.com","Sample Contact","Your monthly statement is ready","NOTIFICATION","AUTOMATED"},
             {"billing@unknown-service.example","Example Service","Payment received: invoice 204","RECEIPT","AUTOMATED"},
             {"noreply@github.com","GitHub","Your workflow run completed","NOTIFICATION","AUTOMATED"},
             {"device-support@google.com","Google","Your device support request has been updated","NOTIFICATION","AUTOMATED"}

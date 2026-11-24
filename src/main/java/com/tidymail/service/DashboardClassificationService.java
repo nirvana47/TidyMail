@@ -16,12 +16,12 @@ public class DashboardClassificationService {
     private final JdbcTemplate jdbc;
     private final TransactionTemplate tx;
     private final JevClassifier classifier;
-    private final DashboardGroupingService grouping;
+    private final DashboardAutomaticGroupingService grouping;
     private final ClassificationBudget budget;
     private final ClassificationIncoming incoming;
     @org.springframework.beans.factory.annotation.Value("${app.classification.batch-size:5}")
     private volatile int batchSize=5;
-    public DashboardClassificationService(JdbcTemplate jdbc,TransactionTemplate tx,JevClassifier classifier,DashboardGroupingService grouping,ClassificationBudget budget,ClassificationIncoming incoming) {
+    public DashboardClassificationService(JdbcTemplate jdbc,TransactionTemplate tx,JevClassifier classifier,DashboardAutomaticGroupingService grouping,ClassificationBudget budget,ClassificationIncoming incoming) {
         this.jdbc=jdbc;this.tx=tx;this.classifier=classifier;this.grouping=grouping;this.budget=budget;this.incoming=incoming;
     }
     public record Status(boolean configured,UUID id,String state,int total,int done,int skipped,BigDecimal cost,String message,ClassificationBudget.View budget,boolean automatic,boolean automaticRun) {}

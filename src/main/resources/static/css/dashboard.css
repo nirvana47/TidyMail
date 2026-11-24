@@ -52,6 +52,28 @@ html {
 .active-filters {
     gap:6px
 }
+.label-filter-group {
+    gap:6px;
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:3px
+}
+.label-operator {
+    font-size:12px;
+    font-weight:700
+}
+.label-expression {
+    font-weight:600;
+    overflow-wrap:anywhere
+}
+.label-match-warning {
+    border-left:3px solid #a96812;
+    padding:8px 12px;
+    margin-block:10px
+}
+.label-match-warning p {
+    margin:0 0 8px
+}
 .filter-chip {
     background:#e9effa;
     border-color:transparent;
@@ -638,10 +660,6 @@ th[aria-sort=descending] .column-sort {
     overflow:auto;
     font-size:12px;
     overflow-wrap:anywhere
-}
-#splitAddresses,#correctionAffected {
-    max-height:240px;
-    overflow:auto
 }
 #classification p {
     font-size:13px

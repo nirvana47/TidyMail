@@ -41,7 +41,7 @@
                         <option value="size">Total estimated size</option>
                     </select></label>
                 <label>Group by <select id="groupBy" autocomplete="off">
-                        <option value="current">Domains &amp; saved groups</option>
+                        <option value="current">Domains &amp; senders</option>
                         <option value="address">Sender address</option>
                     </select></label>
             </div>
@@ -68,9 +68,9 @@
         <button id="clearComposition" hidden></button>
         <section class="workspace" aria-label="Mailbox workspace">
             <div class="list">
-                <div class="evidence" id="groupingToolbar" hidden>
+                <div class="evidence" id="senderSelectionToolbar" hidden>
                     <div class="row">
-                        <strong id="groupingCount" role="status"></strong>
+                        <strong id="senderSelectionCount" role="status"></strong>
                         <label for="senderAction" class="muted">Email action</label>
                         <select id="senderAction" class="sender-action" aria-describedby="senderActionScope">
                             <option value="MARK_READ">Mark as read</option>
@@ -82,7 +82,6 @@
                     </div>
                     <p id="senderActionScope" class="muted">Applies to matching emails across all pages for the selected senders.</p>
                     <div class="row">
-                        <button id="combineGroups">Combine</button><button id="splitGroup">Split</button>
                         <button id="selectAllMatchingSenders" hidden>Select all matching senders</button>
                         <span id="senderBulkStatus" role="status" hidden></span>
                         <button id="clearGroups">Clear senders</button>
@@ -159,7 +158,7 @@
                 <summary id="labelSummary">Labels</summary>
                 <div class="row">
                     <label>Label matching <select id="labelMatch">
-                        <option value="all">Match all</option><option value="any">Match any</option>
+                        <option value="all">All selected labels (AND)</option><option value="any">Any selected label (OR)</option>
                     </select></label>
                     <button id="clearLabels" type="button">Clear labels</button>
                 </div>
@@ -193,6 +192,11 @@
                     <label><input type="checkbox" name="labelFilter" value="OTHER">Other</label>
                     <label><input type="checkbox" name="labelFilter" value="UNCLASSIFIED">Unclassified</label>
                     <div id="gmailLabelChoices"></div>
+                </div>
+                <p id="labelExpression" class="label-expression" role="status" hidden></p>
+                <div id="calendarLabelConflict" class="label-match-warning" hidden>
+                    <p>An email can have only one calendar status. Choose OR to see either status.</p>
+                    <button id="useLabelOr" type="button">Use OR</button>
                 </div>
                 <label id="shoppingExclusions" hidden><input type="checkbox" id="excludeProtectedShopping">Exclude Receipt and Security</label>
                 <p class="muted" id="localLabelProgress">Messages with labels still pending may not appear in filtered results. Calendar labels are checked in the background and include confirmed status from the last hour; unchecked or uncertain events remain unlabelled. Gmail checks your primary calendar.</p>
@@ -286,7 +290,7 @@
         </div>
         <p>For School, Healthcare, Shipping, Order, Bill and Statement, use Label / reclassify emails. This older classifier only supplies legacy categories and sender grouping.</p>
         <p>Jev suggests a category for each message and improves automatic sender grouping. Personal addresses stay
-            separate. Saved grouping and category corrections take priority.</p>
+            separate. Saved category corrections take priority.</p>
         <p>Sender addresses, names, subjects, and category/list/reply hints are sent to Jev through OpenRouter. Bodies,
             attachments, recipients, and account credentials are never sent. This does not change mail in Gmail.</p>
         <p>In OpenRouter, keep input/output logging and data sharing off and enable zero data retention. TidyMail
@@ -340,27 +344,6 @@
         <p class="muted" id="actionAvailability"></p>
         <footer class="dialog-footer row spread"><button data-close="confirm">Back to selection</button><button id="confirmAction"
                 class="primary" disabled></button></footer>
-    </dialog>
-    <dialog id="correction" aria-labelledby="correctionTitle">
-        <div class="row spread">
-            <h2 id="correctionTitle">Organize senders</h2><button data-close="correction">Close</button>
-        </div>
-        <p>Grouping organizes your dashboard. It does not select or change mail.</p>
-        <label>Action <select id="correctionKind">
-                <option value="MERGE">Combine</option><option value="SPLIT">Split</option>
-                <option value="RESET">Reset a saved correction</option>
-            </select></label>
-        <div id="correctionGroups"></div>
-        <div id="splitFields" hidden>
-            <p>Choose addresses for the first group. Remaining addresses form the other group.</p>
-            <div id="splitAddresses"></div>
-            <label>Remaining addresses group name <input id="remainderLabel" maxlength="160"></label>
-        </div>
-        <label id="groupName">Group name <input id="mergeLabel" maxlength="160"></label>
-        <label id="resetLabel" hidden>Correction to reset <select id="resetCorrection"></select></label>
-        <button id="previewCorrection">Preview grouping change</button>
-        <div id="correctionAffected"></div><button class="primary" id="applyCorrection" disabled>Apply grouping
-            change</button>
     </dialog>
 </body>
 

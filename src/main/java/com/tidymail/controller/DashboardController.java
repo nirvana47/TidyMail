@@ -23,7 +23,6 @@ public class DashboardController {
     private final ReviewedPatternService patterns;
     private final OwnedAccountScopeService accounts;
     private final DashboardService dashboard;
-    private final DashboardGroupingService grouping;
     private final DashboardPreviewService previews;
     private final DashboardRepository repository;
     private final DashboardClassificationService classification;
@@ -34,7 +33,7 @@ public class DashboardController {
     private final Map<Long,GmailLabels> gmailLabels = new java.util.concurrent.ConcurrentHashMap<>();
 
     public DashboardController(OwnedAccountScopeService accounts, DashboardService dashboard,
-            DashboardGroupingService grouping, DashboardPreviewService previews, DashboardRepository repository,
+            DashboardPreviewService previews, DashboardRepository repository,
             DashboardClassificationService classification, MessageEvidenceService evidence, ReviewedPatternService patterns,
             RecommendationService recommendations, RecommendationProcessingService processing, LabelingPipeline labeling,
             LabelingReviewService labelingReview,com.tidymail.job.LabelingWorker labelingWorker,
@@ -50,7 +49,6 @@ public class DashboardController {
         this.evidence = evidence;
         this.accounts = accounts;
         this.dashboard = dashboard;
-        this.grouping = grouping;
         this.previews = previews;
         this.repository = repository;
         this.classification = classification;
@@ -227,12 +225,6 @@ public class DashboardController {
         return dashboard.addresses(account(auth), DashboardFilter.from(parameters), group);
     }
 
-    @GetMapping("/api/groups/{group}/grouping")
-    @ResponseBody
-    public DashboardRepository.Grouping grouping(@PathVariable UUID group, OAuth2AuthenticationToken auth) {
-        return dashboard.grouping(account(auth), group);
-    }
-
     public record Selection(DashboardFilter filter, List<UUID> groups, String address, long revision, boolean unreadOnly) {
     }
 
@@ -266,14 +258,6 @@ public class DashboardController {
         previews.invalidate(account(auth), id);
     }
 
-    @GetMapping("/api/corrections")
-    @ResponseBody
-    public List<Map<String, Object>> corrections(OAuth2AuthenticationToken auth) {
-        return repository.jdbc().queryForList(
-                "SELECT public_id,kind,label,created_at FROM sender_group_corrections WHERE account_id=:account AND active ORDER BY id DESC",
-                Map.of("account", account(auth)));
-    }
-
     @GetMapping("/api/settings")
     @ResponseBody
     public Map<String, String> settings(OAuth2AuthenticationToken auth) {
@@ -293,20 +277,6 @@ public class DashboardController {
         repository.jdbc().update(
                 "INSERT INTO dashboard_account_settings(account_id,display_timezone) VALUES(:account,:zone) ON CONFLICT(account_id) DO UPDATE SET display_timezone=EXCLUDED.display_timezone",
                 Map.of("account", account(auth), "zone", zone));
-    }
-
-    @PostMapping("/api/corrections/preview")
-    @ResponseBody
-    public DashboardGroupingService.Review correctionPreview(@RequestBody DashboardGroupingService.Correction request,
-            OAuth2AuthenticationToken auth) {
-        return grouping.correct(account(auth), request, false);
-    }
-
-    @PostMapping("/api/corrections")
-    @ResponseBody
-    public DashboardGroupingService.Review correction(@RequestBody DashboardGroupingService.Correction request,
-            OAuth2AuthenticationToken auth) {
-        return grouping.correct(account(auth), request, true);
     }
 
     @GetMapping("/api/classification")

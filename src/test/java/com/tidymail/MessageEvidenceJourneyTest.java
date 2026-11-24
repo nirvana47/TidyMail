@@ -26,7 +26,6 @@ class MessageEvidenceJourneyTest extends PostgresJourneyTest {
     @Autowired MessageEvidenceService evidence;
     @Autowired MessageMetadataSyncRepository metadata;
     @Autowired MessageMetadataMapper mapper;
-    @Autowired DashboardGroupingService grouping;
     @Autowired CorrespondentHistory history;
     long account;
     @BeforeEach void setup(){account=userAccounts.createAccount(OWNER);reset(reader,classifier);}
@@ -83,18 +82,14 @@ class MessageEvidenceJourneyTest extends PostgresJourneyTest {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM message_evidence WHERE account_id=?",Long.class,account)).isEqualTo(1);
         verifyNoInteractions(classifier,gmailProvider);
     }
-    @Test void reviewedOrganizationMergesListVariantsButPreservesCorrectionsAndSecurityTypes() {
+    @Test void reviewedOrganizationMergesListVariantsButPreservesSecurityTypes() {
         UUID routine=mail("routine","digest@quora.com","{INBOX}",1L,"LIST","one.quora");
         UUID security=mail("security","access@quora.com","{INBOX}",2L,"LIST","two.quora");
         jdbc.update("UPDATE message_metadata SET classification_override=CASE WHEN dashboard_message_id=? THEN 'SECURITY' ELSE 'NEWSLETTER' END",security);
         var page=dashboard.page(account,filter(""));assertThat(page.groups()).hasSize(1);
         var details=dashboard.details(account,filter(""),page.groups().getFirst().id(),0);
         assertThat(details.messages()).extracting(DashboardRepository.Message::category).containsExactlyInAnyOrder("SECURITY","NEWSLETTER");
-        var unit=dashboard.grouping(account,page.groups().getFirst().id()).units().getFirst().id();
-        grouping.correct(account,new DashboardGroupingService.Correction("SEPARATE",List.of(unit),null,null,page.revision()),true);
-        mail("another","digest@quora.com","{INBOX}",1L,"LIST","one.quora");
-        assertThat(dashboard.page(account,filter("")).groups()).hasSize(2);
-        assertThat(details.messages()).extracting(DashboardRepository.Message::id).contains(routine,security);
+        verifyNoInteractions(reader,classifier,gmailProvider);
     }
     @Test void scopedReadPermissionIsCheckedOnlyAtTheActualUncachedRead() {
         UUID id=mail("scoped","person@gmail.com","{INBOX}",100L,"ADDRESS","person@gmail.com");

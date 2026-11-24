@@ -93,10 +93,10 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
                     new java.math.BigDecimal("0.0001"));
         });
         for (var sample : java.util.List.of(
-                new String[] { "shivani.tewari@gene.com", "Shivani Tewari", "Dinner tonight?" },
-                new String[] { "shivani.tewari2016@gmail.com", "Shivani Tewari", "Family plans" },
-                new String[] { "no.reply.alerts@chase.com", "Chase", "Synthetic account alert" },
-                new String[] { "no-reply@alertsp.chase.com", "Chase", "Synthetic account update" },
+                new String[] { "taylor.work@example.com", "Taylor Example", "Synthetic project discussion" },
+                new String[] { "taylor.personal@example.org", "Taylor Example", "Synthetic planning update" },
+                new String[] { "sample.contact@example.net", "Sample Contact", "Synthetic contact message" },
+                new String[] { "sample.work@office.example.com", "Sample Contact", "Synthetic alternate-address message" },
                 new String[] { "orders@amazon.com", "Amazon", "Your receipt" },
                 new String[] { "orders@amazon.com", "Amazon", "Special offer" })) {
             String id = "classification-" + java.util.UUID.randomUUID();
@@ -144,7 +144,7 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
                 labels,label_evidence_known,dashboard_from_address,dashboard_unit_kind,dashboard_unit_key,received_at,
                 size_estimate,classification_override,snippet_text,snippet_state)
                 VALUES(?,'google',?,'spouse@gmail.com','Spouse',?,ARRAY['INBOX'],true,'spouse@gmail.com','ADDRESS','spouse@gmail.com',now(),8000,'PERSONAL','Synthetic all-day invitation','AVAILABLE')
-                """,account,id,id.equals("calendar-master") ? "Calendar sample: monthly family plan" : "Calendar sample: updated family plan");
+                """,account,id,id.equals("calendar-master") ? "Calendar sample: monthly demo schedule" : "Calendar sample: updated demo schedule");
         }
         jdbc.update("UPDATE message_metadata SET size_estimate=6000000,snippet_text='A bounded preview for checking the email inspector.',snippet_state='AVAILABLE' WHERE account_id=? AND provider_message_id IN ('browser-1','browser-2','browser-3')",account);
         org.mockito.Mockito.when(evidenceReader.read(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.anyString())).thenAnswer(call -> {

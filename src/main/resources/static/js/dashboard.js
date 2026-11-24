@@ -59,7 +59,7 @@
       updateSelection();
     }
   }
-  let filterEpoch = 0, listRequest = 0, listLoading = false, detailRequest = 0, detailLoad = null, detailRefreshPending = false, selectionBusy = 0, correctionDraft = null, correctionGroups = [], correctionRequest = 0;
+  let filterEpoch = 0, listRequest = 0, listLoading = false, detailRequest = 0, detailLoad = null, detailRefreshPending = false, selectionBusy = 0;
   let detailError = null;
   const fmt = number => Number(number).toLocaleString();
   function node(tag, text, className) { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (className) e.className = className; return e; }
@@ -148,14 +148,11 @@
     $('review').disabled = !selected.size || reviewBusy;
     $('createMessageRule').disabled = !selected.size || reviewBusy;
     const byAddress = $('groupBy').value === 'address', count = senderSelection.size;
-    const unit = byAddress ? 'sender address' : 'sender group';
-    $('groupingToolbar').hidden = count === 0;
-    $('groupingCount').textContent = `${fmt(count)} ${unit}${count === 1 ? '' : byAddress ? 'es' : 's'} selected`;
+    const unit = byAddress ? 'sender address' : 'domain or sender row';
+    $('senderSelectionToolbar').hidden = count === 0;
+    $('senderSelectionCount').textContent = `${fmt(count)} ${unit}${count === 1 ? '' : byAddress ? 'es' : 's'} selected`;
     $('reviewSenders').disabled = !count || reviewBusy || $('senderTable').hasAttribute('aria-busy');
     $('createSenderSelectionRule').disabled = $('reviewSenders').disabled;
-    $('combineGroups').hidden = $('splitGroup').hidden = byAddress;
-    $('combineGroups').disabled = count < 2 || listLoading;
-    $('splitGroup').disabled = count !== 1 || listLoading;
     const visible=state.data?.groups || [], visibleSelected=visible.filter(g=>senderSelection.has(g.id)).length;
     const header=$('selectPageSenders'), total=Number(state.data?.summary.groups || 0);
     header.checked=visible.length>0 && visibleSelected===visible.length;
@@ -200,7 +197,6 @@
     if (composition) $('clearComposition').textContent = `Clear Inbox drilldown: ${composition.label}`;
     $('compositionRows').replaceChildren();
     filterEpoch++; detailRequest++; detailLoad?.controller.abort(); state.page = 0; state.messagePage = 0; expanded.clear(); state.details = null; state.focused = null; $('detail').hidden = true;
-    if ($('correction').open) $('correction').close();
     clearSelection(hadSelection ? 'Filters changed. Draft selection was cleared.' : undefined); loadPage();
   }
   async function loadPage(pagerFocus, background = false, forceDetails = false) {
@@ -525,12 +521,7 @@
     } else {
       for (const a of detail.addresses) { const row = node('div', undefined, 'message-row'); row.append(addressCheckbox(state.focused, a), addressLink(state.focused,a)); content.append(row); }
       content.append(node('p', state.focused.evidence, 'evidence'));
-      if ($('groupBy').value === 'current') {
-        const controls = node('div', undefined, 'corrections'), organize = node('button', 'Organize sender group');
-        organize.dataset.focusKey = 'organize';
-        organize.onclick = () => openCorrections([state.focused], 'SPLIT');
-        controls.append(organize); content.append(controls);
-      }
+
     }
     restore();
   }
@@ -602,7 +593,7 @@
       $('confirmTitle').textContent = 'Review ' + actionName(preview.action).toLowerCase(); $('confirmAction').textContent = action;
       $('confirmAction').classList.toggle('danger', preview.action === 'TRASH');
       $('confirmScope').textContent = `${preview.filter.scope === 'inbox' ? 'Inbox' : preview.filter.scope === 'indexed' ? 'All indexed mail' : preview.filter.suggestion === 'large' && !outlook ? 'Received and Sent mail' : 'All Mailbox'} · ${preview.filter.start || 'All indexed dates'}${preview.filter.end ? ' through ' + preview.filter.end : ''} · ${preview.filter.zone}${preview.filter.q ? ' · Search: ' + preview.filter.q : ''}`;
-      if (previewFromSenders) $('confirmScope').textContent += ' · ' + $('groupingCount').textContent;
+      if (previewFromSenders) $('confirmScope').textContent += ' · ' + $('senderSelectionCount').textContent;
       $('confirmCounts').textContent = `${fmt(preview.selected)} fixed targets · ${fmt(preview.effective)} eligible changes · ${fmt(preview.skipped)} will be skipped (${fmt(preview.protectedCount)} protected) · ${bytesText(preview.knownBytes)} selected${preview.unknownSizes ? ' · '+fmt(preview.unknownSizes)+' sizes unknown' : ''}`;
       $('confirmCoverage').textContent = `Indexed messages only · ${dateText(preview.coverage.oldest)}–${dateText(preview.coverage.newest)} · As of ${dateText(preview.coverage.as_of)}`;
       $('actionExplanation').textContent = preview.action === 'ORGANIZE' ? `${preview.destination.mode === 'NEW' ? 'Create' : 'Use existing'} ${outlook ? 'folder' : 'label'} “${preview.destination.name}”. ${outlook || preview.destination.skipInbox ? 'Messages leave the Inbox.' : 'Messages stay in the Inbox.'} No future-mail rule is created. New destinations are created only after you confirm Apply.` : preview.action === 'ARCHIVE' ? (outlook ? 'Move selected emails to Archive.' : 'Archive removes mail from Inbox but does not free storage.') : preview.action === 'TRASH' ? outlook ? 'Move selected emails to Deleted Items.' : `Move to Trash may reclaim approximately ${bytesText(preview.effectiveBytes)} after Gmail permanently deletes the emails, normally after 30 days.` : preview.action === 'MARK_READ_ARCHIVE' ? (outlook ? 'Mark selected emails as read, then move them to Archive.' : 'Gmail removes the Unread and Inbox labels in one request. Messages already read and outside Inbox are skipped.') : 'Already-read messages will be skipped.';
@@ -622,76 +613,6 @@
     if (!state.preview) return; const id = state.preview.id, page = state.targetPage;
     try { const result = await api(`previews/${id}/targets?page=${page}`); if (state.preview?.id !== id || state.targetPage !== page) return; $('exactTargets').replaceChildren(); for (const target of result.rows) { const row = node('div', undefined, 'target'); row.append(node('strong', target.subject_header || '(No subject)'), node('div', `${target.sender_address} · ${dateText(target.received_at)}`), node('small', target.reason, 'muted')); $('exactTargets').append(row); } $('targetRange').textContent = `${result.rows.length ? page * 10 + 1 : 0}–${page * 10 + result.rows.length} of ${fmt(result.total)}`; $('targetPrev').disabled = page === 0; $('targetNext').disabled = (page + 1) * 10 >= result.total; } catch (error) { notice(error.message); invalidatePreview(); }
   }
-  function invalidateCorrection() {
-    correctionRequest++;
-    correctionDraft = null; $('applyCorrection').disabled = true; $('correctionAffected').replaceChildren();
-  }
-  async function openCorrections(groups, operation) {
-    const epoch = filterEpoch, revision = state.revision;
-    invalidateCorrection();
-    const request = correctionRequest;
-    try {
-      const [history, ...members] = await Promise.all([api('corrections'), ...groups.map(group =>
-        api(`groups/${group.id}/grouping`))]);
-      if (epoch !== filterEpoch || revision !== state.revision || request !== correctionRequest) return;
-      if (members.some(result => result.revision !== revision)) throw new Error('Grouping changed. Reload and try again.');
-      correctionGroups = groups.map((group, i) => ({ ...group, units: members[i].units }));
-      $('correctionGroups').replaceChildren(...correctionGroups.map(group => {
-        const names = [...new Set(group.units.flatMap(u => u.addresses))];
-        const details = node('details'); details.append(node('summary', `${group.label} · ${names.length} addresses`), node('p', names.join(', ')));
-        return details;
-      }));
-      $('resetCorrection').replaceChildren();
-      for (const item of history) {
-        const option = node('option', `${item.kind} · ${item.label || dateText(item.created_at)}`);
-        option.value = item.public_id; $('resetCorrection').append(option);
-      }
-      $('splitAddresses').replaceChildren();
-      if (groups.length === 1) {
-        const addresses = new Set(correctionGroups[0].units.filter(u => u.kind !== 'MESSAGE').flatMap(u => u.addresses));
-        for (const address of [...addresses].sort()) {
-          const label = node('label'), box = node('input'); box.type = 'checkbox'; box.value = address;
-          box.onchange = invalidateCorrection;
-          label.append(box, document.createTextNode(address));
-          $('splitAddresses').append(label);
-        }
-      }
-      $('mergeLabel').value = ''; $('remainderLabel').value = '';
-      $('correctionKind').value = operation;
-      $('correctionKind').querySelector('[value=MERGE]').disabled = groups.length < 2;
-      $('correctionKind').querySelector('[value=SPLIT]').disabled = groups.length !== 1;
-      correctionFields();
-      if (!$('correction').open) $('correction').showModal();
-    } catch (error) { if (epoch === filterEpoch) notice(error.message); }
-  }
-  function correctionFields() {
-    const op = $('correctionKind').value;
-    $('splitFields').hidden = op !== 'SPLIT'; $('resetLabel').hidden = op !== 'RESET';
-    $('groupName').hidden = op === 'RESET';
-    invalidateCorrection();
-  }
-  async function previewCorrection() {
-    invalidateCorrection();
-    const operation = $('correctionKind').value, generation = correctionRequest;
-    try {
-      const units = operation === 'MERGE' ? correctionGroups.map(group => group.units.find(u => u.kind !== 'MESSAGE')?.id) : [];
-      const addresses = operation === 'SPLIT' ? [...$('splitAddresses').querySelectorAll(':checked')].map(box => box.value) : [];
-      const label = $('mergeLabel').value.trim();
-      if (operation !== 'RESET' && !label) throw new Error('Enter a group name.');
-      if (operation === 'MERGE' && units.some(id => !id)) throw new Error('Fresh sender metadata is needed for all groups.');
-      if (operation === 'SPLIT' && !addresses.length) throw new Error('Select at least one address.');
-      const request = { operation, units, addresses, group: operation === 'SPLIT' ? correctionGroups[0].id : null,
-        label, remainderLabel: $('remainderLabel').value.trim(),
-        resetId: operation === 'RESET' ? $('resetCorrection').value : null, revision: state.revision };
-      const review = await api('corrections/preview', request);
-      if (!$('correction').open || request.revision !== state.revision || generation !== correctionRequest) return;
-      correctionDraft = request;
-      $('correctionAffected').textContent = `${fmt(review.affected.length)} sender identities in this change. ${review.explanation}`;
-      $('applyCorrection').disabled = false;
-    } catch (error) { $('correctionAffected').textContent = error.message; }
-  }
-  async function applyCorrection() { if (!correctionDraft) return; $('applyCorrection').disabled = true; try { await api('corrections', correctionDraft); $('correction').close(); state.focused = null; composition = null; filtersChanged(); notice('Grouping updated. Draft selection was cleared.'); } catch (error) { $('correctionAffected').textContent = error.message; } }
-
   function bytesText(value) {
     if (value === null || value === undefined) return 'Size unknown';
     const bytes = Number(value); return bytes >= 1000000 ? `${(bytes / 1000000).toFixed(1)} MB` : bytes >= 1000 ? `${(bytes / 1000).toFixed(1)} KB` : `${bytes} bytes`;
@@ -834,14 +755,20 @@
     finally { recommendationStatusBusy=false;if(recommendationStatus)renderRecommendationStatus(recommendationStatus); }
   };
   function updateLabelSummary() {
-    const count = labelChoices.filter(input => input.checked).length;
+    const selected = labelChoices.filter(input => input.checked), count = selected.length;
+    const operator = $('labelMatch').value === 'all' ? 'AND' : 'OR';
     $('shoppingExclusions').hidden = !labelChoices.some(input => input.value === 'SHOPPING' && input.checked);
-    $('labelSummary').textContent = count ? `Labels (${count}, ${$('labelMatch').value === 'all' ? 'match all' : 'match any'})` : 'Labels';
+    $('labelSummary').textContent = count ? `Labels (${count}${count > 1 ? ', ' + operator : ''})` : 'Labels';
+    $('labelExpression').hidden = !count;
+    $('labelExpression').textContent = selected.map(input => input.closest('label').textContent.trim()).join(` ${operator} `);
+    const calendarStatuses = new Set(['CALENDAR_RESPONDED', 'CALENDAR_NEEDS_RESPONSE', 'CALENDAR_CANCELLED']);
+    $('calendarLabelConflict').hidden = operator !== 'AND' || selected.filter(input => calendarStatuses.has(input.value)).length < 2;
   }
   function labelFilterChanged() { updateLabelSummary(); filtersChanged(); }
   for (const input of [...labelChoices, $('labelMatch'), $('excludeProtectedShopping')]) input.addEventListener('change', labelFilterChanged);
   $('labelFilter').addEventListener('toggle', () => { if ($('labelFilter').open) loadGmailLabels(); });
   $('clearLabels').onclick = () => { labelChoices.forEach(input => { input.checked = false; }); $('excludeProtectedShopping').checked = false; labelFilterChanged(); };
+  $('useLabelOr').onclick = () => { $('labelMatch').value = 'any'; labelFilterChanged(); };
   for (const id of ['recommendation', 'importance']) $(id).addEventListener('change', filtersChanged);
   const calendarChecks = new Map();
   function appendCalendarResponse(text, m) {
@@ -1146,8 +1073,6 @@
   $('senderPageSize').onchange = () => { state.pageSize = Number($('senderPageSize').value); state.page = 0; loadPage(); };
   $('prevPage').onclick = () => { state.page--; loadPage('prevPage'); };
   $('nextPage').onclick = () => { state.page++; loadPage('nextPage'); };
-  $('combineGroups').onclick = () => openCorrections([...senderSelection.values()], 'MERGE');
-  $('splitGroup').onclick = () => openCorrections([...senderSelection.values()], 'SPLIT');
   $('selectPageSenders').onchange = () => {
     if(listLoading || selectionBusy)return;
     for(const g of state.data?.groups || []){if($('selectPageSenders').checked)senderSelection.set(g.id,g);else senderSelection.delete(g.id);}
@@ -1199,12 +1124,8 @@
     const review = $(previewFromSenders ? 'reviewSenders' : 'review');
     (review.disabled ? $('senderTable') : review).focus();
   });
-  $('correction').addEventListener('close', () => { invalidateCorrection(); ($('detailContent').querySelector('[data-focus-key=organize]') || $('senderTable')).focus(); });
   $('targetPrev').onclick = () => { state.targetPage--; loadTargets(); }; $('targetNext').onclick = () => { state.targetPage++; loadTargets(); };
   $('confirmAction').onclick = confirmJob;
-  $('correctionKind').onchange = correctionFields;
-  for (const id of ['mergeLabel', 'remainderLabel', 'resetCorrection']) $(id).addEventListener('input', invalidateCorrection);
-  $('previewCorrection').onclick = previewCorrection; $('applyCorrection').onclick = applyCorrection;
   function keepFocusVisible() {
     const target = document.activeElement;
     if (!target || target === document.body || $('dock').hidden || $('dock').contains(target) || target.closest('dialog')) return;
@@ -1242,17 +1163,29 @@
   function renderFilterChips() {
     syncSizeFilter();
     const chips = $('activeFilters'); chips.replaceChildren();
-    const add = (label, clear) => { const button = node('button', label + ' ×', 'filter-chip'); button.type = 'button'; button.setAttribute('aria-label', 'Remove filter: ' + label); button.onclick = () => { clear(); updateLabelSummary(); filtersChanged(); }; chips.append(button); };
+    const add = (label, clear, container = chips) => { const button = node('button', label + ' ×', 'filter-chip'); button.type = 'button'; button.setAttribute('aria-label', 'Remove filter: ' + label); button.onclick = () => { clear(); updateLabelSummary(); filtersChanged(); }; container.append(button); };
     for (const id of ['search', 'start', 'end', 'recommendation', 'importance']) {
       const input = $(id); if (!input.value) continue;
       const label = input.tagName === 'SELECT' ? input.selectedOptions[0].textContent : id === 'search' ? 'Search: ' + input.value : (id === 'start' ? 'From ' : 'Through ') + input.value;
       add(label, () => { input.value = ''; });
     }
-    for (const input of labelChoices.filter(input => input.checked)) add(input.closest('label').textContent.trim(), () => { input.checked = false; });
+    const selectedLabels = labelChoices.filter(input => input.checked);
+    if (selectedLabels.length) {
+      const group = node('div', undefined, 'label-filter-group row');
+      const operator = $('labelMatch').value === 'all' ? 'AND' : 'OR';
+      group.setAttribute('role', 'group');
+      group.setAttribute('aria-label', 'Selected labels (' + operator + ')');
+      selectedLabels.forEach((input, index) => {
+        if (index) group.append(node('span', operator, 'label-operator'));
+        add(input.closest('label').textContent.trim(), () => { input.checked = false; }, group);
+      });
+      chips.append(group);
+    }
     if (state.suggestion) add('Large emails', () => { state.suggestion = ''; $('activeSuggestion').hidden = true; });
     if (composition) add(composition.label, () => { composition = null; });
     if ($('excludeProtectedShopping').checked) add('Exclude Receipt and Security', () => { $('excludeProtectedShopping').checked = false; });
-    $('filterCount').hidden = !chips.children.length; $('filterCount').textContent = chips.children.length;
+    const count = chips.querySelectorAll('.filter-chip').length;
+    $('filterCount').hidden = !count; $('filterCount').textContent = count;
   }
   $('resetFilters').onclick = () => {
     for (const id of ['search', 'start', 'end', 'recommendation', 'importance']) $(id).value = '';

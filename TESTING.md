@@ -1,5 +1,26 @@
 # Testing TidyMail
 
+Start with [What people should be able to do in TidyMail](WORKFLOWS.md) and
+[what the existing tests check](WORKFLOW-TEST-REVIEW.md). Each test must support a
+real task there and expose a mistake a person would notice. Expected results come
+from the product decisions, not a copy of the implementation's output. Strengthen
+existing journeys before adding cases; record which real connections they skip.
+
+Read the [November 23 test accounting](TEST-AUDIT-2026-11-23.md) for current
+evidence boundaries, weak assertions, and why date entry, bulk-cleanup speed and
+rule-update recovery escaped earlier checks, and why automatic “Consider Trash”
+cannot currently be populated by the inspected composition path. A passing Maven run is not desktop
+workflow acceptance. The historical case ledger below accounts for individual
+cases; its retention decisions do not prove unique fault detection or app health.
+
+November 23 file review removes manual Combine/Split/Rename/Reset sender groups.
+Automatic domain and exact-address browsing/selection remain. V51 retires saved
+manual membership and its three tables; the existing upgrade case now proves
+old groups disappear without losing mail. Two manual-group-only methods and the
+manual portions of mixed tests are removed. The older audit/run totals below
+precede this feature removal; current verification is recorded in
+[the workflow review](WORKFLOW-TEST-REVIEW.md#saved-group-removal-and-verification).
+
 Use Java 21, Maven, and the native PostgreSQL 16 service from [local setup](DEPLOY.md).
 The test role owns `tidymail_test` (Spring integration and journeys) and
 `tidymail_test_migrations` (disposable historical migration fixtures). Both use the
@@ -151,21 +172,23 @@ predicates while explicitly clearing a predicate when switching matching modes.
 
 ## Individual case audit — November 22, 2026
 
-The preceding pass recorded a clean entry checkout and a baseline of
-**371 functional invocations**, verified then by a Java 21 Maven run and its XML,
-not inferred from old reports. The inventory has 347 Java test methods: 342 default
-functional methods expand to 371 invocations, plus 3 performance methods and 2
-explicit fixtures. After removing 8 obsolete cases and consolidating 1 duplicate,
-333 default methods expand to **362 functional invocations**. Parameterized values
+The original accounting table contains **371 functional rows**. An earlier
+narrative described these as a verified executed baseline, but that claim conflicts
+with the continuation's fresh **362-invocation** baseline. Treat 371 as historical
+inventory accounting, not a verified run result. The earlier source inventory
+reported 347 methods: 342 default functional methods, 3 performance methods and 2
+explicit fixtures. Its first pruning pass reported 333 default methods expanding
+to **362 functional invocations**. Parameterized values
 are separate rows below; ordinary loops remain visible as assertion variations,
 not extra Surefire cases. No case was moved behind a flag or into an archive.
 
 The single table accounts for the baseline and retained Java cases, six browser
 scripts, six historical Python parser cases, shared helpers and archived tools.
 Each bold suite row supplies the **current call path, concrete keep rationale and related overlap inherited
-by its following case rows**. Each case states the specific asserted failure that justifies its disposition. “Keep” means the named user failure has a distinct
-asserted boundary on that path; overlap across transport, persistence and browser
-layers is intentional. The three scale rows are workloads, not 371 extra examples
+by its following case rows**. Each case records the asserted failure used to justify
+its disposition. “Keep” is a retention recommendation, not independently
+demonstrated unique fault detection or a complete user journey. Overlap across
+transport, persistence and browser layers can be useful. The three scale rows are workloads, not 371 extra examples
 or claims of live throughput. The private fixture and archived runners have no
 current release coverage claim and were not executed.
 
@@ -266,7 +289,7 @@ a suite or changing production behavior.
 | `socialCategoryCanBeCorrectedAndFilteredWithoutSwallowingMarketplaceReceipts` | Correcting Social swallows Marketplace receipts or selects the wrong category IDs.  | Suite above | Keep |
 | `confirmedCleanupTargetsStayFixedWhenClassificationChangesGroupsAndCategories` | Classification regrouping changes already confirmed cleanup IDs.  | Suite above | Keep |
 | `metadataIsSentOutsideTransactionsAndUnchangedMailIsCached` | Classification holds a DB transaction over I/O or rebills unchanged metadata.  | Suite above | Keep |
-| `manualGroupingAndCategoryCorrectionsWinAndStaleInputsAreReclassified` | Manual grouping/category corrections lose to model results or stale input is treated as current.  | Suite above | Keep |
+| `savedCategoryCorrectionsWinAndStaleInputsAreReclassified` | A saved email category is overwritten, or changed message evidence remains falsely current. | Suite above | Keep |
 | `cancellationDuringRemoteCallDiscardsLateAnswers` | Cancelled classification stores a late model result.  | As above; same cancellation scenario owned by retained billing case | Consolidate → lateCancelledResponsesStillChargeExactlyOnce: same cancel-in-response setup; retained SQL no-adoption/state assertions plus exact billing. |
 | `changedMetadataDuringRequestIsSkippedAndRetriedOnlyOnNextRun` | Metadata changed during a request is committed instead of skipped until a new run.  | Suite above | Keep |
 | `unknownBillingPausesInsteadOfBlindlyRetrying` | Unknown billing is retried or treated as a harmless free failure.  | Suite above | Keep |
@@ -322,7 +345,7 @@ a suite or changing production behavior.
 | `deletionCancelsWorkAndWaitsForActiveRequestsButAllowsExplicitPurgeAfterLeasesSettle` | Data deletion purges an active request or cannot explicitly purge settled unresolved history.  | Suite above | Keep |
 | `reconciliationRejectsStaleReadsAndBlocksOlderSyncSnapshots` | Recovery read/stale sync overwrites a newer provider revision.  | Suite above | Keep |
 | `confirmedTargetAndJobIdentitiesCannotBeChangedInTheDatabase` | SQL permits changing frozen target identity or selected count.  | Suite above | Keep |
-| [**DashboardJourneyTest** (Functional; 28 retained)](src/test/java/com/tidymail/DashboardJourneyTest.java) | **Path:** DashboardService → DashboardRepository / DashboardGroupingService / PreviewService | **Overlap:** Phase2IdentificationJourneyTest; RecommendationDashboardJourneyTest | Keep: current query/selection predicates or correction state; provider rows use different basic SQL plans. |
+| [**DashboardJourneyTest** (Functional; 25 retained after November 23 removal)](src/test/java/com/tidymail/DashboardJourneyTest.java) | **Path:** DashboardService → DashboardRepository / DashboardGroupingService / PreviewService | **Overlap:** Phase2IdentificationJourneyTest; RecommendationDashboardJourneyTest | Keep: current query/selection predicates or correction state; provider rows use different basic SQL plans. |
 | `senderPageSizesCoverEverySenderWithoutOverlap[10]` | Sender paging skips/duplicates groups or accepts an invalid page size. Accepted page size and boundary pagination. | Suite above | Keep |
 | `senderPageSizesCoverEverySenderWithoutOverlap[20]` | Sender paging skips/duplicates groups or accepts an invalid page size. Accepted page size and boundary pagination. | Suite above | Keep |
 | `senderPageSizesCoverEverySenderWithoutOverlap[50]` | Sender paging skips/duplicates groups or accepts an invalid page size. Accepted page size and boundary pagination. | Suite above | Keep |
@@ -335,17 +358,17 @@ a suite or changing production behavior.
 | `senderAddressViewDrillsDownAndPreviewsExactMessagesWithoutChangingManualGroups[microsoft]` | Address view loses exact selection, pagination or chart drilldown after manual grouping. Shared keyed query; distinct provider authentication/account resolution. | Suite above | Keep |
 | `domainEvidenceIdentifiesTheBrandAmongDifferentSavedNames[google]` | Domain branding disappears among differing saved names or filtered message display is wrong. Provider-specific basic SQL plan. | Suite above | Keep |
 | `domainEvidenceIdentifiesTheBrandAmongDifferentSavedNames[microsoft]` | Domain branding disappears among differing saved names or filtered message display is wrong. Provider-specific basic SQL plan. | Suite above | Keep |
-| `splitsTwoAddressesSharingOneListAndLeavesNewAddressesAutomatic[google]` | Splitting two addresses changes original membership, mishandles new arrivals or cannot reset. Provider-specific basic SQL plan. | Suite above | Keep |
-| `splitsTwoAddressesSharingOneListAndLeavesNewAddressesAutomatic[microsoft]` | Splitting two addresses changes original membership, mishandles new arrivals or cannot reset. Provider-specific basic SQL plan. | Suite above | Keep |
+| `splitsTwoAddressesSharingOneListAndLeavesNewAddressesAutomatic[google]` | Splitting two addresses changes original membership, mishandles new arrivals or cannot reset. Provider-specific basic SQL plan. | Suite above | Remove: manual saved-group feature retired by the November 23 user review. Automatic domain/address checks remain. |
+| `splitsTwoAddressesSharingOneListAndLeavesNewAddressesAutomatic[microsoft]` | Splitting two addresses changes original membership, mishandles new arrivals or cannot reset. Provider-specific basic SQL plan. | Suite above | Remove: manual saved-group feature retired by the November 23 user review. Automatic domain/address checks remain. |
 | `mailingListNeverPicksOneBrandWhenFiltersHideConflictingNames[google]` | Filtered subset invents a brand despite conflicting all-mail saved names. Provider-specific basic SQL plan. | Suite above | Keep |
 | `mailingListNeverPicksOneBrandWhenFiltersHideConflictingNames[microsoft]` | Filtered subset invents a brand despite conflicting all-mail saved names. Provider-specific basic SQL plan. | Suite above | Keep |
 | `deterministicGroupingPreservesLocalCaseListsAndSharedDomainExceptions` | Grouping folds local case, merges shared domains or permits ambiguous sender correction.  | Suite above | Keep |
-| `organizationGroupsCombineChaseSubdomainsAndKeepExactSelectionsAndCorrections` | Organization drilldown/API selects the wrong addresses or correction leaves preview valid.  | Suite above | Keep |
+| `organizationGroupsCombineSample ContactSubdomainsAndKeepExactSelections` | Organization drilldown/API selects the wrong addresses or correction leaves preview valid.  | Suite above | Keep |
 | `organizationBoundariesRespectPublicPrivateWildcardExceptionAndSharedDomains` | Public/private/wildcard/exception/shared suffix handling merges unrelated senders.  | Suite above | Keep |
 | `dateSearchSummaryExpansionAndSelectionsUseTheSamePredicate` | Dates, literal search, summary, detail and selection use different predicates or wrong DST boundary.  | Suite above | Keep |
-| `labelExpressionsSelectionAndChartUseTheSameFilteredMessagesAndSavedGroups` | Any/all labels or composition chart diverge from selected IDs and saved merge/split groups.  | Suite above | Keep |
-| `correctionsRejectTransitiveConflictsAndResetOnlyTheChosenCorrection` | Transitive grouping conflicts apply or Reset removes unrelated corrections.  | Suite above | Keep |
-| `exactPreviewDeduplicatesKeepsNoOpsAndSurvivesNewMailButInvalidatesOnCorrection` | Preview dedupe/no-ops drift with new mail or lose frozen subject/IDs after correction.  | Suite above | Keep |
+| `labelExpressionsSelectionAndChartUseTheSameFilteredMessagesAndAutomaticGroups` | Any/all label matching, counts, domain drilldown and exact selection disagree on which emails match. | Suite above | Keep |
+| `correctionsRejectTransitiveConflictsAndResetOnlyTheChosenCorrection` | Transitive grouping conflicts apply or Reset removes unrelated corrections.  | Suite above | Remove: manual saved-group feature retired by the November 23 user review. Automatic domain/address checks remain. |
+| `exactPreviewDeduplicatesKeepsNoOpsAndSurvivesNewMail` | Duplicate selected IDs or newly arriving mail change a fixed review, its no-op count or saved original subjects. | Suite above | Keep |
 | `previewsSkipChangedEligibilityProtectedAndNoOpArchiveWithoutSubstitution` | Preview substitutes changed/protected/archive no-op targets or cannot invalidate.  | Suite above | Keep |
 | `routesRequireOwnershipCsrfAndRenderTheApprovedDashboard` | Dashboard/preview routes bypass ownership/CSRF or lose saved zone.  | Suite above | Keep |
 | `senderPagesAndMessagePagesHaveIndependentTenRowBoundaries` | Sender paging caps exact message selection at visible detail rows.  | Suite above | Keep |
@@ -355,11 +378,11 @@ a suite or changing production behavior.
 | `upgradeFromV49DropsRetiredRuleSuggestionStorageAndPreservesRulesAndMail` | V49→V50 retirement drops saved rules/mail as well as suggestion storage.  | Suite above | Keep |
 | `gmailScopeUpgradeDiscardsListTokensAndPreservesIndexHistoryAndCleanup` | Gmail scope upgrade reuses incompatible listing tokens or changes Outlook/index/OAuth state.  | Suite above | Keep |
 | `retainedV32RecommendationsAddOnlyEmptyLocalStructuresAndPreserveExistingData` | V32 upgrade rewrites evidence/classification or prepopulates paid/local work.  | Suite above | Keep |
-| `retainedV28PersonalCorrectionsRepairCompanyGroupingWithoutChangingManualMembership` | V28 personal identity repair destroys explicit group separation or message corrections.  | Suite above | Keep |
-| `retainedV29MarketplaceRelaysRepairWithoutReclassifyingMessagesOrOverridingCorrections` | V29 marketplace repair merges sellers or changes categories/manual membership.  | Suite above | Keep |
-| `retainedV24OrganizationRepairPreservesExplicitSeparationAndMessageCategories` | V24 organization repair swallows manual separation/security categories.  | Suite above | Keep |
+| `retainedV28PersonalCorrectionsRepairCompanyGroupingAndRetainEmailIdentity` | Historical personal-category repair loses email identity or fails to restore individual sender identities. | Suite above | Keep |
+| `retainedV29MarketplaceRelaysRepairWithoutReclassifyingMessages` | Historical relay repair joins unrelated marketplace correspondents or changes saved message categories. | Suite above | Keep |
+| `retainedV24OrganizationRepairPreservesMessageCategories` | Historical organization repair loses saved message categories or fails to retain automatic service membership. | Suite above | Keep |
 | `freshAndRetainedUpgradePreserveCredentialsCursorsMetadataAndHistory` | Fresh install/V15→latest loses encrypted tokens, cursors, 10k metadata, history or old preview identity.  | Suite above | Keep |
-| `organizationUpgradeRegroupsRetainedAddressesAndPreservesManualMembership` | V19 organization migration changes message/unit IDs or overrides an explicit separation.  | Suite above | Keep |
+| `removingSavedGroupsRestoresDomainsAndPreservesMail` | Removing saved manual groups fails to restore automatic domains, leaves retired tables/split units, or changes downloaded mail identities. | Suite above | Keep |
 | `retainedV17DispatchKeepsItsIdentityAndPreconditionForVerificationAfterUpgrade` | V17 dispatch upgrade loses precondition, generation, identity or active overlap hold.  | Suite above | Keep |
 | `retainedClassificationsOverridesAndHistoricalSpendingSurviveNewAllowance` | Allowance migration resets historical classifications/costs or falsely enrolls incoming work.  | Suite above | Keep |
 | `finalMigrationSetPreservesUnresolvedDashboardTargetsAndTheirOverlapHolds` | V38→latest loses unresolved targets, spent verification attempts or overlap holds.  | Suite above | Keep |
@@ -469,7 +492,7 @@ a suite or changing production behavior.
 | [**MessageEvidenceJourneyTest** (Functional; 6 retained)](src/test/java/com/tidymail/MessageEvidenceJourneyTest.java) | **Path:** Dashboard/Preview/Job + MessageEvidenceService → mapper/sync | **Overlap:** GmailEvidenceReaderTest wire; Phase2IdentificationJourneyTest related calendar history | Keep: saved evidence and exact selection/bytes are separate from transport parsing. |
 | `largeSuggestionsUseWholeMessageSizeAndExactFrozenSelectionBytes` | Large-mail SQL/preview selects wrong boundary/Sent/excluded IDs or counts unfrozen bytes.  | Suite above | Keep |
 | `checkingOneOwnedEmailIsReadOnlyCachedAndSurvivesMetadataSync` | Owned cached inspection rereads provider, leaks ownership/CSRF or sync erases saved evidence.  | Suite above | Keep |
-| `reviewedOrganizationMergesListVariantsButPreservesCorrectionsAndSecurityTypes` | Reviewed organization grouping loses category or ignores explicit separation on new mail.  | Suite above | Keep |
+| `reviewedOrganizationMergesListVariantsButPreservesSecurityTypes` | Automatic service identity loses a separate security label or changes mail while inspecting sender evidence. | Suite above | Keep |
 | `scopedReadPermissionIsCheckedOnlyAtTheActualUncachedRead` | Uncached presence read bypasses reservation while cached read unnecessarily consumes cap.  | Suite above | Keep |
 | `previewReportsUnknownSizesWithoutCountingThemAsZeroCoverage` | Unknown selected size is reported as zero known coverage.  | Suite above | Keep |
 | `personalCorrespondenceAtAReviewedCompanyKeepsItsOwnIdentity` | A personal correspondent at a reviewed company merges with automated organization mail.  | Suite above | Keep |
@@ -509,7 +532,7 @@ a suite or changing production behavior.
 | `changedPreviewAndConflictingReviewedExamplesCannotApply` | Changed preview or conflicting reviewed sources can still apply inherited label.  | Suite above | Keep |
 | `allDayUpdatesStayDateOnlyAndOlderRelatedEvidenceMustBeExplicitlyRefreshed` | Old-version related evidence yields dates without explicit refresh or all-day dates gain invented timezone.  | Suite above | Keep |
 | `reviewExplainsReplyAndChangedTemplateExclusionsAndOldPolicyLabelsDisappear` | Pattern review hides reply/template exclusion or old policy labels stay visible.  | Suite above | Keep |
-| `personalCompanyAndPersonalMailboxIdentitiesSurviveMetadataRefreshAndSavedMerges` | Personal company/home mail merges by name/employer or explicit user merge is lost on refresh.  | Suite above | Keep |
+| `personalCompanyAndPersonalMailboxIdentitiesSurviveMetadataRefresh` | Refreshing sender metadata merges unrelated personal addresses or changes explicit Personal identity. | Suite above | Keep |
 | `marketplaceSellerRelaysNeverJoinAutomatedAmazonOrInheritItsPatterns` | Marketplace seller relays merge with automated Amazon or inherit its reviewed pattern.  | Suite above | Keep |
 | [**Phase2ReviewedReferenceFixture** (Archive)](src/test/java/com/tidymail/Phase2ReviewedReferenceFixture.java) | **Path:** Explicit private fixture → ReviewedPatternService on test DB | **Overlap:** Current synthetic pattern tests | Keep: archived experiment reproducibility only; not current release coverage and not run. |
 | `replayFrozenReviewedHeadersWithoutChangingRetainedMailbox` | No default user-flow protection; private frozen review replay must preserve account/sender/source association.  | Suite above | Keep |
@@ -782,7 +805,8 @@ examples do not establish an enabled automatic-disposal path. Archived paid/live
 experiments and the private reviewed-reference fixture were not replayed or
 certified for today's schema. The optional Dark Reader branch was not run.
 
-Final checks: `git diff --check` passes; current default XML totals 355 and
-performance XML totals 3, all passing. Every source case, all original 371
+Historical final checks for that audit: `git diff --check` passed; default XML
+totaled 355 and performance XML totaled 3, all passing then. See the current
+workflow review for the later saved-group removal and its verification. Every source case, all original 371
 functional accounting rows and all 46 retained parameterized invocations reconcile.
 No new suite, framework, runner, flag or production feature change was introduced.
