@@ -95,8 +95,8 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
         for (var sample : java.util.List.of(
                 new String[] { "taylor.work@example.com", "Taylor Example", "Synthetic project discussion" },
                 new String[] { "taylor.personal@example.org", "Taylor Example", "Synthetic planning update" },
-                new String[] { "sample.contact@example.net", "Sample Contact", "Synthetic contact message" },
-                new String[] { "sample.work@office.example.com", "Sample Contact", "Synthetic alternate-address message" },
+                new String[] { "no.reply.alerts@chase.com", "Chase", "Synthetic account alert" },
+                new String[] { "no-reply@alertsp.chase.com", "Chase", "Synthetic account update" },
                 new String[] { "orders@amazon.com", "Amazon", "Your receipt" },
                 new String[] { "orders@amazon.com", "Amazon", "Special offer" })) {
             String id = "classification-" + java.util.UUID.randomUUID();
@@ -128,8 +128,8 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
         jdbc.update("""
             INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,from_display_name,subject_header,
             labels,label_evidence_known,dashboard_from_address,dashboard_unit_kind,dashboard_unit_key,received_at,classification_override)
-            VALUES(?,'google','personal-work','spouse@gene.com','Spouse','Synthetic work-address invitation',ARRAY['INBOX'],true,
-            'spouse@gene.com','ADDRESS','spouse@gene.com',now(),'PERSONAL')
+            VALUES(?,'google','personal-work','demo.work@example.com','Demo Contact','Synthetic work-address invitation',ARRAY['INBOX'],true,
+            'demo.work@example.com','ADDRESS','demo.work@example.com',now(),'PERSONAL')
             """,account);
         jdbc.update("""
             UPDATE message_metadata SET classification_override =
@@ -143,7 +143,7 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
                 INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,from_display_name,subject_header,
                 labels,label_evidence_known,dashboard_from_address,dashboard_unit_kind,dashboard_unit_key,received_at,
                 size_estimate,classification_override,snippet_text,snippet_state)
-                VALUES(?,'google',?,'spouse@gmail.com','Spouse',?,ARRAY['INBOX'],true,'spouse@gmail.com','ADDRESS','spouse@gmail.com',now(),8000,'PERSONAL','Synthetic all-day invitation','AVAILABLE')
+                VALUES(?,'google',?,'demo.personal@example.org','Demo Contact',?,ARRAY['INBOX'],true,'demo.personal@example.org','ADDRESS','demo.personal@example.org',now(),8000,'PERSONAL','Synthetic all-day invitation','AVAILABLE')
                 """,account,id,id.equals("calendar-master") ? "Calendar sample: monthly demo schedule" : "Calendar sample: updated demo schedule");
         }
         jdbc.update("UPDATE message_metadata SET size_estimate=6000000,snippet_text='A bounded preview for checking the email inspector.',snippet_state='AVAILABLE' WHERE account_id=? AND provider_message_id IN ('browser-1','browser-2','browser-3')",account);
@@ -164,7 +164,7 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
             INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,dashboard_from_address,
               from_display_name,subject_header,labels,label_evidence_known,to_values,dashboard_unit_kind,dashboard_unit_key,size_estimate,received_at)
             VALUES(?,'google','sent-storage','browser-fixture@example.test','browser-fixture@example.test','Me',
-              'Synthetic Sent attachment for storage review',ARRAY['SENT'],true,ARRAY['spouse@gmail.com'],
+              'Synthetic Sent attachment for storage review',ARRAY['SENT'],true,ARRAY['demo.personal@example.org'],
               'ADDRESS','browser-fixture@example.test',3000000,now())
             """,account);
         correspondence.processBatch(200);correspondence.processBatch(200);

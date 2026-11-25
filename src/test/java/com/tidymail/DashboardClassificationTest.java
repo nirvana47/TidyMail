@@ -30,11 +30,11 @@ class DashboardClassificationTest extends PostgresJourneyTest {
     @Test void explicitPersonalIdentitySurvivesLaterAutomatedClassificationRegrouping() {
         when(classifier.classify(anyList())).thenAnswer(call->result(call.getArgument(0),"PERSONAL","AUTOMATED","BANKING"));
         UUID person=mail("alex@chase.com","Alex","Work update");
-        mail("alerts@chase.com","Sample Contact","Account update");
+        mail("alerts@chase.com","Chase","Account update");
         finish();
         classification.correctCategory(account,List.of(person),"PERSONAL",dashboard.revision(account));
         assertThat(jdbc.queryForObject("SELECT automatic_group_key FROM sender_units WHERE account_id=? AND canonical_key='alex@chase.com'",String.class,account)).isEqualTo("address:alex@chase.com");
-        mail("statements@chase.com","Sample Contact","Another update");
+        mail("statements@chase.com","Chase","Another update");
         finish();
         assertThat(jdbc.queryForObject("SELECT automatic_group_key FROM sender_units WHERE account_id=? AND canonical_key='alex@chase.com'",String.class,account)).isEqualTo("address:alex@chase.com");
         assertThat(jdbc.queryForObject("SELECT count(DISTINCT group_id) FROM sender_group_members WHERE account_id=?",Long.class,account)).isEqualTo(2);
@@ -87,7 +87,7 @@ class DashboardClassificationTest extends PostgresJourneyTest {
     }
     @Test void savedCategoryCorrectionsWinAndStaleInputsAreReclassified() {
         when(classifier.classify(anyList())).thenAnswer(call->result(call.getArgument(0),"MARKETING","AUTOMATED","BANKING"));
-        UUID first=mail("a@chase.com","Sample Contact","offer"),second=mail("b@e.chase.com","Sample Contact","offer");
+        UUID first=mail("a@chase.com","Chase","offer"),second=mail("b@e.chase.com","Chase","offer");
         classification.correctCategory(account,List.of(first),"PERSONAL",dashboard.revision(account));finish();
         assertThat(dashboard.page(account,filter("")).summary().get("groups")).isEqualTo(2L);
         assertThat(dashboard.page(account,filter("PERSONAL")).summary().get("messages")).isEqualTo(1L);

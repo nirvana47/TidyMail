@@ -344,9 +344,9 @@ class DashboardJourneyTest extends PostgresJourneyTest {
     }
 
     @Test
-    void organizationGroupsCombineSample ContactSubdomainsAndKeepExactSelections() throws Exception {
-        var addresses = List.of("sample.contact@example.net", "sample.work@office.example.com",
-                "Sample Contact@e.chase.com", "chase@email.chase.com", "Sample Contact@notify.chase.com");
+    void organizationGroupsCombineChaseSubdomainsAndKeepExactSelections() throws Exception {
+        var addresses = List.of("no.reply.alerts@chase.com", "no-reply@alertsp.chase.com",
+                "Chase@e.chase.com", "chase@email.chase.com", "Chase@notify.chase.com");
         int[] counts = { 53, 37, 21, 5, 1 };
         for (int a = 0; a < addresses.size(); a++)
             for (int i = 0; i < counts[a]; i++)

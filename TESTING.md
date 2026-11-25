@@ -363,7 +363,7 @@ a suite or changing production behavior.
 | `mailingListNeverPicksOneBrandWhenFiltersHideConflictingNames[google]` | Filtered subset invents a brand despite conflicting all-mail saved names. Provider-specific basic SQL plan. | Suite above | Keep |
 | `mailingListNeverPicksOneBrandWhenFiltersHideConflictingNames[microsoft]` | Filtered subset invents a brand despite conflicting all-mail saved names. Provider-specific basic SQL plan. | Suite above | Keep |
 | `deterministicGroupingPreservesLocalCaseListsAndSharedDomainExceptions` | Grouping folds local case, merges shared domains or permits ambiguous sender correction.  | Suite above | Keep |
-| `organizationGroupsCombineSample ContactSubdomainsAndKeepExactSelections` | Organization drilldown/API selects the wrong addresses or correction leaves preview valid.  | Suite above | Keep |
+| `organizationGroupsCombineChaseSubdomainsAndKeepExactSelections` | Organization drilldown/API selects the wrong addresses or correction leaves preview valid.  | Suite above | Keep |
 | `organizationBoundariesRespectPublicPrivateWildcardExceptionAndSharedDomains` | Public/private/wildcard/exception/shared suffix handling merges unrelated senders.  | Suite above | Keep |
 | `dateSearchSummaryExpansionAndSelectionsUseTheSamePredicate` | Dates, literal search, summary, detail and selection use different predicates or wrong DST boundary.  | Suite above | Keep |
 | `labelExpressionsSelectionAndChartUseTheSameFilteredMessagesAndAutomaticGroups` | Any/all label matching, counts, domain drilldown and exact selection disagree on which emails match. | Suite above | Keep |

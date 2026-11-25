@@ -40,8 +40,8 @@ class Phase2IdentificationJourneyTest extends PostgresJourneyTest {
         return new GmailEvidenceReader.Evidence(GmailEvidenceReader.VERSION,EmailSnippet.observed("Invitation"),"AVAILABLE","PRESENT",List.of(),List.of(facts),1,100);
     }
     @Test void cachedInspectionReconcilesNewUpdatesWithoutReadingOldMessageAgainAndExcludesOtherAccounts() {
-        UUID old=mail("old","spouse@gmail.com","Invitation","Spouse",null);
-        UUID update=mail("new","spouse@gmail.com","Rescheduled","Spouse",null);
+        UUID old=mail("old","demo.personal@example.org","Invitation","Demo Contact",null);
+        UUID update=mail("new","demo.personal@example.org","Rescheduled","Demo Contact",null);
         when(reader.read(any(),eq("old"))).thenReturn(calendar("1","20200101T090000Z"));
         when(reader.read(any(),eq("new"))).thenReturn(calendar("2","20990101T090000Z"));
         assertThat(evidence.inspect(account,old).path("reconciledEvents").get(0).path("state").asText()).isEqualTo("OBSERVED_ENDED");
@@ -130,8 +130,8 @@ class Phase2IdentificationJourneyTest extends PostgresJourneyTest {
         assertThat(patterns.preview(account,24).matches()).isEmpty();
     }
     @Test void allDayUpdatesStayDateOnlyAndOlderRelatedEvidenceMustBeExplicitlyRefreshed() throws Exception {
-        UUID master=mail("master","spouse@gmail.com","All-day plan","Spouse","PERSONAL");
-        UUID update=mail("update","spouse@gmail.com","Updated plan","Spouse","PERSONAL");
+        UUID master=mail("master","demo.personal@example.org","All-day plan","Demo Contact","PERSONAL");
+        UUID update=mail("update","demo.personal@example.org","Updated plan","Demo Contact","PERSONAL");
         var parser=new CalendarEvidenceParser();
         String header="BEGIN:VCALENDAR\r\nVERSION:2.0\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\nUID:all-day-series\r\nORGANIZER:mailto:spouse@example.test\r\n";
         String footer="\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
