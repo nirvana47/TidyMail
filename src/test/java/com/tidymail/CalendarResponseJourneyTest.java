@@ -33,7 +33,6 @@ class CalendarResponseJourneyTest extends PostgresJourneyTest {
     @MockBean com.tidymail.mail.outlook.OutlookGraph graph;
     @Autowired CalendarResponseService calendar;
     @Autowired com.tidymail.service.CalendarLabelRefreshService calendarLabels;
-    @Autowired com.tidymail.service.RecommendationService recommendations;
     @Autowired DashboardRepository dashboard;
     @Autowired ObjectMapper json;
     long account; UUID message;
@@ -132,15 +131,13 @@ class CalendarResponseJourneyTest extends PostgresJourneyTest {
         response="needsAction";
         assertThat(calendar.inspect(account,message).state()).isEqualTo("NEEDS_RESPONSE");
         assertThat(matching("CALENDAR_NEEDS_RESPONSE")).isEqualTo(1);
-        assertThat(recommendations.read(account,List.of(message)).getFirst().labels())
-            .contains("CALENDAR_NEEDS_RESPONSE").doesNotContain("CALENDAR_RESPONDED","CALENDAR_CANCELLED","CALENDAR_INVITE","PAST_EVENT");
+
         status="cancelled";
         assertThat(calendar.inspect(account,message).state()).isEqualTo("CANCELLED");
         assertThat(matching("CALENDAR_CANCELLED")).isEqualTo(1);
         assertThat(matching("CALENDAR_NEEDS_RESPONSE")).isZero();
         assertThat(matching("CALENDAR_RESPONDED")).isZero();
-        assertThat(recommendations.read(account,List.of(message)).getFirst().labels())
-            .contains("CALENDAR_CANCELLED").doesNotContain("CALENDAR_RESPONDED","CALENDAR_NEEDS_RESPONSE","CALENDAR_INVITE","PAST_EVENT");
+
         forbidden=true;
         assertThat(calendar.inspect(account,message).state()).isEqualTo("UNKNOWN");
         assertThat(matching("CALENDAR_CANCELLED")).isZero();

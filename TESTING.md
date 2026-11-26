@@ -10,7 +10,8 @@ Read the [November 23 test accounting](TEST-AUDIT-2026-11-23.md) for current
 evidence boundaries, weak assertions, and why date entry, bulk-cleanup speed and
 rule-update recovery escaped earlier checks, and why automatic “Consider Trash”
 cannot currently be populated by the inspected composition path. A passing Maven run is not desktop
-workflow acceptance. The historical case ledger below accounts for individual
+workflow acceptance. Automatic recommendations and their tests are now removed.
+The historical case ledger below accounts for individual
 cases; its retention decisions do not prove unique fault detection or app health.
 
 November 23 file review removes manual Combine/Split/Rename/Reset sender groups.
@@ -45,8 +46,7 @@ mvn -Dtest='DashboardMigrationTest,DashboardJourneyTest,LocalGmailLabelsJourneyT
 
 The `release-performance` profile runs only the existing `performance`-tagged
 checks: dashboard queries and confirmed cleanup during concurrent writes at
-10k/100k messages, sync commit work at the configured volume, the 115k populated
-label cache. These three workloads run separately from `mvn test`. The normal
+10k/100k messages, sync commit work at the configured volume, local header-label work. These workloads run separately from `mvn test`. The normal
 suite also uses production MVP mode. Set `TIDYMAIL_PERF_ROWS=100000` as above to
 exercise 100k sync rows;
 the dashboard profile defaults to 100k independently and runs in production MVP
@@ -77,7 +77,7 @@ See the [acceptance notes](docs/TESTING.md) for product journeys and live checks
 | Exact selected mail, confirmation, cancellation and recovery | `DashboardJourneyTest`, `DashboardJobJourneyTest`, `DashboardResilienceTest`, `DashboardResponseCleanupJourneyTest`, `ManualFilingJourneyTest` |
 | Sync cursors, partial commits and worker races | `MailboxSyncPersistenceTest`, `MailboxFreshnessConcurrencyTest`, `MailboxFreshnessJourneyTest`, `GmailBackfillRecoveryJourneyTest` |
 | Provider requests, tokens and rule changes | Gmail/Outlook contract and journey tests, `OAuthAuthorizedClientRefreshTest`, `AutomationRulesJourneyTest` |
-| Data retention, privacy, paid authorization and upgrades | Security, classification/labeling journeys, immutable migration checks and historical upgrade fixtures |
+| Data retention, privacy and upgrades | Security, local-label/calendar journeys, immutable migration checks and historical upgrade fixtures |
 
 The stricter audit removes suites for the disabled Senders, Unread, Review,
 custom-category and analytics experiences, along with their retired query/schema
@@ -94,9 +94,8 @@ Gmail mutation payload is still checked, with rejection/replay coverage retained
 for both cleanup and filing entry points.
 
 Metadata privacy, configuration bounds and missing-refresh-token checks are
-consolidated into their existing contracts. The old experimental model protocol
-suite is removed; the current recommendation protocol and shared text privacy
-boundary remain covered. No new test framework or suite was introduced.
+consolidated into their existing contracts. The old experimental model protocol suites and the unused model client are removed; shared text privacy
+boundaries remain covered. No new test framework or suite was introduced.
 
 Before adding or retaining a case, identify its current call path, concrete user
 failure and whether an existing check already catches that failure. A passing
@@ -107,7 +106,7 @@ absolute pane position that changes when a saved-selection banner appears.
 
 Browser checks validate interaction behavior; the Java journeys validate exact
 stored/provider outcomes. Neither simulation proves real Gmail/Outlook consent,
-provider throughput or model accuracy. Historical private pilots/probes remain
+provider throughput. Historical private pilots/probes remain
 explicit-only tools, outside both Maven commands; do not bulk-run them or loosen
 their replay/schema guards. See `tools/verification/README.md`.
 
@@ -118,7 +117,7 @@ address/message checkbox synchronization, selection within one parent group,
 exact Trash preview IDs, unread scope, and delayed-response handling. It does
 not connect to the live mailbox or perform cleanup.
 
-The desktop polish journey also checks filter chips, settings/tool navigation,
+The desktop polish journey also checks filter chips, settings navigation,
 pane dismissal and unsaved-rule protection. Set `TIDYMAIL_UI_SCREENSHOTS` to an
 existing output directory to capture its fixture mailbox and cleanup dialog.
 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` may point to an installed Chromium binary.
@@ -170,7 +169,11 @@ rule unchanged. `RuleDestinationProviderTest` checks that comparing Outlook rule
 behavior preserves the provider snapshot and that sender updates omit unused
 predicates while explicitly clearing a predicate when switching matching modes.
 
-## Individual case audit — November 22, 2026
+## Historical individual case audit — November 22, 2026
+
+The inventory below is historical accounting from before the November 26 feature
+removals. Its old “keep” decisions and links to deleted classes/tools are no longer
+current. See the workflow review for the current removal list and verification.
 
 The original accounting table contains **371 functional rows**. An earlier
 narrative described these as a verified executed baseline, but that claim conflicts

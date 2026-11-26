@@ -38,6 +38,7 @@ class DashboardJourneyTest extends PostgresJourneyTest {
     ActionScopeService scopes;
     @Autowired
     ObjectMapper json;
+    @Autowired LocalLabelService localLabels;
     long account;
     String provider;
 
@@ -307,9 +308,7 @@ class DashboardJourneyTest extends PostgresJourneyTest {
         assertThat(filteredGroup.label()).isEqualTo("a@first.example");
         assertThat(dashboard.details(account, filter("all", ""), filteredGroup.id(), 0).messages())
             .extracting(DashboardRepository.Message::displayName).containsExactly("First Brand", "Second Brand");
-        jdbc.update("UPDATE message_metadata SET classification_override=CASE WHEN provider_message_id='shared-a' THEN 'MARKETING' ELSE 'NEWSLETTER' END");
-        var category = new DashboardFilter("all", "", "", "", "UTC", 0, "MARKETING");
-        assertThat(dashboard.page(account, category).groups().getFirst().label()).isEqualTo("a@first.example");
+
         jdbc.update("UPDATE message_metadata SET from_display_name='  ' WHERE account_id=?", account);
         assertThat(dashboard.page(account, filter("all", "")).groups().getFirst().label()).isEqualTo("a@first.example");
         verifyNoInteractions(gmailProvider, outlookProvider);
@@ -438,11 +437,12 @@ class DashboardJourneyTest extends PostgresJourneyTest {
         message("security", "alert@alerts.example", List.of("INBOX"), true, List.of(), false, NOW);
         message("archive", "digest@news.example", List.of(), true, List.of(), false, NOW);
         jdbc.update("""
-            UPDATE message_metadata SET classification_override =
-                CASE WHEN provider_message_id='security' THEN 'SECURITY' ELSE 'NEWSLETTER' END
+            UPDATE message_metadata SET subject_header =
+                CASE WHEN provider_message_id='security' THEN 'Your verification code' ELSE 'Invoice due tomorrow' END
             """);
-        var any = DashboardFilter.from(Map.of("scope","all","labels","NEWSLETTER,SECURITY","match","any"));
-        var all = DashboardFilter.from(Map.of("scope","all","labels","NEWSLETTER,SECURITY","match","all"));
+        localLabels.processBatch(account,200);
+        var any = DashboardFilter.from(Map.of("scope","all","labels","BILL,SECURITY","match","any"));
+        var all = DashboardFilter.from(Map.of("scope","all","labels","BILL,SECURITY","match","all"));
         assertThat(dashboard.page(account, all).groups()).isEmpty();
         assertThat(dashboard.page(account, any).summary()).containsEntry("messages",14L).containsEntry("unread",12L);
         assertThat(dashboard.inboxComposition(account,any)).extracting(DashboardRepository.Composition::messages)
@@ -451,15 +451,6 @@ class DashboardJourneyTest extends PostgresJourneyTest {
         assertThat(dashboard.selection(account,any,matchingGroups,null,0)).hasSize(14);
         assertThat(dashboard.selection(account,any,List.of(),null,0)).isEmpty();
 
-        // Separate automatic service streams still share the organization's chart bar.
-        jdbc.update("""
-            UPDATE sender_groups SET group_key='classified-domain:example.test:'||id
-            WHERE id IN (SELECT group_id FROM sender_group_members WHERE account_id=?)
-            """, account);
-        assertThat(dashboard.inboxComposition(account,any))
-            .containsExactly(new DashboardRepository.Composition("domain:example.test","example.test",13));
-        var domain = DashboardFilter.from(Map.of("composition","domain:example.test"));
-        assertThat(dashboard.page(account,domain).summary()).containsEntry("messages",13L).containsEntry("groups",2L);
         verifyNoInteractions(gmailProvider,outlookProvider);
     }
 
@@ -582,7 +573,7 @@ class DashboardJourneyTest extends PostgresJourneyTest {
                 .param("unreadOnly", "true"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(13))
                 .andExpect(jsonPath("$.messages.length()").value(10))
-                .andExpect(jsonPath("$.recommendations.length()").value(10))
+
                 .andExpect(jsonPath("$.addresses").doesNotExist()).andExpect(jsonPath("$.units").doesNotExist())
                 .andExpect(jsonPath("$.messages[?(@.unread == false)]").isEmpty());
         mockMvc.perform(get("/dashboard/api/groups/" + group).with(authenticatedAs(OWNER))

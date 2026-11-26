@@ -33,11 +33,12 @@ public class DashboardPreviewService {
     public Preview create(long account,Request request) {
         if(request==null || request.filter()==null || request.ids()==null || request.ids().isEmpty()
             || !DashboardJobService.ACTIONS.contains(Objects.toString(request.action(),""))) throw bad("Choose messages and an action");
+        request.filter().requireAvailable();
         var destination="ORGANIZE".equals(request.action())?destinations.validate(account,request.destination()):null;
         var jdbc=repository.jdbc();
         jdbc.queryForObject("SELECT id FROM user_accounts WHERE id=:account FOR UPDATE",Map.of("account",account),Long.class);
         if(request.revision()!=repository.revision(account)) throw conflict("Grouping changed. Create a new preview.");
-        if((!request.filter().category().isEmpty() || !request.filter().labels().isEmpty()) && request.classificationRevision()!=null && request.classificationRevision()!=repository.classificationRevision(account))throw conflict("Categories changed. Create a new preview.");
+        if((!request.filter().category().isEmpty() || !request.filter().labels().isEmpty()) && request.classificationRevision()!=null && request.classificationRevision()!=repository.classificationRevision(account))throw conflict("Labels changed. Create a new preview.");
         var ids=request.ids().stream().distinct().toList();
         var p=repository.parameters(account,request.filter().cleanupScope())
             .addValue("ids",new org.springframework.jdbc.support.SqlArrayValue("uuid",ids.toArray()))

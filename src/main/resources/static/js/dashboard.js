@@ -127,7 +127,6 @@
   function filter() {
     return { scope: state.scope, q: $('search').value, start: $('start').value, end: $('end').value,
       zone, page: state.page, pageSize: state.pageSize, sort: $('sort').value, groupBy: $('groupBy').value, suggestion: state.suggestion,
-      recommendation: $('recommendation').value, importance: $('importance').value,
       labels: labelChoices.filter(input => input.checked).map(input => input.value).join(','), match: $('labelMatch').value,
       composition: composition?.key || '', excludeProtectedShopping: $('excludeProtectedShopping').checked };
   }
@@ -441,7 +440,6 @@
         let details;
         if (tab === 'messages') {
           details = await api(`groups/${group}?${parameters}`, undefined, controller.signal);
-          if (details.recommendations?.some(view => view.providerLabelIds?.some(id => id.startsWith('Label_')))) loadGmailLabels();
         } else {
           const addresses = await api(`groups/${group}/addresses?${query()}`, undefined, controller.signal);
           const rows = addresses.addresses.filter(a => !state.address || a.address === state.address);
@@ -501,20 +499,18 @@
       content.append(visible);
       for (const m of detail.messages) {
         const row = node('div', undefined, 'message-row'), text = node('div', undefined, 'message-text');
-        const recommendation = (detail.recommendations || []).find(r => r.message === m.id);
         const senderName = m.displayName?.trim();
         const subject = messageLink(m, m.subject || '(No subject)') || node('span', m.subject || '(No subject)');
         subject.classList.add('message-subject'); text.append(subject);
         const meta = node('div', undefined, 'message-meta');
         meta.append(node('span', senderName ? `${senderName} · ${m.address}` : m.address), node('span', `${dateText(m.receivedAt)} · ${m.unread ? 'Unread' : 'Read'}`));
         text.append(meta);
-        if (m.reviewedPattern) text.append(node('small',`Reviewed pattern: ${categoryName(m.reviewedPattern)} · Importance is not determined by this pattern`, 'muted'));
         if (m.pendingState) text.append(node('small', pendingText(m.pendingState), 'pending'));
         const ruleButton = node('button', 'Rules…'); ruleButton.type = 'button'; ruleButton.setAttribute('aria-label', 'Rules for ' + (m.subject || 'this email')); ruleButton.onclick = () => createInboxRule([m.address], state.action, 'From this email: ' + (m.subject || '(No subject)')); const more = node('details', undefined, 'message-tools'), moreTitle = node('summary', 'Details and actions');
         moreTitle.dataset.focusKey = 'message-tools-' + m.id; more.open = openMessageTools.has(m.id);
         more.addEventListener('toggle', () => { if (more.isConnected) { if (more.open) openMessageTools.add(m.id); else openMessageTools.delete(m.id); } });
-        more.append(moreTitle, ruleButton); appendEvidence(more,m); appendRecommendation(more,m,recommendation);
-        appendMessageLabels(text, m, recommendation, expandedLabels.has(m.id)); text.append(more); row.append(checkbox(`Select message ${m.subject || '(No subject)'}`, 1, selected.has(m.id) ? 1 : 0, checked => { if (checked) selected.set(m.id, m); else selected.delete(m.id); invalidatePreview(); renderSelectionControls(); }), text); content.append(row); }
+        more.append(moreTitle, ruleButton); appendEvidence(more,m);
+        appendMessageLabels(text, m, expandedLabels.has(m.id)); text.append(more); row.append(checkbox(`Select message ${m.subject || '(No subject)'}`, 1, selected.has(m.id) ? 1 : 0, checked => { if (checked) selected.set(m.id, m); else selected.delete(m.id); invalidatePreview(); renderSelectionControls(); }), text); content.append(row); }
       if (!detail.total) content.append(node('p', 'No matching messages in this group.', 'evidence'));
       const paging = node('div', undefined, 'paging'), prev = node('button', '‹'), next = node('button', '›'); prev.setAttribute('aria-label', 'Previous message page'); next.setAttribute('aria-label', 'Next message page'); prev.disabled = state.messagePage === 0; next.disabled = (state.messagePage + 1) * 10 >= detail.total;
       prev.dataset.focusKey = 'message-prev'; next.dataset.focusKey = 'message-next'; prev.onclick = () => pageMessages(-1, prev); next.onclick = () => pageMessages(1, next); paging.append(prev, node('span', detail.messages.length ? `${state.messagePage * 10 + 1}–${state.messagePage * 10 + detail.messages.length} of ${fmt(detail.total)}` : '0 messages'), next); content.append(paging);
@@ -633,127 +629,29 @@
     return parts.length ? 'Duration '+parts.join(', ') : 'Zero duration';
   }
   const evidenceViews=new Map(), openEvidence=new Set();
-  const recommendationNames = { KEEP_IN_INBOX:'Keep in inbox', KEEP_STORED:'Keep stored', ARCHIVE:'Archive', SUGGEST_TRASH:'Consider Trash', REVIEW:'Review', NONE:'Excluded' };
-  const importanceNames = { IMPORTANT:'Important', ROUTINE:'Routine', UNKNOWN:'Unknown' };
-  const recommendationReasons = {
-    EXCLUDED_MAIL:'Excluded from cleanup suggestions.', UNKNOWN_MAILBOX:'Folder information is incomplete.', MANUAL_DECISION:'Your saved recommendation.',
-    SENT_COPY:'Keep this Sent copy; review its size separately.', EVIDENCE_STALE:'Information changed; assessment needs updating.',
-    EVIDENCE_UNRESOLVED:'There is not enough evidence for a more specific recommendation.', EVIDENCE_CONFLICT:'Available evidence conflicts.',
-    CONTEXT_REQUIRED:'The message needs more context.', PROTECTED_CONTENT:'Contains correspondence or records worth keeping.', IMPORTANT_MESSAGE:'Marked important.',
-    CRITICAL_SIGNAL_UNKNOWN:'Protective labels are not yet established.', ROUTINE_BULK:'Routine marketing, newsletter or social content.',
-    STATEMENT_POLICY:'Your statement retention preference.', CALENDAR_REVIEW:'Calendar invite; event status is unresolved.', NO_DISPOSAL_RULE:'No established cleanup rule for this email.',
-    RECENT_UNREAD_ACTION:'Recent unread financial mail is held for review.', UNKNOWN_READ_OR_DATE:'Read status or date is unclear.',
-    READ_OR_OLD_BILL:'Read or older financial mail under your retention preference.', BILL_RECORD_POLICY:'Your preference keeps bills.',
-    PRIOR_SENT_CORRESPONDENCE:'You have previously emailed this exact address.', OBSERVED_CALENDAR:'A calendar invite was observed.'
-  };
-  const recommendationLabelNames = { CONTACT:'Contact',CALENDAR_INVITE:'Calendar invite',LARGE_MESSAGE:'Large email',HAS_ATTACHMENTS:'Has attachments',HUMAN_CORRESPONDENCE:'Personal',PERSONAL:'Personal',SENT:'Sent',GMAIL_PROMOTIONS:'Gmail: Promotions',
+  const labelNames = { CONTACT:'Contact',CALENDAR_INVITE:'Calendar invite',LARGE_MESSAGE:'Large email',HAS_ATTACHMENTS:'Has attachments',HUMAN_CORRESPONDENCE:'Personal',PERSONAL:'Personal',SENT:'Sent',GMAIL_PROMOTIONS:'Gmail: Promotions',
     CALENDAR_RESPONDED:'Calendar: responded',CALENDAR_NEEDS_RESPONSE:'Calendar: needs response',CALENDAR_CANCELLED:'Calendar: cancelled',
     OLDER_DOCUMENT_COMMENT:'Document comment older than 30 days' };
-  function recommendationLabel(value) { return recommendationLabelNames[value] || value.toLowerCase().replaceAll('_',' ').replace(/^./,c=>c.toUpperCase()); }
-  const recommendationDrafts=new Map(), openRecommendationEditors=new Set();
-  function appendMessageLabels(text, message, recommendation, expanded) {
-    const labels = new Set((recommendation?.labels || []).filter(label => !['UNKNOWN','SENT','CALENDAR_INVITE','PAST_EVENT'].includes(label)).map(recommendationLabel));
-    if (!['UNCLASSIFIED','CALENDAR_INVITE'].includes(message.category)) labels.add(recommendationLabel(message.category));
-    if (message.contact) labels.add('Contact');
-    if (message.attachmentState === 'PRESENT') labels.add('Has attachments');
-    const reasons = new Map(Object.entries(recommendation?.labelReasons || {}).map(([key,value]) => [recommendationLabel(key),value]));
-    const response = calendarChecks.get(message.id)?.snapshot || message.calendarResponse;
-    if (response && Date.parse(response.expiresAt) > Date.now()) {
-      const label = { RESPONDED: 'Calendar: responded', NEEDS_RESPONSE: 'Calendar: needs response', CANCELLED: 'Calendar: cancelled' }[response.state];
-      if (label) { labels.add(label); reasons.set(label, 'Calendar checked ' + dateTimeText(response.checkedAt) + '. This does not establish whether an update was reviewed.'); }
+  function labelName(value) { return labelNames[value] || value.toLowerCase().replaceAll('_',' ').replace(/^./,c=>c.toUpperCase()); }
+  function appendMessageLabels(text, message, expanded) {
+    const reasons = new Map(Object.entries(message.labelReasons || {}).map(([key,reason]) => [labelName(key),reason]));
+    if (message.contact) reasons.set('Contact','You have previously emailed this address.');
+    if (message.calendarInvite) reasons.set('Calendar invite','An invitation was identified in the email.');
+    if (message.sizeEstimate > 1000000) reasons.set('Large email','Whole-message estimated size exceeds 1 MB.');
+    const response=calendarChecks.get(message.id)?.snapshot || message.calendarResponse;
+    if(response && Date.parse(response.expiresAt)>Date.now()) {
+      const name={RESPONDED:'Calendar: responded',NEEDS_RESPONSE:'Calendar: needs response',CANCELLED:'Calendar: cancelled'}[response.state];
+      if(name) reasons.set(name,'Calendar checked '+dateTimeText(response.checkedAt)+'.');
     }
-    for (const id of recommendation?.providerLabelIds || []) {
-      if (!Object.hasOwn(gmailLabelNames,id)) continue;
-      const label = 'Gmail label: ' + gmailLabelNames[id];
-      labels.add(label);
-      reasons.set(label,'Gmail reports this custom label on the email.');
-    }
-    if (recommendation?.relayRecipients?.length)
-      text.append(node('small', `Relay recipient: ${recommendation.relayRecipients.join(', ')}`, 'muted'));
-    if (!labels.size) {
-      if (message.calendarInvite) text.append(node('small', 'Calendar status not confirmed', 'muted'));
-      return;
-    }
-    const detail = node('details', undefined, 'evidence');
-    detail.dataset.messageLabels = message.id;
-    detail.open = expanded;
-    const summary = node('summary', undefined, 'label-summary');
-    summary.setAttribute('aria-label', 'Inspect labels: ' + [...labels].join(', '));
-    for (const label of labels) summary.append(node('span', label, 'message-tag'));
-    summary.append(node('span', 'Why?', 'label-explanation'));
-    detail.append(summary);
-    for (const label of labels)
-      detail.append(node('small', label + ' — ' + (reasons.get(label) || 'From existing saved classification or message evidence.'), 'muted'));
+    for(const id of message.labels || []) if(Object.hasOwn(gmailLabelNames,id)) reasons.set('Gmail label: '+gmailLabelNames[id],'Gmail reports this label on the email.');
+    if(!reasons.size)return;
+    const detail=node('details',undefined,'evidence');detail.dataset.messageLabels=message.id;detail.open=expanded;
+    const summary=node('summary',undefined,'label-summary');summary.setAttribute('aria-label','Inspect labels: '+[...reasons.keys()].join(', '));
+    for(const label of reasons.keys())summary.append(node('span',label,'message-tag'));
+    summary.append(node('span','Why?','label-explanation'));detail.append(summary);
+    for(const [label,reason] of reasons)detail.append(node('small',label+' — '+reason,'muted'));
     text.append(detail);
   }
-  function appendRecommendation(text,m,view) {
-    const result=view?.freshness === 'CURRENT' ? view.result : null;
-    if (result) {
-      text.append(node('strong',recommendationNames[result.action] || 'Review'));
-      text.append(node('small',`Importance: ${importanceNames[result.importance] || 'Unknown'} · ${recommendationReasons[result.reason] || 'Review the available evidence.'}`,'muted'));
-    } else {
-      text.append(node('small',view?.freshness === 'STALE' ? 'Recommendation updating — saved information changed.' : 'Not assessed yet. Build recommendations to assess this email.','muted'));
-    }
-    const edit=node('details'),summary=node('summary','Adjust recommendation'),form=node('div',undefined,'recommendation-edit');
-    const action=node('select'),importance=node('select');
-    action.setAttribute('aria-label','Recommendation for '+(m.subject || 'this email'));
-    importance.setAttribute('aria-label','Importance for '+(m.subject || 'this email'));
-    for(const [value,label] of [['','Automatic'],...Object.entries(recommendationNames).filter(([value])=>value !== 'NONE')]) {const o=node('option',label);o.value=value;action.append(o);}
-    for(const [value,label] of [['','Automatic'],...Object.entries(importanceNames)]) {const o=node('option',label);o.value=value;importance.append(o);}
-    const draft=recommendationDrafts.get(m.id);
-    action.value=draft?.action ?? view?.correction?.action ?? ''; importance.value=draft?.importance ?? view?.correction?.importance ?? '';
-    const rememberDraft=()=>recommendationDrafts.set(m.id,{action:action.value,importance:importance.value,revision:draft?.revision ?? view?.correction?.revision ?? 0});
-    action.onchange=rememberDraft;importance.onchange=rememberDraft;
-    edit.open=openRecommendationEditors.has(m.id);
-    edit.addEventListener('toggle',()=>{if(edit.isConnected){if(edit.open)openRecommendationEditors.add(m.id);else openRecommendationEditors.delete(m.id);}});
-    const actionLabel=node('label','Recommendation '),importanceLabel=node('label','Importance ');actionLabel.append(action);importanceLabel.append(importance);
-    const save=node('button','Save recommendation');save.type='button';save.dataset.focusKey='recommendation-save-'+m.id;
-    save.disabled=!view;
-    save.onclick=async()=>{
-      save.disabled=true;
-      try {
-        await api(`messages/${m.id}/recommendation`,{action:action.value || null,importance:importance.value || null,revision:recommendationDrafts.get(m.id)?.revision ?? view.correction.revision});
-        recommendationDrafts.delete(m.id);openRecommendationEditors.delete(m.id);
-        selectionGeneration++;selected.clear();invalidatePreview();notice('Recommendation saved for this email. No mail was moved.');
-        state.details=null;await loadPage();await loadRecommendations();
-      } catch(error) { notice(error.message);save.disabled=false; }
-    };
-    form.append(actionLabel,importanceLabel,save,node('small','Automatic clears that correction. This changes your recommendation only.','muted'));edit.append(summary,form);text.append(edit);
-  }
-  let recommendationStatus=null,recommendationStatusBusy=false;
-  function renderRecommendationStatus(status) {
-    recommendationStatus=status;
-    $('localLabelProgress').textContent = status.error ? 'Local label processing needs a retry.' :
-      status.localChecked < status.indexed ? `${fmt(status.localChecked)} of ${fmt(status.indexed)} indexed emails checked for local labels.` :
-      'Local rules have checked all indexed emails. Some messages may have no matching label.';
-    $('localLabelProgress').textContent += ' Calendar labels refresh gradually with Calendar access and use checks from the last hour. Unchecked or uncertain events remain unlabelled.';
-    $('recommendationStatus').textContent=`${fmt(status.assessed)} of ${fmt(status.indexed)} emails have saved local recommendations${status.queued ? ' · updates queued' : ''}${status.error ? ' · refresh stopped; retry to continue' : !status.workerAvailable ? ' · automatic local refresh is disabled in this session' : status.enabled ? ' · refreshing locally' : ' · paused'}`;
-    if(outlook) $('labelingCoverage').textContent = 'Automatic local labels';
-    else if(status.labeling) {
-      const c=status.labeling;
-      const coverage=`${fmt(c.semanticCurrent)} of ${fmt(c.indexed)} received emails have current new-label results · ${fmt(Math.max(0,c.indexed-c.semanticCurrent))} still need labeling · ${fmt(c.mimeObserved)} inspected for calendar evidence`;
-      $('labelingCoverage').textContent=coverage;
-      $('labelingDialogCoverage').textContent=coverage;
-      $('labelingCoverage').textContent+=`${c.pending ? ' · '+fmt(c.pending)+' checks queued or running' : ''}${c.paused ? ' · '+fmt(c.paused)+' checks paused' : ''}${c.unresolved ? ' · '+fmt(c.unresolved)+' have uncertain labels' : ''}${c.failed ? ' · '+fmt(c.failed)+' checks need review' : ''} · Filter counts include only labels already found.`;
-    }
-    $('recommendationProcessing').textContent=status.enabled ? 'Pause recommendations' : status.assessed ? 'Resume recommendations' : 'Build recommendations';
-    $('recommendationProcessing').disabled=recommendationStatusBusy || !status.workerAvailable;
-  }
-  async function loadRecommendations() {
-    try {
-      const prior=recommendationStatus,status=await api('recommendations');renderRecommendationStatus(status);
-      if(prior && (prior.lastRun !== status.lastRun || prior.labeling?.updatedAt !== status.labeling?.updatedAt)) {
-        await loadPage(undefined,true,true);
-      }
-    } catch(error) { $('recommendationStatus').textContent='Recommendation status unavailable'; }
-  }
-  $('recommendationProcessing').onclick=async()=>{
-    if(recommendationStatusBusy || !recommendationStatus)return;
-    recommendationStatusBusy=true;$('recommendationProcessing').disabled=true;
-    try { const status=await api('recommendations/processing',{enabled:!recommendationStatus.enabled});renderRecommendationStatus(status); }
-    catch(error) { notice(error.message); }
-    finally { recommendationStatusBusy=false;if(recommendationStatus)renderRecommendationStatus(recommendationStatus); }
-  };
   function updateLabelSummary() {
     const selected = labelChoices.filter(input => input.checked), count = selected.length;
     const operator = $('labelMatch').value === 'all' ? 'AND' : 'OR';
@@ -769,11 +667,10 @@
   $('labelFilter').addEventListener('toggle', () => { if ($('labelFilter').open) loadGmailLabels(); });
   $('clearLabels').onclick = () => { labelChoices.forEach(input => { input.checked = false; }); $('excludeProtectedShopping').checked = false; labelFilterChanged(); };
   $('useLabelOr').onclick = () => { $('labelMatch').value = 'any'; labelFilterChanged(); };
-  for (const id of ['recommendation', 'importance']) $(id).addEventListener('change', filtersChanged);
   const calendarChecks = new Map();
   function appendCalendarResponse(text, m) {
     const view = calendarChecks.get(m.id), snapshot = view?.snapshot || m.calendarResponse;
-    const labels = (state.details?.recommendations || []).find(r => r.message === m.id)?.labels || [];
+    const labels = Object.keys(m.labelReasons || {});
     if (!snapshot && !m.calendarInvite && !labels.includes('CALENDAR_INVITE')
         && !evidenceViews.get(m.id)?.evidence?.calendars?.length) return;
     const box = node('div', undefined, 'evidence'), check = node('button', snapshot ? 'Refresh calendar response' : 'Check calendar response');
@@ -888,154 +785,6 @@
   $('largeEmails').onchange=()=>{const large = $('largeEmails').checked; composition = null; if (large) setScope('all'); setSuggestion(large ? 'large' : '');};
   $('clearSuggestion').onclick=()=>setSuggestion('');
 
-  let labelingScope=null,labelingPreview=null,labelingBusy=false,labelingEpoch=0,labelingPolling=false,labelingRecentStamp='',labelingViewEpoch=0,labelingFinancialReview=null;
-  const moneyFormat=new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:6});
-  const money=value=>moneyFormat.format(Number(value || 0));
-  const labelingSelection=()=>({mode:$('labelingMode').value,kind:$('labelingKind').value,limit:Number($('labelingLimit').value),messages:$('labelingMode').value==='SELECTED'?[...selected.keys()]:[]});
-  function labelingButtons() {
-    $('labelingPrepare').disabled=labelingBusy || !labelingPreview?.messages.length;
-    for(const id of ['labelingMode','labelingKind','labelingLimit','labelingSpend','labelingNewLimit','labelingIncreaseReview','labelingIncreaseConfirm']) $(id).disabled=labelingBusy;
-    for(const button of $('labelingRecent').querySelectorAll('button'))button.disabled=labelingBusy;
-    for(const id of ['labelingStart','labelingPause','labelingRetry']) $(id).disabled=labelingBusy || $(id).dataset.unavailable==='true';
-  }
-  async function previewLabeling() {
-    const epoch=++labelingEpoch;++labelingViewEpoch;labelingScope=null;labelingFinancialReview=null;labelingPreview=null;$('labelingReview').hidden=true;
-    $('labelingCandidates').textContent='Checking locally saved messages…';labelingButtons();
-    $('labelingSpendLabel').hidden=$('labelingKind').value==='MIME';
-    try {
-      const preview=await api('labeling/preview',labelingSelection());if(epoch!==labelingEpoch)return;labelingPreview=preview;
-      $('labelingCandidates').textContent=`Selection preview: ${fmt(preview.matching)} received emails in this scope · ${fmt(preview.eligible)} eligible for new checks · next batch: ${fmt(preview.messages.length)} emails. This batch does not process the entire mailbox.${preview.previouslySubmitted ? ' '+fmt(preview.previouslySubmitted)+' already have a paid submission and will not be automatically resubmitted.' : ''}`;
-      $('labelingAllowance').textContent=$('labelingKind').value==='MIME' ? 'No Jev cost. Exact Gmail reads and byte limits will be shown before starting.' :
-        `Shared new-label spending: ${money(preview.reported)} of ${money(preview.allowance)}. Each request must reserve ${money(preview.reservation)} before dispatch; the batch pauses early if the remaining allowance cannot cover that reservation. The shared limit is not increased by starting another batch.`;
-    } catch(error) {if(epoch===labelingEpoch)$('labelingCandidates').textContent=error.message;}
-    finally{if(epoch===labelingEpoch)labelingButtons();}
-  }
-  function renderLabelingScope(saved,running=false) {
-    if(labelingScope?.hash!==saved.scope.hash){labelingFinancialReview=null;$('labelingIncreaseConfirm').hidden=true;$('labelingIncreaseSummary').textContent='';}
-    labelingScope=saved.scope;const s=saved.scope,manifest=s.manifest,work=saved.work;
-    $('labelingReview').hidden=false;
-    const mime=manifest.kind==='MIME',snippet=manifest.messages.some(row=>row.variant==='SNIPPET'),done=work.filter(w=>w.state==='DONE').length,
-      failed=work.filter(w=>['FAILED','STALE','UNKNOWN'].includes(w.state)).length,pending=work.length-done-failed;
-    $('labelingDisclosure').textContent=mime ?
-      `Read MIME structure for these ${fmt(work.length)} exact emails from Gmail: at most ${fmt(manifest.maxRequests)} requests, ${bytesText(manifest.maxResponseBytes)} per response and ${bytesText(manifest.maxTotalMimeBytes)} total. No snippets, bodies or calendar attachment downloads. No mailbox changes.` :
-      `Send these ${fmt(work.length)} exact emails' sender addresses/names, subjects, reply/unsubscribe flags and Gmail categories${snippet?' and saved snippets (up to 1,024 UTF-8 bytes each)':''} to TypeSafe Jev through OpenRouter (${manifest.destination}). TypeSafe only, zero retention, data collection denied, no fallback. No bodies, ${snippet?'':'snippets, '}recipients, attachments or correspondent history. Maximum ${money(manifest.maxSpend)} for this batch, also subject to the shared allowance. No mailbox changes.`;
-    if($('labelingManifest').dataset.review!==s.id+':'+s.hash) {
-      $('labelingTargets').replaceChildren();
-      for(const row of manifest.messages) {
-      const entry=node('details');entry.append(node('summary',`${row.subject || row.evidence?.subject || '(No subject)'} · ${row.sender || row.evidence?.address || row.message}`));
-      const fields=node('pre',JSON.stringify(mime ? {message:row.message,sender:row.sender,subject:row.subject} : row.request.state.email_0,null,2));
-      fields.style.whiteSpace='pre-wrap';fields.style.overflowWrap='anywhere';entry.append(fields);$('labelingTargets').append(entry);
-      }
-      // Preserve an open review and focus during progress polling.
-      $('labelingManifest').textContent=JSON.stringify(manifest,null,2);$('labelingManifest').dataset.review=s.id+':'+s.hash;
-    }
-    const error=work.find(w=>w.error)?.error;
-    $('labelingRunStatus').textContent=`${!saved.authorized ? 'Prepared; nothing sent' : !pending ? 'Batch finished' : saved.paused ? 'Batch paused' : running ? 'Processing this reviewed batch' : 'Batch saved; press Start / resume to continue'} · ${fmt(done)} completed · ${fmt(pending)} remaining · ${fmt(failed)} need review · ${money(saved.reported)} reported${Number(saved.reserved)>0 ? ' · '+money(saved.reserved)+' reserved or unresolved' : ''}${error ? ' · '+error.toLowerCase().replaceAll('_',' ') : ''}.`;
-    $('labelingProgress').hidden=false;$('labelingProgress').max=Math.max(1,work.length);$('labelingProgress').value=done+failed;
-    $('labelingStart').textContent=saved.authorized?'Start / resume reviewed batch':'Approve and start this exact batch';
-    const funding=saved.spending;
-    $('labelingIncrease').hidden=mime || !funding?.canIncrease;
-    if(funding){
-      $('labelingAllowance').textContent=`Shared labeling spending: ${money(funding.sharedReported)} of ${money(funding.sharedLimit)}${Number(funding.sharedReserved)>0?' · '+money(funding.sharedReserved)+' reserved or unresolved':''}. Batch total limit: ${money(funding.batchLimit)}. Each new request requires a ${money(funding.reservation)} reservation.`;
-      const reasons={SHARED_LIMIT:`The remaining shared allowance (${money(Number(funding.sharedLimit)-Number(funding.sharedReported)-Number(funding.sharedReserved))}) cannot reserve the next request. Review a higher allowance to continue.`,BATCH_LIMIT:'This batch cannot fund the next request within its current total limit. Review a higher allowance to continue.',DEPLOYMENT_LIMIT:'The deployment spending checkpoint cannot fund the next request. Review a higher allowance to continue.',UNKNOWN_CHARGES:'Billing is unresolved. Review outstanding charges before increasing the allowance or resuming.',IN_FLIGHT:'Waiting for the current request to settle.'};
-      $('labelingFunding').textContent=funding.recoveryAvailable && funding.blockedReason?'A saved response can be recovered without another paid request. Further labeling still requires funding.':funding.canStart?'The current limits can fund the next request.':reasons[funding.blockedReason] || 'Funding is unavailable.';
-    } else $('labelingFunding').textContent='';
-    if(funding?.recoveryAvailable)$('labelingStart').textContent='Recover saved responses';
-    $('labelingStart').dataset.unavailable=String(!pending || running || work.some(w=>w.state==='UNKNOWN') && !funding?.recoveryAvailable || funding && !funding.canStart);
-    $('labelingPause').hidden=!pending || !saved.authorized || saved.paused;
-    $('labelingRetry').hidden=!mime || !work.some(w=>w.state==='FAILED');labelingButtons();
-  }
-  async function loadLabelingScope(id,progressOnly=false) {
-    if(progressOnly && labelingScope?.id===id){const epoch=labelingViewEpoch,manifest=labelingScope.manifest,progress=await api(`labeling/scopes/${id}/progress`);if(epoch!==labelingViewEpoch || labelingScope?.id!==id)return;if(progress.status.scope.hash!==labelingScope.hash)return loadLabelingScope(id);progress.status.scope.manifest=manifest;renderLabelingScope(progress.status,progress.running);return;}
-    const epoch=++labelingViewEpoch;
-    const [saved,active]=await Promise.all([api(`labeling/scopes/${id}`),api(`labeling/scopes/${id}/running`)]);
-    if(epoch===labelingViewEpoch)renderLabelingScope(saved,active.running);
-  }
-  async function loadLabelingRecent() {
-    const batches=await api('labeling/scopes'),stamp=JSON.stringify(batches);if(stamp===labelingRecentStamp)return;labelingRecentStamp=stamp;
-    const restore=rememberFocus($('labelingRecent'));$('labelingRecent').replaceChildren();
-    if(!batches.length)$('labelingRecent').append(node('p','No batches prepared yet.'));
-    for(const batch of batches){const button=node('button',`${batch.kind==='MIME'?'Calendar / attachment checks':'Jev labels'} · ${fmt(batch.completed)} of ${fmt(batch.total)} completed${batch.completed===batch.total ? ' · complete' : batch.paused ? ' · paused' : !batch.authorized ? ' · awaiting approval' : ''}`);button.type='button';button.disabled=labelingBusy;button.dataset.focusKey='labeling-batch-'+batch.id;button.onclick=()=>loadLabelingScope(batch.id).catch(error=>{$('labelingCandidates').textContent=error.message;});$('labelingRecent').append(button);}restore();
-  }
-  $('labelingOpen').onclick=async()=>{$('tools').close();$('labeling').showModal();try{await Promise.all([previewLabeling(),loadLabelingRecent()]);}catch(error){$('labelingCandidates').textContent=error.message;}};
-  for(const id of ['labelingMode','labelingKind','labelingLimit','labelingSpend']) $(id).onchange=previewLabeling;
-  $('labelingPrepare').onclick=async()=>{
-    if(labelingBusy)return;labelingBusy=true;labelingButtons();
-    try{const scope=await api('labeling/prepare',{selection:labelingSelection(),maxSpend:$('labelingKind').value==='MIME'?0:Number($('labelingSpend').value)});labelingScope=scope;await loadLabelingScope(scope.id,true);await loadLabelingRecent();}
-    catch(error){$('labelingCandidates').textContent=error.message;}finally{labelingBusy=false;labelingButtons();}
-  };
-  async function labelingAction(operation) {
-    if(labelingBusy||!labelingScope)return;labelingBusy=true;labelingButtons();
-    const scope=labelingScope;
-    try{await api(`labeling/scopes/${scope.id}/${operation}`,{hash:scope.hash});if(operation==='retry-mime')await api(`labeling/scopes/${scope.id}/start`,{hash:scope.hash});await loadLabelingScope(scope.id,true);await loadLabelingRecent();await loadRecommendations();}
-    catch(error){$('labelingRunStatus').textContent=error.message;}finally{labelingBusy=false;labelingButtons();}
-  }
-  $('labelingStart').onclick=()=>labelingAction('start');$('labelingPause').onclick=()=>labelingAction('pause');$('labelingRetry').onclick=()=>labelingAction('retry-mime');
-  $('labelingNewLimit').oninput=()=>{labelingFinancialReview=null;$('labelingIncreaseConfirm').hidden=true;$('labelingIncreaseSummary').textContent='Review the new total before confirming.';};
-  $('labelingIncreaseReview').onclick=async()=>{
-    if(labelingBusy||!labelingScope)return;labelingBusy=true;labelingButtons();const scope=labelingScope;
-    try{
-      const plan=await api(`labeling/scopes/${scope.id}/allowance-review`,{baseHash:scope.hash,newLimit:Number($('labelingNewLimit').value)});labelingFinancialReview=plan;
-      const c=plan.change;$('labelingIncreaseSummary').textContent=`Batch total limit: ${money(c.batchBefore)} → ${money(c.newBatchLimit)} (${money(c.batchSpent)} already spent). Shared labeling allowance: ${money(c.sharedBefore)} → ${money(c.newSharedLimit)}.${Number(c.newDeploymentLimit)!==Number(c.deploymentBefore)?' Deployment checkpoint: '+money(c.deploymentBefore)+' → '+money(c.newDeploymentLimit)+'.':''} The same emails and requests are retained; completed emails will not be sent again. Confirmation changes only the limits. Resume is a separate action.`;
-      $('labelingIncreaseConfirm').textContent=`Confirm ${money(c.newBatchLimit)} total limit`;$('labelingIncreaseConfirm').hidden=false;
-    }catch(error){labelingFinancialReview=null;$('labelingIncreaseConfirm').hidden=true;$('labelingIncreaseSummary').textContent=error.message;}
-    finally{labelingBusy=false;labelingButtons();}
-  };
-  $('labelingIncreaseConfirm').onclick=async()=>{
-    if(labelingBusy||!labelingFinancialReview||!labelingScope)return;labelingBusy=true;labelingButtons();const plan=labelingFinancialReview,scope=labelingScope;
-    try{await api(`labeling/scopes/${scope.id}/allowance`,{baseHash:plan.change.baseHash,newLimit:Number(plan.change.newBatchLimit),reviewHash:plan.hash});labelingFinancialReview=null;await loadLabelingScope(scope.id);$('labelingIncreaseSummary').textContent='New limit saved. The batch has not resumed; use Start / resume when ready.';$('labelingIncreaseConfirm').hidden=true;}
-    catch(error){labelingFinancialReview=null;$('labelingIncreaseConfirm').hidden=true;$('labelingIncreaseSummary').textContent=error.message;}
-    finally{labelingBusy=false;labelingButtons();}
-  };
-  $('labeling').addEventListener('close',()=>{$('labelingOpen').focus();loadPage();});
-  setInterval(async()=>{if(!$('labeling').open||labelingBusy||labelingPolling)return;labelingPolling=true;
-    try{if(labelingScope)await loadLabelingScope(labelingScope.id,true);await loadLabelingRecent();await loadRecommendations();}catch(error){$('labelingRunStatus').textContent=error.message;}finally{labelingPolling=false;}
-  },3000);
-
-  const categoryName = value => ({ PERSONAL: 'Personal', MARKETING: 'Marketing', NEWSLETTER: 'Newsletter', SOCIAL: 'Social', RECEIPT: 'Receipt', SECURITY: 'Security', NOTIFICATION: 'Notification', OTHER: 'Other', UNCERTAIN: 'Other', UNCLASSIFIED: 'Unclassified' }[value] || 'Unclassified');
-  let classification = null, classificationLoading = false;
-  const classifying = value => value && ['QUEUED', 'RUNNING'].includes(value.state);
-  function renderClassification() {
-    const active = classifying(classification), count = classification ? classification.done + classification.skipped : 0;
-    $('classificationStart').disabled = !classification?.configured || (active && !classification?.automaticRun);
-    $('classificationStart').textContent = classification?.state === 'FAILED' ? 'Retry classification' : 'Classify new or changed mail';
-    $('classificationCancel').hidden = !active;
-    $('classificationAutomatic').checked=!!classification?.automatic;
-    const budget=classification?.budget;
-    $('classificationContinue').hidden=!budget?.paused;
-    $('classificationContinue').disabled=!budget?.canContinue;
-    $('classificationAcknowledgeLabel').hidden=!budget?.unknown;
-    $('classificationBudget').textContent=budget?.unknown ? 'Billing is unknown for an interrupted request. Check OpenRouter activity, then acknowledge before continuing.' : budget?.paused ? 'The $1 reported-spend checkpoint has been reached. Wait for requests to settle, then explicitly continue for another $1.' : 'Each $1 of newly reported spend pauses paid work. Already dispatched requests may add a small overshoot. Keep an external OpenRouter key cap for a hard limit.';
-    $('classificationStart').disabled ||= !!budget?.paused;
-
-    $('classificationProgress').hidden = !classification?.total;
-    if (classification?.total) { $('classificationProgress').max = classification.total; $('classificationProgress').value = count; }
-    $('classificationStatus').textContent = !classification?.configured ? 'Add OPENROUTER_API_KEY to your local .env file and restart TidyMail to enable classification.' :
-      classification.state === 'NONE' ? 'Ready. No classification has been started.' : `${classification.state.toLowerCase()} · ${fmt(classification.done)} classified · ${fmt(classification.skipped)} skipped · ${fmt(Math.max(0, classification.total - count))} remaining of ${fmt(classification.total)}${classification.message ? ' · ' + classification.message : ''}`;
-    $('classificationSummary').textContent = active ? `Legacy categories: ${fmt(count)} of ${fmt(classification.total)}` : classification?.state === 'COMPLETE' ? 'Legacy categories complete' : classification?.state === 'FAILED' ? 'Legacy categories need attention' : '';
-    $('categoryCorrectionCount').textContent = selected.size ? `${fmt(selected.size)} selected ${selected.size===1?'message':'messages'}. This correction stays when Jev runs again.` : 'Select messages to correct their category.';
-    $('categoryCorrectionApply').disabled = !selected.size || selected.size > 5000 || selectionBusy > 0;
-  }
-  async function pollClassification() {
-    if (classificationLoading) return; classificationLoading = true;
-    try {
-      const previous = classification; classification = await api('classification'); renderClassification();
-      if (previous && (previous.done !== classification.done || previous.state !== classification.state)) {
-        if (!document.querySelector('dialog[open]')) await loadPage(undefined, true, previous.done !== classification.done);
-        if (classifying(previous) && classification.state === 'COMPLETE') notice('Classification complete. Categories and sender groups updated; mailbox actions require your selection and confirmation.');
-      }
-    } catch (error) { if ($('classification').open) $('classificationStatus').textContent = error.message; } finally { classificationLoading = false; }
-  }
-  $('correctSelectedCategory').onclick=()=>{renderClassification();$('classification').showModal();$('categoryCorrection').focus();};
-  $('classificationOpen').onclick = () => { $('tools').close(); renderClassification(); $('classification').showModal(); pollClassification(); };
-  $('classification').addEventListener('close', () => { $('classificationOpen').focus(); loadPage(); });
-  $('classificationStart').onclick = async () => { if (classificationLoading) return; classificationLoading = true; $('classificationStart').disabled = true; try { classification = await api('classification/start', {}); renderClassification(); } catch (error) { $('classificationStatus').textContent = error.message; } finally { classificationLoading = false; } };
-  $('classificationAutomatic').onchange = async () => { try{ classification=await api('classification/automatic',{enabled:$('classificationAutomatic').checked});renderClassification(); }catch(error){$('classificationStatus').textContent=error.message;} };
-  $('classificationContinue').onclick = async () => { if(classificationLoading)return; classificationLoading=true; try { classification=await api('classification/continue',{generation:classification.budget.generation,acknowledgeUnknown:$('classificationAcknowledge').checked}); $('classificationAcknowledge').checked=false; renderClassification(); }catch(error){$('classificationStatus').textContent=error.message;}finally{classificationLoading=false;} };
-  $('classificationCancel').onclick = async () => { if (classificationLoading) return; classificationLoading = true; try { classification = await api('classification/cancel', {}); renderClassification(); } catch (error) { $('classificationStatus').textContent = error.message; } finally { classificationLoading = false; } };
-  $('categoryCorrectionApply').onclick = async () => { const ids = [...selected.keys()]; $('categoryCorrectionApply').disabled = true; try { await api('classification/category', { ids, category: $('categoryCorrection').value, revision: state.revision }); clearSelection('Category correction saved.'); $('classification').close(); } catch (error) { $('classificationStatus').textContent = error.message; } finally { renderClassification(); } };
-  pollClassification(); setInterval(pollClassification, 5000);
-
   function setScope(scope) {
     state.scope = scope;
     document.querySelectorAll('[data-scope]').forEach(button => {
@@ -1142,7 +891,6 @@
   if(transferred){sessionStorage.removeItem('tidymail-rule-filing-preview');try{const saved=JSON.parse(transferred);if(String(saved.account)!==document.body.dataset.account)throw new Error('Mailbox changed. Review existing emails again from the rule.');previewFromRule=true;showActionPreview(saved.preview).catch(error=>notice(error.message));}catch(error){notice(error.message);}}
   }
   const initialJobs=pollJobs(); setInterval(pollJobs, 2000);
-  loadRecommendations();setInterval(()=>{if(!document.hidden)loadRecommendations();},5000);
   const overlayOpeners = new Map();
   function openLocalDialog(id, opener) {
     const dialog = $(id);
@@ -1152,10 +900,9 @@
   }
   $('filtersOpen').onclick = () => openLocalDialog('filtersDialog');
   $('settingsOpen').onclick = () => openLocalDialog('settings');
-  $('toolsOpen').onclick = () => { $('settings').close(); openLocalDialog('tools', $('settingsOpen')); };
   document.querySelector('[data-settings-link]').onclick = event => { event.preventDefault(); openLocalDialog('settings', event.currentTarget); };
   document.querySelector('[data-activity-link]').href = '/activity';
-  for (const id of ['filtersDialog', 'settings', 'tools']) $(id).addEventListener('close', () => {
+  for (const id of ['filtersDialog', 'settings']) $(id).addEventListener('close', () => {
     const opener = overlayOpeners.get(id);
     if (opener?.isConnected && !document.querySelector('dialog[open]')) opener.focus({ preventScroll: true });
   });
@@ -1164,7 +911,7 @@
     syncSizeFilter();
     const chips = $('activeFilters'); chips.replaceChildren();
     const add = (label, clear, container = chips) => { const button = node('button', label + ' ×', 'filter-chip'); button.type = 'button'; button.setAttribute('aria-label', 'Remove filter: ' + label); button.onclick = () => { clear(); updateLabelSummary(); filtersChanged(); }; container.append(button); };
-    for (const id of ['search', 'start', 'end', 'recommendation', 'importance']) {
+    for (const id of ['search', 'start', 'end']) {
       const input = $(id); if (!input.value) continue;
       const label = input.tagName === 'SELECT' ? input.selectedOptions[0].textContent : id === 'search' ? 'Search: ' + input.value : (id === 'start' ? 'From ' : 'Through ') + input.value;
       add(label, () => { input.value = ''; });
@@ -1188,7 +935,7 @@
     $('filterCount').hidden = !count; $('filterCount').textContent = count;
   }
   $('resetFilters').onclick = () => {
-    for (const id of ['search', 'start', 'end', 'recommendation', 'importance']) $(id).value = '';
+    for (const id of ['search', 'start', 'end']) $(id).value = '';
     labelChoices.forEach(input => { input.checked = false; }); $('labelMatch').value = 'all'; $('excludeProtectedShopping').checked = false;
     composition = null; state.suggestion = ''; $('activeSuggestion').hidden = true; updateLabelSummary(); filtersChanged();
   };

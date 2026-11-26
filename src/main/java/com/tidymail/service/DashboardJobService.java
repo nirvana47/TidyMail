@@ -94,7 +94,7 @@ public class DashboardJobService {
                 var eligibleIds=targets.stream().filter(t->Boolean.TRUE.equals(t.get("effective"))).map(t->(UUID)t.get("message_id")).toList();
                 var current=repository.parameters(account,filter).addValue("ids",new org.springframework.jdbc.support.SqlArrayValue("uuid",eligibleIds.toArray()));
                 long matching=jdbc.queryForObject(repository.filtered(account, filter)+" SELECT count(*) FROM filtered WHERE dashboard_message_id=ANY(:ids)",current,Long.class);
-                if(matching!=eligibleIds.size()) throw conflict("Recommendations or labels changed. Create a new preview.");
+                if(matching!=eligibleIds.size()) throw conflict("Labels changed. Create a new preview.");
             }
             var scope=scopes.requireScope(account,((Number)row.get("scope_id")).longValue());
             var ids=targets.stream().map(t->(String)t.get("provider_message_id")).toList();

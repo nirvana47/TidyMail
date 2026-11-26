@@ -18,18 +18,14 @@ import org.springframework.mock.web.MockHttpSession;
 @org.springframework.test.context.TestPropertySource(properties = "app.mvp.enabled=true")
 class DashboardBrowserFixture extends PostgresJourneyTest {
     @org.springframework.boot.test.mock.mockito.MockBean
-    com.tidymail.service.JevClassifier classifier;
-    @org.springframework.boot.test.mock.mockito.MockBean
     com.tidymail.mail.gmail.GmailEvidenceReader evidenceReader;
     @org.springframework.boot.test.mock.mockito.SpyBean
     com.tidymail.rules.GmailRuleProvider ruleLabels;
     @org.springframework.beans.factory.annotation.Autowired
     com.tidymail.job.DashboardCleanupWorker cleanupWorker;
     @org.springframework.beans.factory.annotation.Autowired
-    com.tidymail.service.DashboardClassificationService classification;
+    com.tidymail.service.LocalLabelService localLabels;
 
-    @org.springframework.beans.factory.annotation.Autowired
-    com.tidymail.service.RecommendationProcessingService recommendationProcessing;
     @org.springframework.beans.factory.annotation.Autowired
     com.tidymail.service.CorrespondentHistory correspondence;
 
@@ -67,115 +63,17 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
         org.mockito.Mockito.doAnswer(i->ruleLabels.useDestination(i.getArgument(1),"Label_42")).when(ruleLabels).prepare(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any());
         for(String[] sample:java.util.List.of(new String[]{"domain-a","prefix-a@relay.example.test","Weekly update"},new String[]{"domain-b","prefix-b@relay.example.test","Weekly invoice"},new String[]{"domain-fixed","alerts@fixed.example.test","Weekly update"}))
             jdbc.update("INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,dashboard_from_address,dashboard_unit_kind,dashboard_unit_key,subject_header,labels,label_evidence_known,received_at) VALUES(?,'google',?,?,?,'ADDRESS',?,?,ARRAY['INBOX'],true,now())",account,sample[0],sample[1],sample[1],sample[1],sample[2]);
-        jdbc.update("UPDATE classification_budget SET owner_account=? WHERE id=1",account);
-        classification.automatic(account,false);
-        jdbc.update(
-                """
-                        INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,from_display_name,
-                          subject_header,received_at,unread,labels,label_evidence_known,dashboard_from_address,
-                          dashboard_unit_kind,dashboard_unit_key,dashboard_identity_reason)
-                        SELECT ?,'google','browser-'||i,'news'||(i%12)||'@sender.example','Newsletter '||(i%12),
-                          'Indexed subject '||i,TIMESTAMPTZ '2026-10-28 12:00:00+00'-(i%30)*interval '1 day',
-                          (i/12)%2=0,CASE WHEN (i/12)%5=0 THEN ARRAY[]::text[] ELSE ARRAY['INBOX'] END,true,
-                          'news'||(i%12)||'@sender.example','ADDRESS','news'||(i%12)||'@sender.example','Kept separate — insufficient domain evidence'
-                        FROM generate_series(1,360) i
-                        """,
-                account);
-        org.mockito.Mockito.when(classifier.configured()).thenReturn(true);
-        org.mockito.Mockito.when(classifier.classify(org.mockito.ArgumentMatchers.anyList())).thenAnswer(call -> {
-            java.util.List<com.tidymail.service.JevClassifier.Evidence> items = call.getArgument(0);
-            return new com.tidymail.service.JevClassifier.Result(
-                    items.stream().map(e -> new com.tidymail.service.JevClassifier.Decision(
-                            e.subject().contains("offer") ? "MARKETING"
-                                    : e.address().contains("amazon") ? "RECEIPT" : "PERSONAL",
-                            e.address().contains("amazon") ? "AUTOMATED" : "PERSON",
-                            e.address().contains("amazon") ? "SHOPPING" : "GENERAL", .98)).toList(),
-                    new java.math.BigDecimal("0.0001"));
-        });
-        for (var sample : java.util.List.of(
-                new String[] { "taylor.work@example.com", "Taylor Example", "Synthetic project discussion" },
-                new String[] { "taylor.personal@example.org", "Taylor Example", "Synthetic planning update" },
-                new String[] { "no.reply.alerts@chase.com", "Chase", "Synthetic account alert" },
-                new String[] { "no-reply@alertsp.chase.com", "Chase", "Synthetic account update" },
-                new String[] { "orders@amazon.com", "Amazon", "Your receipt" },
-                new String[] { "orders@amazon.com", "Amazon", "Special offer" })) {
-            String id = "classification-" + java.util.UUID.randomUUID();
-            jdbc.update(
-                    "INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,from_display_name,subject_header,labels,unread,label_evidence_known,dashboard_from_address,dashboard_unit_kind,dashboard_unit_key,received_at) VALUES(?,'google',?,?,?,?,ARRAY['INBOX'],true,true,?,'ADDRESS',?,now())",
-                    account, id, sample[0], sample[1], sample[2], sample[0], sample[0]);
-        }
         jdbc.update("""
-                INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,from_display_name,
-                  subject_header,labels,unread,label_evidence_known,dashboard_from_address,dashboard_unit_kind,
-                  dashboard_unit_key,received_at)
-                SELECT ?,'google','list-label-'||i,'offers@lender.example','LendingTree',
-                  'Synthetic offer '||i,ARRAY['INBOX'],true,true,'offers@lender.example','LIST',
-                  'spc.142003.1.sparkpostmail.com',now() FROM generate_series(1,3) i
-                """, account);
-        jdbc.update("""
-            INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,from_display_name,subject_header,
-            labels,label_evidence_known,dashboard_from_address,dashboard_unit_kind,dashboard_unit_key,received_at,classification_override)
-            SELECT ?,'google','pattern-'||i,'orders@amazon.com','Amazon','Order '||(123455+i)||' confirmed',
-            ARRAY['INBOX'],true,'orders@amazon.com','ADDRESS','orders@amazon.com',now(),CASE WHEN i=1 THEN 'RECEIPT' END
-            FROM generate_series(1,3) i
+            INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,from_display_name,
+              subject_header,received_at,unread,labels,label_evidence_known,dashboard_from_address,dashboard_unit_kind,dashboard_unit_key)
+            SELECT ?,'google','browser-'||i,'news'||(i%12)||'@sender.example','Sender '||(i%12),
+              'Invoice Indexed subject '||i,TIMESTAMPTZ '2026-10-28 12:00:00+00'-(i%30)*interval '1 day',
+              (i/12)%2=0,CASE WHEN (i/12)%5=0 THEN ARRAY[]::text[] ELSE ARRAY['INBOX'] END,true,
+              'news'||(i%12)||'@sender.example','ADDRESS','news'||(i%12)||'@sender.example'
+            FROM generate_series(1,360) i
             """,account);
-        jdbc.update("""
-            INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,from_display_name,subject_header,
-            labels,label_evidence_known,dashboard_from_address,dashboard_unit_kind,dashboard_unit_key,received_at,in_reply_to_values)
-            VALUES(?,'google','pattern-reply','orders@amazon.com','Amazon','Order 123459 confirmed',ARRAY['INBOX'],true,
-            'orders@amazon.com','ADDRESS','orders@amazon.com',now(),ARRAY['<synthetic-reply@example.test>'])
-            """,account);
-        jdbc.update("""
-            INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,from_display_name,subject_header,
-            labels,label_evidence_known,dashboard_from_address,dashboard_unit_kind,dashboard_unit_key,received_at,classification_override)
-            VALUES(?,'google','personal-work','demo.work@example.com','Demo Contact','Synthetic work-address invitation',ARRAY['INBOX'],true,
-            'demo.work@example.com','ADDRESS','demo.work@example.com',now(),'PERSONAL')
-            """,account);
-        jdbc.update("""
-            UPDATE message_metadata SET classification_override =
-              CASE WHEN provider_message_id LIKE 'browser-%' THEN 'NEWSLETTER' ELSE 'SECURITY' END
-            WHERE account_id=? AND (provider_message_id LIKE 'browser-%' OR provider_message_id LIKE 'classification-%')
-            """,account);
-        jdbc.update("UPDATE message_metadata SET size_estimate=2000+(id%50)*400 WHERE account_id=?",account);
-        jdbc.update("UPDATE message_metadata SET attachment_state='ABSENT',attachment_source='SYNTHETIC_FIXTURE',attachment_observed_at=now(),has_attachments=false WHERE account_id=? AND provider_message_id LIKE 'pattern-%'",account);
-        for (String id : java.util.List.of("calendar-master","calendar-update")) {
-            jdbc.update("""
-                INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,from_display_name,subject_header,
-                labels,label_evidence_known,dashboard_from_address,dashboard_unit_kind,dashboard_unit_key,received_at,
-                size_estimate,classification_override,snippet_text,snippet_state)
-                VALUES(?,'google',?,'demo.personal@example.org','Demo Contact',?,ARRAY['INBOX'],true,'demo.personal@example.org','ADDRESS','demo.personal@example.org',now(),8000,'PERSONAL','Synthetic all-day invitation','AVAILABLE')
-                """,account,id,id.equals("calendar-master") ? "Calendar sample: monthly demo schedule" : "Calendar sample: updated demo schedule");
-        }
-        jdbc.update("UPDATE message_metadata SET size_estimate=6000000,snippet_text='A bounded preview for checking the email inspector.',snippet_state='AVAILABLE' WHERE account_id=? AND provider_message_id IN ('browser-1','browser-2','browser-3')",account);
-        org.mockito.Mockito.when(evidenceReader.read(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.anyString())).thenAnswer(call -> {
-            String id=call.getArgument(1);
-            String properties=id.equals("calendar-master")
-                ? "UID:all-day-fixture\r\nDTSTART;VALUE=DATE:20260930\r\nRRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1;COUNT=2\r\nSEQUENCE:1"
-                : id.equals("calendar-update")
-                ? "UID:all-day-fixture\r\nRECURRENCE-ID;VALUE=DATE:20261030\r\nDTSTART;VALUE=DATE:20261107\r\nDURATION:P2D\r\nSEQUENCE:2"
-                : "UID:fixture\r\nDTSTART:20260101T090000Z\r\nDTEND:20260101T100000Z";
-            var facts=new com.tidymail.service.CalendarEvidenceParser().parse("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\nORGANIZER:mailto:person@example.test\r\n"+properties+"\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n").source("1","synthetic-"+id);
-            return new com.tidymail.mail.gmail.GmailEvidenceReader.Evidence(com.tidymail.mail.gmail.GmailEvidenceReader.VERSION,
-                com.tidymail.mail.EmailSnippet.observed("Synthetic calendar preview"),"AVAILABLE","PRESENT",
-                java.util.List.of(new com.tidymail.mail.gmail.GmailEvidenceReader.Part("1","text/calendar","invite.ics",450L,false,true)),
-                java.util.List.of(facts),2,1000);
-        });
-        jdbc.update("""
-            INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,dashboard_from_address,
-              from_display_name,subject_header,labels,label_evidence_known,to_values,dashboard_unit_kind,dashboard_unit_key,size_estimate,received_at)
-            VALUES(?,'google','sent-storage','browser-fixture@example.test','browser-fixture@example.test','Me',
-              'Synthetic Sent attachment for storage review',ARRAY['SENT'],true,ARRAY['demo.personal@example.org'],
-              'ADDRESS','browser-fixture@example.test',3000000,now())
-            """,account);
-        correspondence.processBatch(200);correspondence.processBatch(200);
-        var recommendationExecutor=java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
-        recommendationExecutor.scheduleWithFixedDelay(recommendationProcessing::runOnce,1,1,java.util.concurrent.TimeUnit.SECONDS);
-        var classificationExecutor = java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
-        classificationExecutor.scheduleWithFixedDelay(classification::runOnce, 1, 1,
-                java.util.concurrent.TimeUnit.SECONDS);
-        jdbc.update(
-                "INSERT INTO mailbox_sync_state(account_id,provider,lifecycle,backfill_status,initial_batch_completed_at,incremental_last_success_at) VALUES(?,'google','ACTIVE','COMPLETE',now(),now())",
-                account);
+        localLabels.processBatch(account,500);
+        jdbc.update("INSERT INTO mailbox_sync_state(account_id,provider,lifecycle,backfill_status,initial_batch_completed_at,incremental_last_success_at) VALUES(?,'google','ACTIVE','COMPLETE',now(),now())",account);
         var providerUnread = java.util.concurrent.ConcurrentHashMap.<String>newKeySet();
         providerUnread.addAll(
                 jdbc.queryForList("SELECT provider_message_id FROM message_metadata WHERE account_id=? AND unread",
@@ -274,8 +172,6 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
             while (!Files.exists(done) && System.nanoTime() < deadline)
                 Thread.sleep(500);
         } finally {
-            classificationExecutor.shutdownNow();
-            recommendationExecutor.shutdownNow();
             cleanup.shutdownNow();
             server.stop(0);
             ((java.util.concurrent.ExecutorService) server.getExecutor()).shutdownNow();

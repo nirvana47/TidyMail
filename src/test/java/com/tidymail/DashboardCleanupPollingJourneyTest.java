@@ -28,7 +28,6 @@ class DashboardCleanupPollingJourneyTest extends PostgresJourneyTest {
 
     @Test void confirmedIndexedMailCleanupRunsWithoutTheGlobalScheduler() throws Exception {
         assertThat(environment.getProperty("spring.task.scheduling.enabled")).isEqualTo("false");
-        assertThat(environment.getProperty("app.classification.worker.enabled")).isEqualTo("false");
         long account=userAccounts.createAccount("cleanup-poll@example.test");
         UUID received=mail(account,"received","{INBOX}"),excluded=mail(account,"excluded","{SPAM}");
         var filter=new DashboardFilter("indexed","newsletter","","","UTC",0);

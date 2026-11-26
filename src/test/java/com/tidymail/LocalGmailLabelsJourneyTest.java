@@ -18,8 +18,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 class LocalGmailLabelsJourneyTest extends PostgresJourneyTest {
     private static final String OWNER = "local-labels@example.test";
-    @Autowired RecommendationService recommendations;
-    @Autowired RecommendationProcessingService processing;
+    @Autowired LocalLabelService localLabels;
     @Autowired DashboardRepository dashboard;
     @Autowired ObjectMapper json;
     long account;
@@ -39,8 +38,8 @@ class LocalGmailLabelsJourneyTest extends PostgresJourneyTest {
         UUID forwarded=mail("forwarded","organizer@example.test","Organizer",
             "Fwd: Invitation: Planning @ Mon Nov 9, 2026 (organizer@example.test)","{INBOX}");
         drain();
-        jdbc.update("UPDATE message_recommendations SET local_rules_version='gmail-header-rules-v1',local_label_reasons='{}'");
-        jdbc.update("UPDATE recommendation_backfill SET coverage_hash='previous-rule-coverage'");
+        jdbc.update("UPDATE message_local_labels SET version='old-header-rules',reasons='{}'");
+        jdbc.update("INSERT INTO local_label_dirty SELECT account_id,dashboard_message_id FROM message_metadata ON CONFLICT DO NOTHING");
         assertThat(count("all","CALENDAR_INVITE","all",false)).isZero();
 
         drain();
@@ -105,7 +104,8 @@ class LocalGmailLabelsJourneyTest extends PostgresJourneyTest {
             """,account,id,GmailEvidenceReader.VERSION,id,json.writeValueAsString(facts));
     }
 
-    private RecommendationService.View view(UUID message) { return recommendations.read(account,List.of(message)).getFirst(); }
+    private record LocalView(Map<String,String> labelReasons) {}
+    private LocalView view(UUID message) { return new LocalView(localLabels.labels(account,message)); }
     private DashboardFilter filter(String scope,String labels,String match,boolean exclusions) {
         return DashboardFilter.from(Map.of("scope",scope,"labels",labels,"match",match,"excludeProtectedShopping",String.valueOf(exclusions)));
     }
@@ -114,10 +114,7 @@ class LocalGmailLabelsJourneyTest extends PostgresJourneyTest {
     }
     private void drain() {
         for(int batch=0;batch<20;batch++) {
-            processing.runOnce();
-            var status=processing.status(account);
-            assertThat(status.error()).isNull();
-            if(status.historyComplete() && status.queued()==0) return;
+            if(localLabels.processBatch(account,200)==0) return;
         }
         fail("Local processing did not settle");
     }

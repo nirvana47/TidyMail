@@ -74,12 +74,12 @@ public record DashboardFilter(String scope, String q, String start, String end, 
                     || (groupBy.equals("address") && !composition.startsWith("group:"))
                     || !composition.matches("(domain:[a-z0-9.-]{1,253}|group:[a-f0-9-]{36})")))
                 throw new IllegalArgumentException();
-            if (!label.isEmpty()) requireLabel(label);
+            if (!label.isEmpty()) requireStoredLabel(label);
             if (!java.util.Set.of("all", "any").contains(match) || labels.length() > 800)
                 throw new IllegalArgumentException();
             if (!labels.isEmpty()) {
                 for (String value : labels.split(",", -1)) {
-                    requireLabel(value);
+                    requireStoredLabel(value);
                     if (value.equals("SENT") && !suggestion.equals("large")) throw new IllegalArgumentException();
                 }
             }
@@ -106,19 +106,31 @@ public record DashboardFilter(String scope, String q, String start, String end, 
 
     public static DashboardFilter from(Map<String, String> values) {
         try {
-            return new DashboardFilter(values.get("scope"), values.get("q"), values.get("start"), values.get("end"),
+            for(String retired:java.util.List.of("category","recommendation","importance"))
+                if(!values.getOrDefault(retired, "").isBlank()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"This filter has been removed");
+            var filter = new DashboardFilter(values.get("scope"), values.get("q"), values.get("start"), values.get("end"),
                     values.get("zone"), Integer.parseInt(values.getOrDefault("page", "0")), values.get("category"), values.get("sort"), values.get("suggestion"), values.get("recommendation"), values.get("importance"), values.get("label"), values.get("labels"), values.get("match"), values.get("composition"), Boolean.parseBoolean(values.get("excludeProtectedShopping")), values.get("groupBy"), Integer.valueOf(values.getOrDefault("pageSize", "10")));
+            filter.requireAvailable();
+            return filter;
         } catch (NumberFormatException invalid) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid page");
         }
     }
 
-    private static void requireLabel(String value) {
-        if (java.util.Set.of("OTHER", "UNCLASSIFIED").contains(value)
-                || com.tidymail.service.LocalMailLabels.EXTRA_FILTERS.contains(value)
-                || value.matches("GMAIL_LABEL_[0-9]{1,30}")) return;
-        try { com.tidymail.service.MessageRecommendation.Facet.valueOf(value); }
-        catch (IllegalArgumentException notFacet) { com.tidymail.service.MessageRecommendation.Purpose.valueOf(value); }
+    // Old confirmed jobs must still decode their frozen filters after feature removal.
+    private static void requireStoredLabel(String value) {
+        if (!value.matches("[A-Z][A-Z0-9_]{0,79}")) throw new IllegalArgumentException("Invalid saved label");
+    }
+    private static boolean availableLabel(String value) {
+        return com.tidymail.service.LocalMailLabels.EXTRA_FILTERS.contains(value)
+            || value.matches("GMAIL_LABEL_[0-9]{1,30}")
+            || java.util.Set.of("CONTACT","CALENDAR_INVITE","LARGE_MESSAGE","HAS_ATTACHMENTS","SENT","SOCIAL","NOTIFICATION","ORDER","SHIPPING","SECURITY","BILL","STATEMENT","RECEIPT").contains(value);
+    }
+    public void requireAvailable() {
+        if (!category.isEmpty() || !recommendation.isEmpty() || !importance.isEmpty()
+            || (!label.isEmpty() && !availableLabel(label))
+            || (!labels.isEmpty() && java.util.Arrays.stream(labels.split(",")).anyMatch(value -> !availableLabel(value))))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"This filter has been removed");
     }
 
     public boolean bySenderAddress() {
@@ -139,9 +151,8 @@ public record DashboardFilter(String scope, String q, String start, String end, 
 
     /** Browsing all indexed mail must not expand cleanup eligibility. */
     public DashboardFilter cleanupScope() {
-        return scope.equals("indexed")
-            ? new DashboardFilter("all", q, start, end, zone, page, category, sort, suggestion, recommendation, importance, label, labels, match, "", excludeProtectedShopping, groupBy, pageSize)
-            : this;
+        // Already-confirmed jobs keep their exact IDs; removed AI filters cannot strand them.
+        return new DashboardFilter(scope.equals("indexed")?"all":scope,q,start,end,zone,page,"",sort,suggestion,"","",availableLabel(label)?label:"",labels.isEmpty()?"":java.util.Arrays.stream(labels.split(",")).filter(DashboardFilter::availableLabel).collect(java.util.stream.Collectors.joining(",")),match,"",excludeProtectedShopping,groupBy,pageSize);
     }
 
     /** A chart drilldown scopes selection, while confirmed IDs survive later grouping edits. */

@@ -54,8 +54,7 @@ class PersonalOutlookJourneyTest extends PostgresJourneyTest {
     @Autowired DashboardPreviewService previews;
     @Autowired DashboardJobService jobs;
     @Autowired DashboardCleanupWorker cleanup;
-    @Autowired RecommendationProcessingService labels;
-    @Autowired RecommendationService recommendations;
+    @Autowired LocalLabelService labels;
 
     private long accountId;
     private UserAccount account;
@@ -196,13 +195,13 @@ class PersonalOutlookJourneyTest extends PostgresJourneyTest {
         fixture.put("accepted","in","guest@example.test","Accepted: Quarterly planning")
             .put("@odata.type","#microsoft.graph.eventMessageResponse").put("meetingMessageType","meetingAccepted");
         importMailbox();
-        assertThat(labels.runOnce()).isTrue();
+        assertThat(labels.processBatch(accountId,200)).isPositive();
 
         var filter = DashboardFilter.from(Map.of("scope","all","labels","CALENDAR_INVITE"));
         assertThat(count(filter)).isEqualTo(3);
-        assertThat(recommendations.read(accountId, List.of(id("meeting"), id("cancel"), id("google-invite"))))
-            .allSatisfy(view -> assertThat(view.labelReasons()).containsKey("CALENDAR_INVITE").doesNotContainKey("PAST_EVENT"));
-        assertThat(recommendations.read(accountId, List.of(id("accepted"))).getFirst().labelReasons())
+        assertThat(List.of(id("meeting"), id("cancel"), id("google-invite")).stream().map(id -> labels.labels(accountId,id)).toList())
+            .allSatisfy(view -> assertThat(view).containsKey("CALENDAR_INVITE").doesNotContainKey("PAST_EVENT"));
+        assertThat(labels.labels(accountId,id("accepted")))
             .doesNotContainKey("CALENDAR_INVITE");
         assertThat(fixture.writes).isEmpty();
     }

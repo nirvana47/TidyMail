@@ -12,7 +12,7 @@ const groups = [
 const messages = [[inmail, 36, 'linkedin'], [invitations, 33, 'linkedin'], ['news@target.com', 2, 'target'], ['offers@target.com', 2, 'target']]
   .flatMap(([address, count, groupId]) => Array.from({ length: count }, (_, i) => ({
     id: `${address}-${i}`, address, groupId, subject: `${address} message ${i}`, unread: i % 2 === 0,
-    receivedAt: '2026-11-14T12:00:00Z', category: 'UNCLASSIFIED', displayName: address === inmail ? 'Vashu Walia' : '',
+    receivedAt: '2026-11-14T12:00:00Z', category: 'UNCLASSIFIED', displayName: address === inmail ? 'Test Sender' : '',
     attachmentState: 'ABSENT', snippetState: 'ABSENT', contact: true,
     gmailWebLink: 'https://mail.google.com/mail/?authuser=fixture%40example.test#all/synthetic-message',
     outlookWebLink: 'https://outlook.office.com/mail/deeplink/read/synthetic-message'
@@ -69,7 +69,6 @@ let pageFailure = false, pageRequests = 0;
       if (url.pathname.startsWith('/static/')) return route.fulfill({ path: path.join(root, 'src/main/resources', url.pathname) });
       const endpoint = url.pathname.replace('/dashboard/api/', '');
       if (endpoint === 'jobs') return send([]);
-      if (endpoint === 'recommendations') return send({ enabled: false, labeling: {} });
       if (endpoint === 'page') {
         pageRequests++;
         if (pageFailure) { pageFailure = false; return route.fulfill({ status: 400, json: { message: 'Invalid dashboard filters' } }); }
@@ -95,13 +94,13 @@ let pageFailure = false, pageRequests = 0;
           id: group + '-' + i, subject: `Email ${i + 1} from ${group}` })) : messages.filter(m => m.groupId === group);
         if (kind === 'addresses') return send({ revision: 1, addresses: [...new Set(rows.map(m => m.address))].map(address => ({
           address, messages: rows.filter(m => m.address === address).length,
-          displayName: address === inmail ? 'Vashu Walia' : ''
+          displayName: address === inmail ? 'Test Sender' : ''
         })) });
         if (detailFailure) { detailFailure = false; return route.fulfill({ status: 503, json: { message: 'Indexed details are temporarily unavailable.' } }); }
         if (delayDetails) { const wait = delayDetails; delayDetails = null; detailsStarted?.(); await wait; }
         const filtered = rows.filter(m => (!url.searchParams.get('address') || m.address === url.searchParams.get('address')) && (url.searchParams.get('unreadOnly') !== 'true' || m.unread));
         const offset = Number(url.searchParams.get('messagePage')) * 10;
-        return send({ revision: 1, messages: filtered.slice(offset, offset + 10), total: filtered.length, recommendations: [] });
+        return send({ revision: 1, messages: filtered.slice(offset, offset + 10), total: filtered.length });
       }
       if (endpoint === 'previews') {
         const request = route.request().postDataJSON(); previewIds = request.ids;
@@ -204,9 +203,6 @@ let pageFailure = false, pageRequests = 0;
     await page.locator('#labelMatch').selectOption('any');
     await expect(page.locator('#labelMatch')).toHaveValue('any');
     await page.locator('#labelMatch').selectOption('all');
-    await page.locator('#importance').selectOption('IMPORTANT');
-    await expect(page.locator('#importance')).toHaveValue('IMPORTANT');
-    await page.locator('#importance').selectOption('');
     // Recover in the actual open dialog, where both copies of an error used to stick.
     pageFailure = true;
     await page.locator('#start').fill('2025-01-01');
@@ -239,10 +235,6 @@ let pageFailure = false, pageRequests = 0;
     await expect(page.locator('#filterCount')).toBeHidden();
     await page.locator('[data-settings-link]').click();
     await expect(page.locator('#settings')).toBeVisible();
-    await page.locator('#toolsOpen').click();
-    await expect(page.locator('#settings')).not.toBeVisible();
-    await expect(page.locator('#tools')).toBeVisible();
-    assert.equal(await page.locator('dialog[open]').count(), 1);
     await page.keyboard.press('Escape');
     await page.locator('#detailClose').click();
     await expect(page.locator('#detail')).toBeHidden();

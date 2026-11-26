@@ -1,49 +1,27 @@
 # TidyMail
 
-Self-hosted Gmail cleanup: browse senders, review exact selections, and run Mark as Read, Archive or Move to Trash in the background. Java 21 + Spring Boot + PostgreSQL, with optional metadata-only Jev classification through OpenRouter.
+TidyMail helps people clean Gmail and personal Outlook mailboxes. Download email
+metadata, browse by domain or sender address, filter, select exact emails and
+confirm cleanup. Apply Gmail labels, move Outlook emails into folders, or create
+native rules for future emails. Activity shows download and cleanup progress.
 
-Optional [Jev classification](docs/JEV-CLASSIFICATION.md) adds message categories and service-aware grouping using `OPENROUTER_API_KEY` in `.env`. Once configured, it automatically classifies incoming metadata by default (with an off switch), reuses saved results, and pauses paid work at each recurring $1 reported-spend checkpoint. It never performs mailbox actions automatically.
+Use [local setup](DEPLOY.md), [product behavior](PROJECT.md),
+[workflows](WORKFLOWS.md), [test accounting](WORKFLOW-TEST-REVIEW.md) and
+[test commands](TESTING.md).
 
-Start with [local setup](DEPLOY.md). Read [PROJECT.md](PROJECT.md) for product and privacy behavior.
+Manual saved sender groups, Jev/OpenRouter classification and automatic cleanup
+recommendations are removed. Local header/provider labels and calendar response
+checks remain. No mailbox action is authorized by a label alone.
 
-Read [What people should be able to do in TidyMail](WORKFLOWS.md) for the current
-cleanup workflows and [what the tests check](WORKFLOW-TEST-REVIEW.md) for the
-remaining gaps. These collect existing decisions; they do not declare every
-workflow verified or restart paused classification work.
+Start an installed package with `./tools/run-local.sh`. It enables background
+sync, cleanup and local labels, validates migrations, and keeps a build-specific
+JAR under `.local-runtime/`. A running app needs a coordinated restart to use a
+new package. Ordinary logout retains downloaded mail; local-data deletion is a
+separate confirmation. Removing local data does not remove native mailbox rules.
 
-The agreed next MVP is a simpler sender dashboard with Inbox / All received mail,
-bulk Gmail actions, and live background-action progress. See the
-[MVP plan](docs/MVP-PLAN.md) for scope and preserve-first testing decisions.
-Phase 3 now implements indexed browsing, grouping corrections and exact-selection
-previews at `/dashboard`; see the [implementation report](docs/PHASE-3-INDEXED-DASHBOARD.md).
-Phase 4 adds confirmed background Mark as Read, cancellation and restored progress;
-see the [Phase 4 report](docs/PHASE-4-BACKGROUND-MARK-READ.md). Phase 5 extends this
-to Archive and Trash with bounded read retries and shared Gmail capacity;
-see the [Phase 5 report](docs/PHASE-5-ACTIONS-AND-RESILIENCE.md) for verification status.
-Phase 6 finishes Activity, pending indicators and desktop focus, and disables legacy
-workflows by default; see the [Phase 6 report](docs/PHASE-6-SIMPLIFIED-EXPERIENCE.md).
-Legacy code and records are retained behind the MVP-mode restrictions.
-Phase 7 fixes fresh-page loading, background refresh and concurrent cleanup/browsing,
-and has upgraded the retained index to V19 with a verified backup. See the
-[acceptance matrix](docs/PHASE-7-UPGRADE-AND-ACCEPTANCE.md) for the completed desktop,
-upgrade, regression and user-selected live-action checks, with their limits.
-
-| Reference | Contents |
-|---|---|
-| [MVP plan](docs/MVP-PLAN.md) | Agreed dashboard scope, progress requirements, and data-preservation plan |
-| [Codebase map](docs/CODEBASE.md) | Where features live and how data moves |
-| [Status](docs/STATUS.md) | Implemented capabilities and verification gaps |
-| [Testing](TESTING.md) | Native PostgreSQL harness and test commands |
-| [History](docs/HISTORY.md) | Archived planning documents and recovery |
-
-Gmail is the implemented mailbox backend. Microsoft sign-in wiring exists, but Outlook cleanup is incomplete. Ordinary logout retains indexed data; explicit confirmed deletion removes it.
+Downloaded subjects and addresses are currently readable database fields. Token
+encryption does not protect them. See the [privacy gap](WORKFLOW-TEST-REVIEW.md#downloaded-mail-privacy).
+Implementation and simulated tests are not proof of live provider behavior.
+Historical reports under `docs/` describe their dates, not current feature scope.
 
 Licensed under [GPL v3](LICENSE).
-
-Start the installed local package with `./tools/run-local.sh`. This enables the
-five-minute Gmail sync cycle, cleanup, and local recommendation refresh while
-keeping paid classification/labeling workers off. It validates and applies packaged database migrations before startup.
-Do not use a global scheduling-off verification command as the everyday launcher.
-The launcher keeps a build-specific JAR in `.local-runtime/` so Maven rebuilds
-cannot damage the running app. Restart the app to pick up a new build. Old copies
-can be removed when TidyMail is stopped.

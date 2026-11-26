@@ -19,7 +19,6 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 class MessageEvidenceJourneyTest extends PostgresJourneyTest {
     static final String OWNER="evidence@example.test";
     @MockBean GmailEvidenceReader reader;
-    @MockBean JevClassifier classifier;
     @Autowired DashboardRepository dashboard;
     @Autowired DashboardPreviewService previews;
     @Autowired DashboardJobService jobs;
@@ -28,7 +27,7 @@ class MessageEvidenceJourneyTest extends PostgresJourneyTest {
     @Autowired MessageMetadataMapper mapper;
     @Autowired CorrespondentHistory history;
     long account;
-    @BeforeEach void setup(){account=userAccounts.createAccount(OWNER);reset(reader,classifier);}
+    @BeforeEach void setup(){account=userAccounts.createAccount(OWNER);reset(reader);}
     UUID mail(String id,String address,String labels,Long size,String kind,String unit) {
         return jdbc.queryForObject("""
             INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,dashboard_from_address,from_display_name,
@@ -59,7 +58,7 @@ class MessageEvidenceJourneyTest extends PostgresJourneyTest {
         var observations=new HashMap<String,MailMessage>();
         for(var target:claim.targets()) observations.put(target.providerId(),new MailMessage(target.providerId(),"thread","google",Instant.now(),Map.of(),target.messageId().equals(sent)?Set.of("SENT"):target.messageId().equals(large)?Set.of("INBOX"):Set.of()));
         assertThat(jobs.dispatch(verified,observations).targets()).extracting(DashboardJobService.Target::messageId).containsExactlyInAnyOrder(large,archived,sent);
-        verifyNoInteractions(reader,classifier,gmailProvider);
+        verifyNoInteractions(reader,gmailProvider);
     }
     @Test void checkingOneOwnedEmailIsReadOnlyCachedAndSurvivesMetadataSync() throws Exception {
         UUID id=mail("one","person@gmail.com","{INBOX}",6000000L,"ADDRESS","person@gmail.com");
@@ -80,17 +79,9 @@ class MessageEvidenceJourneyTest extends PostgresJourneyTest {
         var row=jdbc.queryForMap("SELECT snippet_text,attachment_state,attachment_source FROM message_metadata WHERE account_id=? AND provider_message_id='one'",account);
         assertThat(row).containsEntry("snippet_text","Private preview").containsEntry("attachment_state","PRESENT").containsEntry("attachment_source","MIME_STRUCTURE_V1");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM message_evidence WHERE account_id=?",Long.class,account)).isEqualTo(1);
-        verifyNoInteractions(classifier,gmailProvider);
+        verifyNoInteractions(gmailProvider);
     }
-    @Test void reviewedOrganizationMergesListVariantsButPreservesSecurityTypes() {
-        UUID routine=mail("routine","digest@quora.com","{INBOX}",1L,"LIST","one.quora");
-        UUID security=mail("security","access@quora.com","{INBOX}",2L,"LIST","two.quora");
-        jdbc.update("UPDATE message_metadata SET classification_override=CASE WHEN dashboard_message_id=? THEN 'SECURITY' ELSE 'NEWSLETTER' END",security);
-        var page=dashboard.page(account,filter(""));assertThat(page.groups()).hasSize(1);
-        var details=dashboard.details(account,filter(""),page.groups().getFirst().id(),0);
-        assertThat(details.messages()).extracting(DashboardRepository.Message::category).containsExactlyInAnyOrder("SECURITY","NEWSLETTER");
-        verifyNoInteractions(reader,classifier,gmailProvider);
-    }
+
     @Test void scopedReadPermissionIsCheckedOnlyAtTheActualUncachedRead() {
         UUID id=mail("scoped","person@gmail.com","{INBOX}",100L,"ADDRESS","person@gmail.com");
         var reservations=new java.util.concurrent.atomic.AtomicInteger();
@@ -116,13 +107,5 @@ class MessageEvidenceJourneyTest extends PostgresJourneyTest {
         var p=previews.create(account,new DashboardPreviewService.Request(filter(""),List.of(a),"TRASH",dashboard.revision(account)));
         assertThat(p.knownBytes()).isZero();assertThat(p.unknownSizes()).isEqualTo(1);
     }
-    @Test void personalCorrespondenceAtAReviewedCompanyKeepsItsOwnIdentity() {
-        UUID person=mail("person","employee@amazon.com","{INBOX}",1L,"ADDRESS","employee@amazon.com");
-        mail("order","orders@amazon.com","{INBOX}",1L,"ADDRESS","orders@amazon.com");
-        jdbc.update("UPDATE message_metadata SET classification_kind='PERSON' WHERE dashboard_message_id=?",person);
-        assertThat(dashboard.page(account,filter("")).groups()).hasSize(2);
-        jdbc.update("UPDATE message_metadata SET classification_override='PERSONAL' WHERE dashboard_message_id=?",person);
-        mail("followup","employee@amazon.com","{INBOX}",1L,"ADDRESS","employee@amazon.com");
-        assertThat(dashboard.page(account,filter("")).groups()).hasSize(2);
-    }
+
 }

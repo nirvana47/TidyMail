@@ -113,19 +113,19 @@ Ordinary logout retains data. Confirmed owner deletion is the application remova
 ## Calendar labels
 
 Calendar: responded, Calendar: needs response and Calendar: cancelled are derived
-from read-only provider checks, independently of semantic classification. Cancelled
+from read-only provider checks, independently of local invitation detection. Cancelled
 is used when all matched events are cancelled; otherwise pending responses take
 priority over completed responses. Unknown, unchecked and organizer-only results
-receive none of these labels. The internal Calendar invite purpose remains for
-discovery and retention protection; Calendar invite and Past event are no longer
-shown as message labels or filter choices. Past event is no longer accepted as a
-filter. Existing mail classifications and rule versions are preserved.
+receive none of these response labels. Calendar invite is detected from local
+headers, provider meeting flags or explicitly fetched calendar evidence. A Past
+event filter is recorded in WORKFLOWS.md but is not implemented. AI classifications
+and automatic recommendations are removed by V52; native mail/rules are preserved.
 
 `app.calendar-labels.worker.enabled` defaults to true. With scheduling enabled,
 the worker checks one known invitation per connected, authorized account every
 2 seconds (`app.calendar-labels.poll-ms`), starting after 20 seconds. It uses
-stored header rules, semantic labels, provider meeting flags and MIME evidence
-to find candidates; it does not rescan ordinary mail or invoke Jev. Checks resume
+stored header labels, provider meeting flags and MIME evidence
+to find candidates; it does not rescan ordinary mail. Checks resume
 from saved timestamps after restart. Matched results refresh after 50 minutes;
 unknown results retry after 24 hours. Filters and displayed labels require a
 check within one hour, so larger queues may temporarily have incomplete coverage.

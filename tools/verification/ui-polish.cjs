@@ -35,11 +35,11 @@ const output = path.resolve(process.argv[3]); fs.mkdirSync(output, { recursive: 
     await noOverflow(); await density('1440x900'); await shot('mailbox-rendered');
     // All following traffic remains in the isolated synthetic fixture.
     await page.locator('#filtersOpen').click();
-    await page.getByRole('checkbox', { name: 'Newsletter', exact: true }).check();
+    await page.getByRole('checkbox', { name: 'Bill', exact: true }).check();
     await shot('filters-rendered');
     await page.keyboard.press('Escape');
-    await expect(page.locator('#activeFilters')).toContainText('Newsletter');
-    await page.getByRole('button', { name: 'Remove filter: Newsletter', exact: true }).click();
+    await expect(page.locator('#activeFilters')).toContainText('Bill');
+    await page.getByRole('button', { name: 'Remove filter: Bill', exact: true }).click();
     await expect(page.locator('#detailContent .message-row').first()).toBeVisible();
     await page.locator('#detailContent input[data-selection]').first().check();
     await shot('selection-rendered');

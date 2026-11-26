@@ -30,9 +30,6 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 @TestPropertySource(properties = {
     "spring.jpa.hibernate.ddl-auto=validate",
     "spring.task.scheduling.enabled=false",
-    "app.classification.worker.enabled=false",
-    "app.recommendations.worker.enabled=false",
-    "app.classification.batch-size=5",
     "TOKEN_ENCRYPT_SECRET=0000000000000000000000000000000000000000000000000000000000000000",
     "TOKEN_ENCRYPT_SALT=00000000000000000000000000000000",
     "GOOGLE_CLIENT_ID=",

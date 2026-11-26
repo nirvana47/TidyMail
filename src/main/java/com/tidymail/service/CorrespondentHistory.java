@@ -62,14 +62,6 @@ public class CorrespondentHistory {
         return Map.copyOf(result);
     }
 
-    /** Candidate-only adapter; the live classifier and existing paid pilot are unchanged. */
-    public List<SemanticQualificationContract.Evidence> attach(long account, List<SemanticQualificationContract.Evidence> batch) {
-        var summaries=lookup(account,batch.stream().map(SemanticQualificationContract.Evidence::address).toList());
-        return batch.stream().map(e->new SemanticQualificationContract.Evidence(e.message(),e.sourceRevision(),e.extractorVersion(),
-            e.address(),e.name(),e.subject(),e.reply(),e.unsubscribe(),e.snippet(),e.normalizedBody(),e.facts(),
-            summaries.getOrDefault(Objects.toString(DashboardIdentity.mailbox(e.address()),""),Context.unknown()))).toList();
-    }
-
     @Scheduled(fixedDelayString="${app.correspondence.delay-ms:2000}")
     public void tick() { processBatch(200); }
 

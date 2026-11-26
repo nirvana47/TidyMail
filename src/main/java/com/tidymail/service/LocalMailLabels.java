@@ -3,7 +3,7 @@ package com.tidymail.service;
 import java.util.*;
 import java.util.regex.Pattern;
 
-/** Descriptive mail labels from stored headers. These do not qualify cleanup recommendations. */
+/** Descriptive labels from downloaded headers; these never authorize mailbox changes. */
 public final class LocalMailLabels {
     public static final String VERSION = "gmail-header-rules-v3";
     public static final Set<String> EXTRA_FILTERS = Set.of("BANKING", "INVESTING", "SHOPPING", "DOCUMENT_COMMENT",
@@ -64,12 +64,9 @@ public final class LocalMailLabels {
                     + "|every \\d+ (?:days?|weeks?|months?|years?)) from\\s+).+\\([^()]+\\)$", Pattern.CASE_INSENSITIVE);
     private static final Pattern NOTIFY = words("payment (?:is )?(?:scheduled|pending|failed|declined)|"
             + "new (?:voicemail|text message)|refund requested");
-    private static final Set<String> PURPOSES = Set.of("BILL", "RECEIPT", "STATEMENT", "SECURITY",
-            "SHIPPING", "ORDER", "DOCUMENT_COMMENT", "NOTIFICATION");
-
     private LocalMailLabels() {}
 
-    static Map<String,String> classify(String address, String name, String subject, String correction,
+    static Map<String,String> classify(String address, String name, String subject,
             boolean outlook, boolean outlookMeeting) {
         String sender = Objects.toString(address, "").strip().toLowerCase(Locale.ROOT);
         String display = Objects.toString(name, "").strip();
@@ -122,10 +119,6 @@ public final class LocalMailLabels {
             add(labels, "CALENDAR_INVITE", match(CALENDAR_SUBJECT, title, "the subject"));
         }
 
-        if (correction != null) {
-            labels.keySet().removeIf(label -> PURPOSES.contains(label) && !label.equals(correction));
-            if (!correction.equals("CALENDAR_INVITE")) labels.remove("CALENDAR_INVITE");
-        }
         return labels;
     }
 

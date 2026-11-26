@@ -31,11 +31,11 @@ class DashboardMigrationTest {
         jdbc.update("INSERT INTO automation_rules(account_id,definition) VALUES(?, '{\"name\":\"Retained rule\"}'::jsonb)", account);
         jdbc.update("INSERT INTO message_metadata(account_id,provider,provider_message_id,labels) VALUES(?,'google','retained-rule-upgrade',ARRAY['INBOX'])", account);
         String savedRules = jdbc.queryForObject("SELECT to_jsonb(r)::text FROM automation_rules r WHERE account_id=?", String.class, account);
-        String mail = jdbc.queryForObject("SELECT to_jsonb(m)::text FROM message_metadata m WHERE account_id=?", String.class, account);
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(2);
+        String mail = jdbc.queryForObject("SELECT (SELECT jsonb_object_agg(key,value) FROM jsonb_each(to_jsonb(m)) WHERE key NOT LIKE 'classification_%' AND key <> 'classified_at')::text FROM message_metadata m WHERE account_id=?", String.class, account);
+        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(3);
         assertThat(jdbc.queryForObject("SELECT to_regclass('automation_rule_suggestion_dismissals') IS NULL", Boolean.class)).isTrue();
         assertThat(jdbc.queryForObject("SELECT to_jsonb(r)::text FROM automation_rules r WHERE account_id=?", String.class, account)).isEqualTo(savedRules);
-        assertThat(jdbc.queryForObject("SELECT to_jsonb(m)::text FROM message_metadata m WHERE account_id=?", String.class, account)).isEqualTo(mail);
+        assertThat(jdbc.queryForObject("SELECT (SELECT jsonb_object_agg(key,value) FROM jsonb_each(to_jsonb(m)) WHERE key NOT LIKE 'classification_%' AND key <> 'classified_at')::text FROM message_metadata m WHERE account_id=?", String.class, account)).isEqualTo(mail);
         assertThat(flyway(null).validateWithResult().validationSuccessful).isTrue();
     }
 
@@ -64,7 +64,7 @@ class DashboardMigrationTest {
             INSERT INTO message_metadata(account_id, provider, provider_message_id, labels, cleanup_updated_at)
             VALUES (?, 'google', 'retained', ARRAY['TRASH'], now())
             """, gmail);
-        var data = jdbc.queryForObject("SELECT to_jsonb(m)::text FROM message_metadata m WHERE account_id=?", String.class, gmail);
+        var data = jdbc.queryForObject("SELECT (SELECT jsonb_object_agg(key,value) FROM jsonb_each(to_jsonb(m)) WHERE key NOT LIKE 'classification_%' AND key <> 'classified_at')::text FROM message_metadata m WHERE account_id=?", String.class, gmail);
         var oauth = jdbc.queryForObject("SELECT to_jsonb(a)::text FROM user_accounts a WHERE id=?", String.class, gmail);
         var outlookState = jdbc.queryForObject("SELECT to_jsonb(s)::text FROM mailbox_sync_state s WHERE account_id=?", String.class, outlook);
         assertThat(flyway(null).migrate().success).isTrue();
@@ -78,7 +78,7 @@ class DashboardMigrationTest {
                 .containsEntry("incremental_cursor_value", "1000").containsEntry("ready", true)
                 .containsEntry("rescan_status", "REQUIRED").containsEntry("rescan_anchor", null)
                 .containsEntry("provider_total", null).containsEntry("gmail_scope_total", null);
-        assertThat(jdbc.queryForObject("SELECT to_jsonb(m)::text FROM message_metadata m WHERE account_id=?", String.class, gmail)).isEqualTo(data);
+        assertThat(jdbc.queryForObject("SELECT (SELECT jsonb_object_agg(key,value) FROM jsonb_each(to_jsonb(m)) WHERE key NOT LIKE 'classification_%' AND key <> 'classified_at')::text FROM message_metadata m WHERE account_id=?", String.class, gmail)).isEqualTo(data);
         assertThat(jdbc.queryForObject("SELECT to_jsonb(a)::text FROM user_accounts a WHERE id=?", String.class, gmail)).isEqualTo(oauth);
         assertThat(jdbc.queryForObject("""
             SELECT (to_jsonb(s)-'gmail_backfill_phase'-'gmail_scope_total')::text
@@ -86,94 +86,9 @@ class DashboardMigrationTest {
             """, String.class, outlook)).isEqualTo(outlookState);
     }
 
-    @Test void retainedV32RecommendationsAddOnlyEmptyLocalStructuresAndPreserveExistingData() {
-        flyway("32").clean();flyway("32").migrate();
-        var jdbc=new JdbcTemplate(new DriverManagerDataSource(POSTGRES.getJdbcUrl(),POSTGRES.getUsername(),POSTGRES.getPassword()));
-        long account=new UserAccountFixtures(jdbc).createAccount("recommendation-upgrade@example.test");
-        jdbc.update("""
-            INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,labels,label_evidence_known,
-              classification_override,size_estimate)
-            VALUES(?,'google','preserved','person@example.test',ARRAY['INBOX'],true,'PERSONAL',6000000)
-            """,account);
-        jdbc.update("""
-            INSERT INTO message_evidence(account_id,provider_message_id,evidence_version,evidence_hash,observed_at,facts)
-            VALUES(?,'preserved','fixture','hash',now(),'{"parts":[]}')
-            """,account);
-        var messages=jdbc.queryForObject("SELECT jsonb_agg((to_jsonb(m)-'outlook_folder_id'-'outlook_categories'-'outlook_web_link'-'outlook_size_checked') ORDER BY id)::text FROM message_metadata m",String.class);
-        var evidence=jdbc.queryForList("SELECT * FROM message_evidence ORDER BY account_id");
-        var incoming=jdbc.queryForList("SELECT * FROM classification_incoming ORDER BY account_id,message_id");
-        assertThat(flyway(null).migrate().success).isTrue();
-        assertThat(jdbc.queryForObject("SELECT jsonb_agg((to_jsonb(m)-'outlook_folder_id'-'outlook_categories'-'outlook_web_link'-'outlook_size_checked') ORDER BY id)::text FROM message_metadata m",String.class)).isEqualTo(messages);
-        assertThat(jdbc.queryForList("SELECT * FROM message_evidence ORDER BY account_id")).isEqualTo(evidence);
-        assertThat(jdbc.queryForList("SELECT * FROM classification_incoming ORDER BY account_id,message_id")).isEqualTo(incoming);
-        for(String table:java.util.List.of("recommendation_policies","recommendation_corrections","message_recommendations",
-                "recommendation_dirty","recommendation_backfill","recommendation_address_dirty",
-                "labeling_scopes","labeling_work","labeling_exposures","message_semantic_labels"))
-            assertThat(jdbc.queryForObject("SELECT count(*) FROM "+table,Long.class)).isZero();
-        assertThat(flyway(null).validateWithResult().validationSuccessful).isTrue();
-    }
 
-    @Test void retainedV28PersonalCorrectionsRepairCompanyGroupingAndRetainEmailIdentity() {
-        flyway("28").clean();flyway("28").migrate();
-        var jdbc=new JdbcTemplate(new DriverManagerDataSource(POSTGRES.getJdbcUrl(),POSTGRES.getUsername(),POSTGRES.getPassword()));
-        long account=new UserAccountFixtures(jdbc).createAccount("personal-upgrade@example.test");
-        for(String address:java.util.List.of("alex@gene.com","taylor@gene.com"))jdbc.update("""
-            INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,dashboard_from_address,
-            dashboard_unit_kind,dashboard_unit_key,labels,label_evidence_known,classification_override)
-            VALUES(?,'google',?,?,?,'ADDRESS',?,ARRAY['INBOX'],true,'PERSONAL')
-            """,account,address,address,address,address);
-        assertThat(jdbc.queryForObject("SELECT count(DISTINCT group_id) FROM sender_group_members",Long.class)).isEqualTo(1);
-        var before=jdbc.queryForList("SELECT dashboard_message_id,classification_override FROM message_metadata ORDER BY id");
-        assertThat(flyway("29").migrate().migrationsExecuted).isEqualTo(1);
-        assertThat(jdbc.queryForList("SELECT dashboard_message_id,classification_override FROM message_metadata ORDER BY id")).isEqualTo(before);
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM sender_units WHERE automatic_group_key LIKE 'address:%'",Long.class)).isEqualTo(2);
-        assertThat(jdbc.queryForObject("""
-            SELECT g.group_key FROM sender_group_members member JOIN sender_groups g ON g.id=member.group_id
-            JOIN sender_units u ON u.id=member.unit_id WHERE u.canonical_key='taylor@gene.com'
-            """,String.class)).isEqualTo("address:taylor@gene.com");
-    }
-    @Test void retainedV29MarketplaceRelaysRepairWithoutReclassifyingMessages() {
-        flyway("29").clean();flyway("29").migrate();
-        var jdbc=new JdbcTemplate(new DriverManagerDataSource(POSTGRES.getJdbcUrl(),POSTGRES.getUsername(),POSTGRES.getPassword()));
-        long account=new UserAccountFixtures(jdbc).createAccount("relay-upgrade@example.test");
-        for(String address:java.util.List.of("orders@amazon.com","alias-a@marketplace.amazon.com","alias-b@marketplace.amazon.com"))jdbc.update("""
-            INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,dashboard_from_address,
-            dashboard_unit_kind,dashboard_unit_key,labels,label_evidence_known,classification_override)
-            VALUES(?,'google',?,?,?,'ADDRESS',?,ARRAY['INBOX'],true,'NOTIFICATION')
-            """,account,address,address,address,address);
-        assertThat(jdbc.queryForObject("SELECT count(DISTINCT group_id) FROM sender_group_members",Long.class)).isEqualTo(1);
-        var before=jdbc.queryForList("SELECT dashboard_message_id,classification_override FROM message_metadata ORDER BY id");
-        assertThat(flyway(null).migrate().success).isTrue();
-        assertThat(jdbc.queryForList("SELECT dashboard_message_id,classification_override FROM message_metadata ORDER BY id")).isEqualTo(before);
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM sender_units WHERE automatic_group_key LIKE 'address:%'",Long.class)).isEqualTo(2);
-        assertThat(jdbc.queryForObject("SELECT count(DISTINCT group_id) FROM sender_group_members",Long.class)).isEqualTo(3);
-        assertThat(jdbc.queryForObject("""
-            SELECT g.group_key FROM sender_group_members member JOIN sender_groups g ON g.id=member.group_id
-            JOIN sender_units u ON u.id=member.unit_id WHERE u.canonical_key='alias-b@marketplace.amazon.com'
-            """,String.class)).isEqualTo("address:alias-b@marketplace.amazon.com");
-    }
 
-    @Test
-    void retainedV24OrganizationRepairPreservesMessageCategories() {
-        flyway("24").clean(); flyway("24").migrate();
-        var jdbc=new JdbcTemplate(new DriverManagerDataSource(POSTGRES.getJdbcUrl(),POSTGRES.getUsername(),POSTGRES.getPassword()));
-        long account=new UserAccountFixtures(jdbc).createAccount("organization-upgrade@example.test");
-        for(String address:java.util.List.of("digest@quora.com","access@quora.com","personal@quora.com")) {
-            jdbc.update("""
-                INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,dashboard_from_address,
-                dashboard_unit_kind,dashboard_unit_key,labels,label_evidence_known,classification_override)
-                VALUES(?,'google',?,?,?,'ADDRESS',?,ARRAY['INBOX'],true,'SECURITY')
-                """,account,address,address,address,address);
-        }
-        jdbc.update("UPDATE sender_units SET automatic_group_key='address:'||canonical_key WHERE account_id=?",account);
-        assertThat(flyway(null).migrate().success).isTrue();
-        assertThat(jdbc.queryForObject("""
-            SELECT count(DISTINCT g.group_key) FROM sender_group_members member JOIN sender_groups g ON g.id=member.group_id
-            WHERE member.account_id=?
-            """,Long.class,account)).isEqualTo(1);
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM message_metadata WHERE account_id=? AND classification_override='SECURITY'",Long.class,account)).isEqualTo(3);
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM message_evidence",Long.class)).isZero();
-    }
+
 
     @Test
     void freshAndRetainedUpgradePreserveCredentialsCursorsMetadataAndHistory() {
@@ -372,21 +287,23 @@ class DashboardMigrationTest {
     }
 
 
-    @Test void retainedClassificationsOverridesAndHistoricalSpendingSurviveNewAllowance() {
-        flyway("21").clean();flyway("21").migrate();
+    @Test void removingAiResultsPreservesMailNativeLabelsAndRules() {
+        flyway("51").clean();flyway("51").migrate();
         var jdbc=new JdbcTemplate(new DriverManagerDataSource(POSTGRES.getJdbcUrl(),POSTGRES.getUsername(),POSTGRES.getPassword()));
-        long account=new UserAccountFixtures(jdbc).createAccount("upgrade-classification@example.test");
-        jdbc.update("INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,labels,label_evidence_known,dashboard_from_address,dashboard_unit_kind,dashboard_unit_key,classification_category,classification_override,classification_version,classified_at) VALUES(?,'google','preserved','a@example.test',ARRAY['INBOX'],true,'a@example.test','ADDRESS','a@example.test','MARKETING','PERSONAL',?,now())",account,com.tidymail.service.JevClassifier.VERSION);
-        jdbc.update("UPDATE message_metadata SET classification_hash=classification_evidence_hash");
-        var job=java.util.UUID.randomUUID();
-        jdbc.update("INSERT INTO dashboard_classification_jobs(public_id,account_id,status,total,done,cost_usd) VALUES(?,?,'COMPLETE',1,1,2)",job,account);
-        var before=jdbc.queryForMap("SELECT classification_category,classification_override,classification_hash,classification_evidence_hash,classification_version,classified_at FROM message_metadata");
+        long account=new UserAccountFixtures(jdbc).createAccount("retirement@example.test");
+        jdbc.update("INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,labels,label_evidence_known,dashboard_from_address,dashboard_unit_kind,dashboard_unit_key,classification_category,classification_override) VALUES(?,'google','preserved','a@example.test',ARRAY['INBOX','Label_123'],true,'a@example.test','ADDRESS','a@example.test','MARKETING','PERSONAL')",account);
+        jdbc.update("INSERT INTO automation_rules(account_id,definition) VALUES(?, '{\"name\":\"Retained rule\"}'::jsonb)", account);
+        jdbc.update("INSERT INTO message_recommendations(account_id,message_id,source_hash,policy_revision,engine_version,adapter_version,result,assessment,relationship) SELECT account_id,dashboard_message_id,'old-source','1','retired','retired','{}'::jsonb,'{}'::jsonb,'{}'::jsonb FROM message_metadata WHERE account_id=?",account);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM message_recommendations WHERE account_id=?",Long.class,account)).isEqualTo(1);
+        var before=jdbc.queryForList("SELECT dashboard_message_id,provider_message_id,labels::text FROM message_metadata");
+        var rules=jdbc.queryForList("SELECT * FROM automation_rules");
         assertThat(flyway(null).migrate().success).isTrue();
-        assertThat(jdbc.queryForMap("SELECT classification_category,classification_override,classification_hash,classification_evidence_hash,classification_version,classified_at FROM message_metadata")).isEqualTo(before);
-        assertThat(jdbc.queryForObject("SELECT cost_usd FROM dashboard_classification_jobs",java.math.BigDecimal.class)).isEqualByComparingTo("2");
-        assertThat(jdbc.queryForObject("SELECT reported FROM classification_budget",java.math.BigDecimal.class)).isEqualByComparingTo("0");
-        assertThat(jdbc.queryForObject("SELECT checkpoint FROM classification_budget",java.math.BigDecimal.class)).isEqualByComparingTo("1");
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM classification_incoming",Long.class)).isZero();
+        assertThat(jdbc.queryForList("SELECT dashboard_message_id,provider_message_id,labels::text FROM message_metadata")).isEqualTo(before);
+        assertThat(jdbc.queryForList("SELECT * FROM automation_rules")).isEqualTo(rules);
+        for(String table:java.util.List.of("message_recommendations","message_semantic_labels","classification_attempts","dashboard_classification_jobs","labeling_work","recommendation_dirty"))
+            assertThat(jdbc.queryForObject("SELECT to_regclass(?) IS NULL",Boolean.class,table)).isTrue();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='message_metadata' AND column_name LIKE 'classification_%'",Long.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM local_label_dirty WHERE account_id=?",Long.class,account)).isEqualTo(1);
     }
 
     @Test

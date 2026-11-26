@@ -23,7 +23,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 class DashboardPerformanceTest extends PostgresJourneyTest {
     @Autowired DashboardService dashboard;
     @Autowired com.tidymail.service.CorrespondentHistory relationships;
-    @Autowired com.tidymail.service.RecommendationService recommendations;
+    @Autowired com.tidymail.service.LocalLabelService localLabels;
     @Autowired DashboardPreviewService previews;
     @Autowired com.tidymail.service.DashboardJobService jobs;
     @Autowired com.tidymail.job.DashboardCleanupWorker cleanup;
@@ -51,8 +51,8 @@ class DashboardPerformanceTest extends PostgresJourneyTest {
             var later=new DashboardFilter("all","","","","UTC",9);
             var group=dashboard.page(account,all).groups().getFirst();
             assertThat(dashboard.page(account,all).summary().get("messages")).isEqualTo((long)size);
-            var recommendationIds=jdbc.queryForList("SELECT dashboard_message_id FROM message_metadata WHERE account_id=? ORDER BY id LIMIT 200",UUID.class,account);
-            recommendations.recompute(account,recommendationIds);
+            var labelIds=jdbc.queryForList("SELECT dashboard_message_id FROM message_metadata WHERE account_id=? ORDER BY id LIMIT 200",UUID.class,account);
+            localLabels.recompute(account,labelIds);
             for(boolean concurrent:new boolean[]{false,true}) {
                 var stop=new AtomicBoolean();var writes=new AtomicInteger();
                 var marked=ConcurrentHashMap.<String>newKeySet();
@@ -77,21 +77,14 @@ class DashboardPerformanceTest extends PostgresJourneyTest {
                     var indexed=new AtomicInteger();
                     var indexer=executor.submit(()->{while(concurrent&&!stop.get())indexed.addAndGet(relationships.processBatch(200));});
                     var composed=new AtomicInteger();
-                    var recommender=executor.submit(()->{while(concurrent&&!stop.get()){
-                        composed.addAndGet(recommendations.processBatch(account,200));
+                    var labelWorker=executor.submit(()->{while(concurrent&&!stop.get()){
+                        composed.addAndGet(localLabels.processBatch(account,200));
                         try{Thread.sleep(25);}catch(InterruptedException error){Thread.currentThread().interrupt();throw new RuntimeException(error);}
                     }});
                     try {
                         if(concurrent)assertThat(dispatched.await(10,TimeUnit.SECONDS)).isTrue();
                         double pageBudget=size==10000?500:2000, detailBudget=size==10000?250:500;
                         measure(size,concurrent,"relationship_batch_lookup",50,()->relationships.lookup(account,List.of("sender1@example.test","sender2@example.test","sender3@example.test")));
-                        measure(size,concurrent,"recommendation_read_200",350,()->{
-                            var results=recommendations.read(account,recommendationIds);
-                            assertThat(results).hasSize(200);
-                            assertThat(results).allSatisfy(v->{if(v.freshness()!=com.tidymail.service.RecommendationService.Freshness.CURRENT)assertThat(v.result()).isNull();});
-                        });
-                        var recommendationFilter=new DashboardFilter("all","","","","UTC",0,"","messages","","REVIEW","","");
-                        measure(size,concurrent,"recommendation_filter",pageBudget,()->dashboard.page(account,recommendationFilter));
                         measure(size,concurrent,"summary_page",pageBudget,()->dashboard.page(account,all));
                         measure(size,concurrent,"search_date",pageBudget,()->dashboard.page(account,filtered));
                         measure(size,concurrent,"sender_page_10",pageBudget,()->dashboard.page(account,later));
@@ -104,23 +97,17 @@ class DashboardPerformanceTest extends PostgresJourneyTest {
                             System.out.printf(Locale.ROOT,"DASHBOARD_PERFORMANCE rows=%d concurrent=%s preview_ids=%d elapsed_ms=%.2f%n",size,concurrent,count,(System.nanoTime()-start)/1e6);
                         }
                         if(concurrent)assertThat(jobs.get(account,job).remaining()).as("Cleanup still active during measurements").isPositive();
-                    } finally {stop.set(true);if(concurrent)jobs.cancel(account,job);releaseCleanup.countDown();worker.get(30,TimeUnit.SECONDS);cleaner.get(30,TimeUnit.SECONDS);indexer.get(30,TimeUnit.SECONDS);recommender.get(30,TimeUnit.SECONDS);}
+                    } finally {stop.set(true);if(concurrent)jobs.cancel(account,job);releaseCleanup.countDown();worker.get(30,TimeUnit.SECONDS);cleaner.get(30,TimeUnit.SECONDS);indexer.get(30,TimeUnit.SECONDS);labelWorker.get(30,TimeUnit.SECONDS);}
                     if(concurrent)assertThat(writes.get()).isPositive();
                     if(concurrent)assertThat(indexed.get()).isPositive();
                     if(concurrent)assertThat(composed.get()).isPositive();
-                    System.out.printf("RECOMMENDATION_PERFORMANCE rows=%d concurrent=%s composed_during_browsing=%d%n",size,concurrent,composed.get());
+                    System.out.printf("LOCAL_LABEL_PERFORMANCE rows=%d concurrent=%s composed_during_browsing=%d%n",size,concurrent,composed.get());
                     System.out.printf("CORRESPONDENCE_PERFORMANCE rows=%d concurrent=%s indexed_during_browsing=%d%n",size,concurrent,indexed.get());
                     if(concurrent){var result=jobs.get(account,job);assertThat(result.changed()).isPositive();assertThat(result.remaining()+result.failed()+result.unresolved()).isZero();assertThat(result.changed()+result.skipped()+result.cancelled()).isEqualTo(5000);System.out.printf("DASHBOARD_PERFORMANCE rows=%d cleanup_changed=%d cleanup_skipped=%d cleanup_cancelled=%d%n",size,result.changed(),result.skipped(),result.cancelled());}
                     System.out.printf("DASHBOARD_PERFORMANCE rows=%d concurrent=%s write_batches=%d%n",size,concurrent,writes.get());
                 }
             }
-            // Exercise category predicates over a fully classified index as well as the legacy/unclassified path.
-            for(int first=1;first<=size;first+=1000)
-                jdbc.update("UPDATE message_metadata SET classification_category=CASE WHEN id%5=0 THEN 'MARKETING' ELSE 'PERSONAL' END,classification_kind='PERSON',classification_stream='GENERAL',classification_confidence=.99,classification_hash=classification_evidence_hash,classification_version=?,classified_at=now() WHERE account_id=? AND provider='google' AND provider_message_id IN (SELECT 'synthetic-'||i FROM generate_series(?,?) i)",com.tidymail.service.JevClassifier.VERSION,account,first,Math.min(size,first+999));
-            jdbc.execute("ANALYZE message_metadata");
-            var category=new DashboardFilter("all","","","","UTC",0,"MARKETING");
-            assertThat(dashboard.page(account,category).summary().get("messages")).isEqualTo((long)size/5);
-            measure(size,false,"classified_category_page",size==10000?500:2000,()->dashboard.page(account,category));
+
         }
         verifyNoInteractions(outlookProvider);
         } finally {dataSource.setMaximumPoolSize(priorPool);}

@@ -637,34 +637,7 @@ th[aria-sort=descending] .column-sort {
 }
 #localLabelProgress {
     font-size:12px
-}
-#tools .surface {
-    padding:12px
-}
-#tools .row {
-    margin:12px 0
-}
-#tools .row>strong {
-    min-width:100px
-}
-#tools .row>span {
-    flex:1;
-    font-size:12px
-}
-#labeling {
-    max-width:760px;
-    width:min(760px,calc(100% - 48px))
-}
-#labelingTargets,#labelingManifest {
-    max-height:280px;
-    overflow:auto;
-    font-size:12px;
-    overflow-wrap:anywhere
-}
-#classification p {
-    font-size:13px
-}
-#activeSuggestion {
+}#activeSuggestion {
     font-size:12px;
     border-radius:8px;
     margin:10px 0
@@ -796,17 +769,7 @@ secondary evidence stays available on demand. */
 .message-tools small {
     display:block;
     margin:6px 0
-}
-.message-tools .recommendation-edit {
-    display:grid;
-    gap:8px;
-    padding:8px 0
-}
-.message-tools .recommendation-edit label {
-    display:grid;
-    gap:4px
-}
-.message-tools>strong {
+}.message-tools>strong {
     display:block;
     margin-top:8px
 }

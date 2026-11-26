@@ -1,134 +1,60 @@
 # TidyMail
 
-**MVP platform scope:** Desktop-first. Mobile implementation and testing are
-deferred unless the user explicitly requests them later. Existing mobile work
-may remain, but is not an acceptance requirement. See the
-[recorded scope decision](docs/MVP-PLAN.md#desktop-first-scope--2026-10-28).
+TidyMail is a desktop-first, self-hosted tool for cleaning Gmail and personal
+Outlook mailboxes. Treat it like a searchable spreadsheet of downloaded mail:
+find emails, select them, review exactly what will change and confirm the action.
+The user controls changes; native rules run only after the user creates/enables them.
 
-TidyMail is a self-hosted email cleanup application with optional Jev classification. It indexes Gmail metadata, groups messages by sender, and lets users preview, stage, approve and inspect bulk cleanup actions. This document describes source mapped on 2026-10-14; implemented does not mean verified against a live mailbox.
+## Current product
 
-## Implemented product
+| Workflow | Application code |
+|---|---|
+| Recent mail, background download and refresh | MailboxBootstrapService, MailboxBackfillService, MailboxFreshnessService |
+| Search, date/unread/label filters, domain/address views | DashboardFilter, DashboardRepository, dashboard.js |
+| Exact preview, confirmed background cleanup, cancellation/results | DashboardPreviewService, DashboardJobService, DashboardCleanupWorker |
+| Gmail labels and Outlook folders | Manual filing services and provider clients |
+| Future-email rule drafts, review, creation and management | com.tidymail.rules, shared rule editor |
+| Header/provider labels and invitation checks | LocalMailLabels, LocalLabelService, CalendarResponseService, CalendarLabelRefreshService |
+| Download and cleanup progress/history | Activity and account-owned persisted jobs |
 
-Phase 3 adds the landing dashboard at `/dashboard`: account-owned indexed
-Inbox/All received browsing, literal subject/sender search, timezone-aware dates,
-10-row group/message paging, conservative groups and manual corrections, and
-persisted exact previews with no-op/protection accounting. Phase 4 adds durable
-Gmail Mark as Read jobs, bottom-dock progress, cancellation, restored history and
-read-only verification of uncertain results. Phase 5 extends that flow to
-Archive/Trash with bounded read retries, reconnect guidance and shared provider
-capacity; see the [Phase 5 report](docs/PHASE-5-ACTIONS-AND-RESILIENCE.md).
-Phase 6 desktop simplification is complete; see the
-[Phase 6 report](docs/PHASE-6-SIMPLIFIED-EXPERIENCE.md). Phase 7 has verified the
-retained V18→V19 upgrade after an encrypted backup/restore rehearsal, preserving
-all 80,018 indexed messages and the checked credentials, cursors and history.
-Startup, refresh, selection-race, paging and concurrent-work fixes are running
-locally. Phase 7 acceptance is complete: user-confirmed live Archive changed 81,
-Mark as Read changed nine and skipped 28 already-read targets, and a subsequent
-92-target Trash job changed all 92 in two batches, with no failures/unresolved
-outcomes. See the [Phase 7 acceptance matrix](docs/PHASE-7-UPGRADE-AND-ACCEPTANCE.md)
-for evidence boundaries; live cancellation and independent Gmail-view inspection
-were not established. Deployment remains a separate decision.
-V16–V19 are additive and have passed isolated fresh/retained fixtures. See the
-[Phase 3 report](docs/PHASE-3-INDEXED-DASHBOARD.md) and
-[Phase 4 report](docs/PHASE-4-BACKGROUND-MARK-READ.md). The inventory below describes
-the retained legacy surfaces.
+A failed or lost reply must leave a visible recoverable result. Normal successful
+bulk cleanup uses batch acknowledgements; it does not read every email afterward.
+Rules run in Gmail/Outlook while TidyMail is closed. Pausing/removing one affects
+future delivery and does not move old mail back. Drafting must not create a new
+label/folder before final confirmation.
 
-The [2026-10-28 MVP plan](docs/MVP-PLAN.md) defines the next product direction:
-one sender dashboard, Inbox by default, All received mail excluding Spam/Trash,
-and asynchronous bulk actions with live progress. It takes precedence over older
-product priorities, but does not change the implementation inventory below.
+Manual Combine/Split/Rename/Reset saved sender groups are removed. Automatic
+sender/domain and mailing-list browsing remain, using actual downloaded identities
+rather than model guesses. Jev/OpenRouter classification, its paid controls,
+experiments and automatic Consider Trash recommendations are removed. V51 removes
+saved groups; V52 removes internal AI data and rebuilds independent local labels.
+Already-applied migrations are immutable. Native labels/folders/rules, downloaded
+mail and confirmed cleanup targets must survive these upgrades.
 
-| Surface | Behavior | Entry point |
-|---|---|---|
-| Bulk Archive/Delete | Sender summaries, filters, categories, classification corrections and exact cleanup staging | `/senders` |
-| Unread Only | Inbox unread groups, recommendations, selection and staging | `/unread` |
-| Bulk Unsubscribe | Candidates, sender statistics, method inspection, explicit confirmation and outcomes | `/unsubscribe` |
-| Review | Queue, conflicts, approval, execution history and eligible undo | `/review` |
-| Sync / Activity | Indexing progress, freshness, rescan and retry state | `/activity` |
-| Analytics | Received-mail facts, outcomes, UTC trends, comparisons and drilldowns | `/analytics` |
-| Reply Zero | Metadata-based reply heuristics, outside the main workspace rail | `/reply-zero` |
+## Privacy and operation
 
-Google OAuth and the Gmail provider are implemented. Microsoft OAuth configuration and provider abstractions exist, but there is no production Outlook mail provider. Multiple accounts can be linked to an owner; the workspace selects one active account and rejects `account=all`.
+Java 21, Spring Boot, Maven, PostgreSQL and Flyway; Thymeleaf and local JavaScript.
+Metadata download does not fetch full bodies or attachment contents. Explicit
+calendar/evidence reads have their own permissions. Access/refresh tokens are
+encrypted; downloaded sender/subject fields are not separately encrypted. A copied
+database privacy requirement remains open, as documented in the workflow review.
 
-Archive, Trash and Mark Read mutate the mailbox. Keep, Protect, Review and Remove Protection are local decisions. Unsubscribe supports RFC 8058 POST, explicitly selected legacy HTTPS GET and manual paths. Request acceptance is recorded separately from confirmation.
+Sign-out retains local data. Confirmed local-data deletion is a separate action
+and waits for active requests, uncertain cleanup and pending rule operations.
+Do not restart the running app without coordinating with the user. Never use live
+mailbox actions as unreviewed tests. Do not read `.env` during this work.
 
-## Architecture and privacy
+## Requirements and verification
 
-The stack is Java 21, Maven, Spring Boot 3.5.16, PostgreSQL, Flyway, Spring Data JPA, Thymeleaf and local JavaScript for fragment interactions. Deployment produces an executable JAR. Background work uses Spring scheduling and in-process executors with persisted state and leases. Cloudflare Tunnel is an optional front door to a Java host, not a Workers backend.
+[WORKFLOWS.md](WORKFLOWS.md) records the user's expectations in product language.
+[WORKFLOW-TEST-REVIEW.md](WORKFLOW-TEST-REVIEW.md) separates actual checks, removed
+features and remaining feature/test work. Newest-first/ETA for both providers,
+Outlook Sent size review, past-event labels and a shared Activity error/retry view
+are recorded requirements, not claims of implementation from this removal.
+[TESTING.md](TESTING.md) gives isolated test commands and evidence limits.
 
-Gmail reads use `METADATA` with a fixed header whitelist. Addresses, subject headers, labels, timestamps, unsubscribe evidence and message-size estimates can be stored; bodies, snippets and attachment contents are excluded. Attachment presence is separate membership evidence, not downloaded content.
-
-Ordinary logout ends the session and retains account data. Explicit deletion requires `DELETE` at `/logout/delete-data` and removes the owner's linked accounts and cascading records. Deletion first cancels dashboard work and waits for active requests and verification leases to settle. Session expiry is not a data-retention timer. Housekeeping does not provide a complete mailbox purge after 24 hours.
-
-Actions bind to materialized message IDs and record per-target results. Legacy Undo applies to successful targets of eligible Archive, Trash and Mark Read actions within the engine's ten-minute window. Protection removal has a separate compensation path. Unsubscribe is not reversible through mailbox undo. Dashboard jobs do not create an Undo window.
-
-User-authorized optional hosted Jev classification is now implemented; see [architecture and privacy](docs/JEV-CLASSIFICATION.md). Earlier non-AI scope statements are superseded for this feature. No local model, Gmail filter-creation workflow, billing or live export subsystem is included.
-
-## Documentation authority
-
-[Codebase map](docs/CODEBASE.md) explains flows and ownership; [Status](docs/STATUS.md) records evidence and remaining work; [Deployment](DEPLOY.md) and [Testing](docs/TESTING.md) cover operation and verification. [History](docs/HISTORY.md) explains recovery of removed plans.
-
-Source, migrations and executable tests are the implementation authority. Update these documents when behavior changes; historical phase names and old source comments are not current requirements.
-
-## Incoming email rules — 2026-11-15
-
-`/rules` adds a shared Gmail/Outlook editor with saved drafts, historical metadata
-examples, explicit activation, and native rule management. Actions include
-Archive, Mark as read, Trash, and Mark as read combined with Archive or Trash.
-Provider rules continue while TidyMail is closed. Existing supported rules can
-be brought under management; unsupported rules link to native settings.
-
-Rule-settings permissions are requested separately when connecting Rules:
-Gmail `gmail.settings.basic`, Outlook `MailboxSettings.ReadWrite`. Drafts work
-without those permissions. Gmail subject previews use provider search; Outlook
-uses subject text matching. Gmail pause removes the managed filter and resume
-recreates it; Outlook disables/enables its rule. Editing a paused Outlook rule
-uses a reviewed replacement and preserves its original sequence position.
-Durable operation intent, read-back, uncertain-response recovery, external-drift
-checks, and periodic reconciliation live in `com.tidymail.rules`. Suggestions
-cite consistent successful cleanup recorded in TidyMail, never inferred intent
-from direct native deletion. No automatic activation or permanent deletion is
-included. Native rules survive local data deletion; pending rule operations block
-credential deletion until resolved. Local protections are checked on activation
-and during reconciliation, rather than synchronously by the provider at delivery.
-
-Verification uses real PostgreSQL and rendered HTTP journeys with simulated
-providers, plus existing Outlook/cleanup regressions. Live provider activation
-and delivery semantics still need a user-reviewed rule trial after consent.
-
-Rule creation is available directly in the dashboard: selected-message actions,
-selected-sender actions, sender details, and individual messages open a drawer.
-It carries exact sender addresses and the chosen action into the shared editor;
-saving, previewing and enabling stay in that drawer. Inbox selection and filters
-remain intact. The separate `/rules` page is the management surface. The drawer
-explicitly distinguishes future rule conditions from current inbox filters and
-from a one-time cleanup action.
-
-## Desktop UI polish — 2026-11-17
-
-The first implementation follows the reviewed mailbox, cleanup-review and rule-drawer
-concepts. Mailbox, Rules and sync details share a compact sidebar and visual
-foundations. Mailbox filters open in a dialog with removable active-filter chips;
-message evidence and secondary actions are disclosed within the detail pane.
-The selection bar uses an action selector and a counted review button. Cleanup
-review retains exact targets, protection/skipping accounting and background-job
-semantics. Account controls, local-data deletion and label tools are available
-through Account & settings. Existing selection and provider behavior are retained.
-
-Rules uses the same editor in its drawer and standalone page, with clearer preview
-hierarchy, state badges, app confirmation dialogs for management operations, and
-unsaved-edit protection. Sign-in and retained workspace pages use related styling.
-The full surface inventory and remaining deeper tool/legacy work are recorded in
-`docs/UI-POLISH-PLAN.md`; this initial pass is not a claim that every state has been
-visually audited. Verification uses synthetic providers and isolated test data.
-
-## Sender views — November 23, 2026
-
-The user retired manual saved sender groups: Combine, Split, Rename and Reset,
-including their UI, endpoints, service and dedicated tests. Automatic domain
-rows and the Sender address view remain. Names come from provider email metadata,
-with address/domain fallbacks; guessed brand names are removed. V51 restores old
-saved membership to automatic grouping and removes the three manual-group tables.
-This describes the source change; the active app/retained database has not been
-restarted or upgraded by the isolated verification. See [workflows](WORKFLOWS.md)
-and [test review](WORKFLOW-TEST-REVIEW.md) for current requirements and evidence.
+Tests must expose a concrete mistake in a supported workflow, use expected results
+chosen from requirements, and state which external connections are simulated.
+No coverage percentage or passing test count substitutes for that evidence.
+Mobile, unsubscribe, full email reading, permanent deletion and automatic learning
+are outside this effort. Earlier reports describe historical scope only.

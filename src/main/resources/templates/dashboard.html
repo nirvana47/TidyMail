@@ -127,7 +127,7 @@
             <div class="selection row" id="selectionRow">
                 <div><strong id="selectionCount"></strong>
                     <p class="muted" id="selectionDescription">Selection stays while paging.</p>
-                </div><button id="correctSelectedCategory">Correct category</button><button class="ghost" id="clear">Clear selection</button>
+                </div><button class="ghost" id="clear">Clear selection</button>
                 <div class="actions row" role="group" aria-label="Choose cleanup action">
                     <label class="action-choice">Action <select id="messageAction"><option value="MARK_READ">Mark as read</option><option value="ARCHIVE">Archive</option><option value="MARK_READ_ARCHIVE">Mark as read + archive</option><option value="TRASH" th:text="${outlook?'Move to Deleted Items':'Move to Trash'}">Move to Trash</option><option value="ORGANIZE" th:text="${outlook?'Move to a folder':'Apply a label'}">Apply a label</option></select></label>
                     <button id="createMessageRule">Rules…</button><button id="review" class="primary">Review selection →</button></div>
@@ -138,19 +138,9 @@
     </main>
     <dialog id="filtersDialog" aria-labelledby="filtersTitle">
         <div class="dialog-heading row spread"><h2 id="filtersTitle">Filter emails</h2><button data-close="filtersDialog" aria-label="Close filters">×</button></div>
-            <section class="filter-fields"><h3>Dates and recommendations</h3>
+            <section class="filter-fields"><h3>Dates</h3>
               <div class="row">
                 <label>From <input type="date" id="start"></label><label>Through <input type="date" id="end"></label>
-                <label>Recommendation <select id="recommendation" aria-label="Filter by recommendation">
-                    <option value="">All (including unassessed)</option><option value="KEEP_IN_INBOX">Keep in inbox</option>
-                    <option value="KEEP_STORED">Keep stored</option><option value="ARCHIVE">Archive</option>
-                    <option value="SUGGEST_TRASH">Consider Trash</option><option value="REVIEW">Review</option>
-                    <option value="PENDING">No recommendation yet</option><option value="STALE">Updating</option>
-                </select></label>
-                <label>Importance <select id="importance" aria-label="Filter by importance">
-                    <option value="">Any importance</option><option value="IMPORTANT">Important</option>
-                    <option value="ROUTINE">Routine</option><option value="UNKNOWN">Unknown</option>
-                </select></label>
               </div>
             </section>
             <section class="filter-fields"><h3>Email size</h3><label><input type="checkbox" id="largeEmails"> Large emails (&gt;1 MB)</label><p class="muted" th:text="${outlook ? 'Includes archived received mail.' : 'Includes archived and Sent mail.'}"></p></section>
@@ -166,13 +156,8 @@
                     <label><input type="checkbox" name="labelFilter" value="CONTACT">Contact</label>
                     <label><input type="checkbox" name="labelFilter" value="LARGE_MESSAGE">Large email</label>
                     <label><input type="checkbox" name="labelFilter" value="HAS_ATTACHMENTS">Has attachments</label>
-                    <label><input type="checkbox" name="labelFilter" value="HUMAN_CORRESPONDENCE">Personal</label>
-                    <label><input type="checkbox" name="labelFilter" value="HEALTHCARE">Healthcare</label>
-                    <label><input type="checkbox" name="labelFilter" value="SCHOOL">School</label>
-                    <label><input type="checkbox" name="labelFilter" value="MARKETING">Marketing</label>
                     <label><input type="checkbox" name="labelFilter" value="SOCIAL">Social</label>
                     <label><input type="checkbox" name="labelFilter" value="RECEIPT">Receipt</label>
-                    <label><input type="checkbox" name="labelFilter" value="NEWSLETTER">Newsletter</label>
                     <label><input type="checkbox" name="labelFilter" value="NOTIFICATION">Notification</label>
                     <label><input type="checkbox" name="labelFilter" value="ORDER">Order</label>
                     <label><input type="checkbox" name="labelFilter" value="SHIPPING">Shipping</label>
@@ -189,8 +174,6 @@
                     <label><input type="checkbox" name="labelFilter" value="CALENDAR_CANCELLED">Calendar: cancelled</label>
                     <label th:hidden="${outlook}"><input type="checkbox" name="labelFilter" value="GMAIL_PROMOTIONS">Gmail: Promotions</label>
                     <label hidden><input type="checkbox" name="labelFilter" value="SENT">Sent</label>
-                    <label><input type="checkbox" name="labelFilter" value="OTHER">Other</label>
-                    <label><input type="checkbox" name="labelFilter" value="UNCLASSIFIED">Unclassified</label>
                     <div id="gmailLabelChoices"></div>
                 </div>
                 <p id="labelExpression" class="label-expression" role="status" hidden></p>
@@ -226,7 +209,7 @@
                         <input name="returnTo" type="hidden" value="/dashboard"><button>Refresh mail</button>
                     </form>
                 </div>
-            </div>        <hr><h3>Labels and recommendations</h3><p class="muted">Manage saved labels, processing and category corrections.</p><button id="toolsOpen">Open label tools</button><hr>
+            </div>        <hr>
         <details>
             <summary>Delete local account data</summary>
             <p>This removes your locally indexed data and connection credentials for linked accounts. It does not delete
@@ -236,92 +219,12 @@
                     out</button></form>
         </details>
     </dialog>
-    <dialog id="tools" aria-labelledby="toolsTitle">
-        <div class="dialog-heading row spread"><h2 id="toolsTitle">Label tools</h2><button data-close="tools" aria-label="Close label tools">×</button></div>
-        <details open class="surface evidence" aria-label="Email recommendations"><summary>Label and recommendation status</summary>
-            <div class="row"><strong>Labels</strong><span id="labelingCoverage" role="status">Checking label coverage…</span><button id="labelingOpen" th:hidden="${outlook}" type="button">Label / reclassify emails</button></div>
-            <div class="row"><strong>Recommendations</strong><span id="recommendationStatus" role="status">Checking…</span>
-                <button id="recommendationProcessing" type="button">Build recommendations</button></div>
-            <p class="muted">Labels and suggestions use information already saved locally. Review and select emails before taking any cleanup action.</p>
-        </details>
-        <button id="classificationOpen" th:hidden="${outlook}">Legacy category tools</button><span id="classificationSummary" class="muted" role="status"></span>
-    </dialog>
     <dialog id="inboxRule" class="drawer" aria-labelledby="inboxRuleTitle">
         <header class="row spread"><h2 id="inboxRuleTitle">Create rule</h2><button type="button" data-close="inboxRule">Close</button></header>
         <p id="inboxRuleContext" class="muted"></p>
         <details data-rule-setup-help><summary>What goes into this rule?</summary><p>Starts with the chosen sender addresses. Current inbox filters are not copied into the rule.</p></details>
         <p id="inboxRuleError" class="rule-alert" role="alert" hidden></p>
         <div id="inboxRuleContent" aria-live="polite"></div>
-    </dialog>
-    <dialog id="labeling" aria-labelledby="labelingTitle">
-        <div class="row spread"><h2 id="labelingTitle">Label / reclassify emails</h2><button data-close="labeling" aria-label="Close labeling">×</button></div>
-        <p id="labelingDialogCoverage"></p>
-        <p>Labels describe emails independently of Keep, Review or cleanup suggestions. Processing a batch never moves mail.</p>
-        <div class="row">
-            <label>Which emails <select id="labelingMode"><option value="MISSING">Missing or changed labels</option><option value="OTHER">Other / Unknown</option><option value="SELECTED">Selected emails</option></select></label>
-            <label>Work <select id="labelingKind"><option value="JEV">Assign descriptive labels with Jev</option><option value="MIME">Inspect calendar / attachment presence</option></select></label>
-            <label>Batch size <select id="labelingLimit"><option value="20">Up to 20</option><option value="100">Up to 100</option><option value="1000" selected>Up to 1,000</option></select></label>
-        </div>
-        <p>These scopes cover indexed received mail, including archived mail. Sent-only, Drafts, Spam and Trash are excluded. Saved results and manual corrections are reused. Uncertainty alone does not cause another paid request.</p>
-        <p id="labelingCandidates" role="status"></p>
-        <p id="labelingAllowance"></p>
-        <label id="labelingSpendLabel">Maximum spend for a new batch (USD) <input id="labelingSpend" type="number" min="0.14" max="100" step="0.01" value="0.20"></label>
-        <button id="labelingPrepare" type="button">Prepare exact batch for review</button>
-        <section id="labelingReview" hidden>
-            <h3>Review this exact batch</h3><p id="labelingDisclosure"></p>
-            <details><summary>Emails and exact submitted fields</summary><div id="labelingTargets"></div></details>
-            <details><summary>Exact saved request manifest</summary><pre id="labelingManifest" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto"></pre></details>
-            <p id="labelingRunStatus" role="status" aria-live="polite"></p><progress id="labelingProgress" aria-label="Labeling batch progress" hidden></progress>
-            <p id="labelingFunding" role="status"></p>
-            <details id="labelingIncrease" hidden><summary>Increase allowance for this batch</summary>
-                <p>Review a new total limit for this same batch. Completed emails will not be sent again. Increasing the allowance does not start or resume work.</p>
-                <label>New total limit (USD) <input id="labelingNewLimit" type="number" min="0.14" max="100" step="0.01" value="1.00"></label>
-                <button id="labelingIncreaseReview" type="button">Review new limit</button>
-                <p id="labelingIncreaseSummary" role="status"></p><button id="labelingIncreaseConfirm" type="button" hidden>Confirm new limit</button>
-            </details>
-            <div class="row"><button id="labelingStart" type="button" class="primary">Approve and start this batch</button><button id="labelingPause" type="button" hidden>Pause batch</button><button id="labelingRetry" type="button" hidden>Retry failed MIME checks within original limits</button></div>
-        </section>
-        <h3>Saved batches</h3><div id="labelingRecent"></div>
-    </dialog>
-    <dialog id="classification" aria-labelledby="classificationTitle">
-        <div class="row spread">
-            <h2 id="classificationTitle">Legacy categories and corrections</h2><button data-close="classification"
-                aria-label="Close classification">×</button>
-        </div>
-        <p>For School, Healthcare, Shipping, Order, Bill and Statement, use Label / reclassify emails. This older classifier only supplies legacy categories and sender grouping.</p>
-        <p>Jev suggests a category for each message and improves automatic sender grouping. Personal addresses stay
-            separate. Saved category corrections take priority.</p>
-        <p>Sender addresses, names, subjects, and category/list/reply hints are sent to Jev through OpenRouter. Bodies,
-            attachments, recipients, and account credentials are never sent. This does not change mail in Gmail.</p>
-        <p>In OpenRouter, keep input/output logging and data sharing off and enable zero data retention. TidyMail
-            requires a zero-retention provider and disables response caching. Usage metadata is still retained; legal
-            screening exceptions can apply.</p>
-        <p>Classification covers indexed received mail, including archived mail, excluding Spam and Trash. Unchanged
-            saved results are reused. Automatic classification processes new or changed mail after sync when enabled. Work continues if you close
-            this page.</p>
-        <p>Saved categories are available immediately, even when classification is incomplete or stopped. Close this dialog, choose All received mail, and use Category, including Unclassified. Select messages to correct their categories below.</p>
-        <label><input id="classificationAutomatic" type="checkbox">Automatically classify incoming mail after sync</label>
-        <p id="classificationBudget"></p>
-        <label id="classificationAcknowledgeLabel" hidden><input id="classificationAcknowledge" type="checkbox">I checked OpenRouter activity and acknowledge unknown charges.</label>
-        <button id="classificationContinue" hidden>Continue for another $1</button>
-        <p id="classificationStatus" role="status" aria-live="polite"></p><progress id="classificationProgress"
-            aria-label="Classification progress" hidden></progress>
-        <div class="row"><button id="classificationStart" class="primary">Start classification</button><button
-                id="classificationCancel" hidden>Cancel remaining classification</button></div>
-        <hr>
-        <h3>Correct selected messages</h3>
-        <p id="categoryCorrectionCount">Select messages to correct their category.</p>
-        <div class="row"><label>Category <select id="categoryCorrection">
-                    <option value="PERSONAL">Personal</option>
-                    <option value="MARKETING">Marketing</option>
-                    <option value="NEWSLETTER">Newsletters</option>
-                    <option value="SOCIAL">Social</option>
-                    <option value="RECEIPT">Receipts</option>
-                    <option value="SECURITY">Security</option>
-                    <option value="NOTIFICATION">Notifications</option>
-                    <option value="OTHER">Other</option>
-                    <option value="RESET">Use Jev's category again</option>
-                </select></label><button id="categoryCorrectionApply" disabled>Save category</button></div>
     </dialog>
     <dialog id="filingDestination" aria-labelledby="filingDestinationTitle"><h2 id="filingDestinationTitle">Choose destination</h2><div id="filingDestinationPicker"></div><p id="filingDestinationError" role="alert"></p><footer class="dialog-footer row spread"><button data-close="filingDestination">Back to selection</button><button id="reviewFiling" class="primary">Review selected emails →</button></footer></dialog>
     <dialog id="confirm" aria-labelledby="confirmTitle">

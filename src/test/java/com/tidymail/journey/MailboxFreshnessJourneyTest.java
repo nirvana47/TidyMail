@@ -63,8 +63,8 @@ class MailboxFreshnessJourneyTest extends PostgresJourneyTest {
         acquire(accountId,Lane.FRESHNESS,"fast-worker");
         jdbc.update("""
             INSERT INTO message_metadata(account_id,provider,provider_message_id,labels,unread,label_evidence_known,
-              provider_revision,subject_header,classification_override)
-            SELECT ?,'google','cached-'||i,ARRAY['INBOX','UNREAD'],true,true,10,'Saved header','PERSONAL'
+              provider_revision,subject_header)
+            SELECT ?,'google','cached-'||i,ARRAY['INBOX','UNREAD'],true,true,10,'Saved header'
             FROM generate_series(1,1201) i
             """,accountId);
         insertStoredMessage(accountId,"gone",Instant.now());insertStoredMessage(accountId,"uncached",Instant.now());
@@ -80,7 +80,7 @@ class MailboxFreshnessJourneyTest extends PostgresJourneyTest {
             List<String> ids=call.getArgument(1);reads.addAll(ids);return ids.stream().map(id->message(id,"New sender")).toList();});
         freshness.synchronizeFreshness(accounts.findById(accountId).orElseThrow(),gmailProvider,"fast-worker");
         assertThat(reads).containsExactlyInAnyOrder("new","uncached");
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM message_metadata WHERE account_id=? AND provider_message_id LIKE 'cached-%' AND labels=ARRAY['TRASH'] AND NOT unread AND provider_revision=11 AND subject_header='Saved header' AND classification_override='PERSONAL'",Long.class,accountId)).isEqualTo(1201);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM message_metadata WHERE account_id=? AND provider_message_id LIKE 'cached-%' AND labels=ARRAY['TRASH'] AND NOT unread AND provider_revision=11 AND subject_header='Saved header'",Long.class,accountId)).isEqualTo(1201);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM message_metadata WHERE account_id=? AND provider_message_id='gone'",Long.class,accountId)).isZero();
         assertThat(states.findByAccountId(accountId).orElseThrow().incrementalCursorValue()).isEqualTo("12");
     }

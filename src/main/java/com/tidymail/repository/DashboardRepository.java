@@ -1,7 +1,7 @@
 package com.tidymail.repository;
 
 import com.tidymail.dto.DashboardFilter;
-import com.tidymail.service.RecommendationSql;
+import com.tidymail.service.LocalLabelSql;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
@@ -47,17 +47,10 @@ public class DashboardRepository {
             """ + DELIVERY + ")";
     // Read pending state once. A scalar initplan keeps its map out of the row joins
     // and avoids a correlated target query for every matching message.
-    public static final String CATEGORY = "replace(COALESCE(m.classification_override,CASE WHEN m.classification_hash=m.classification_evidence_hash AND m.classification_version='"
-            + com.tidymail.service.JevClassifier.VERSION
-            + "' THEN m.classification_category END,'UNCLASSIFIED'),'UNCERTAIN','OTHER')";
-    private static final String REQUESTED_SEMANTIC_MATCH="(requested.label=ANY(sl.labels) AND sl.input_hash="+RecommendationSql.SEMANTIC_HASH+")";
-    // Normalize the final category, including saved overrides and semantic purposes.
-    // Keep the stored UNCERTAIN evidence intact while presenting it under Other.
-    private static final String LABELING_CATEGORY="replace(COALESCE(m.classification_override,CASE WHEN sl.input_hash="+RecommendationSql.SEMANTIC_HASH
-        +" THEN NULLIF(sl.purpose,'UNKNOWN') END,"+CATEGORY+"),'UNCERTAIN','OTHER')";
-    private static final String LOCAL_CURRENT = "(saved.local_rules_version='"
-            +com.tidymail.service.LocalMailLabels.VERSION+"' AND saved.metadata_revision=COALESCE(v.revision,0))";
-    private static final String LOCAL_LABEL = "(" + LOCAL_CURRENT + " AND jsonb_exists(saved.local_label_reasons,requested.label))";
+    public static final String CATEGORY = "'UNCLASSIFIED'";
+    private static final String LABELING_CATEGORY = CATEGORY;
+    private static final String LOCAL_CURRENT = LocalLabelSql.CURRENT;
+    private static final String LOCAL_LABEL = "("+LOCAL_CURRENT+" AND jsonb_exists(saved.reasons,requested.label))";
     private static final String LABEL_MATCH = """
             CASE requested.label
                       WHEN 'CONTACT' THEN COALESCE(h.sent_count,0)>0
@@ -67,7 +60,7 @@ public class DashboardRepository {
                       WHEN 'GMAIL_PROMOTIONS' THEN m.provider='google' AND m.label_evidence_known
                         AND 'CATEGORY_PROMOTIONS'=ANY(m.labels)
                       WHEN 'OLDER_DOCUMENT_COMMENT' THEN """+LOCAL_CURRENT+"""
-                        AND jsonb_exists(saved.local_label_reasons,'DOCUMENT_COMMENT')
+                        AND jsonb_exists(saved.reasons,'DOCUMENT_COMMENT')
                         AND m.received_at<CAST(:asOf AS timestamptz)-interval '720 hours'
                       WHEN 'CALENDAR_RESPONDED' THEN EXISTS(SELECT 1 FROM calendar_response_checks cr
                         WHERE cr.account_id=m.account_id AND cr.provider_message_id=m.provider_message_id
@@ -78,30 +71,16 @@ public class DashboardRepository {
                       WHEN 'CALENDAR_CANCELLED' THEN EXISTS(SELECT 1 FROM calendar_response_checks cr
                         WHERE cr.account_id=m.account_id AND cr.provider_message_id=m.provider_message_id
                         AND cr.response_state='CANCELLED' AND cr.checked_at>=CAST(:asOf AS timestamptz)-interval '1 hour')
-                      WHEN 'CALENDAR_INVITE' THEN """+LOCAL_LABEL+" OR "+REQUESTED_SEMANTIC_MATCH+"""
+                      WHEN 'CALENDAR_INVITE' THEN """+LOCAL_LABEL+"""
                         OR COALESCE(jsonb_path_exists(e.facts,'$.parts[*] ? (@.calendar == true)'),false)
                         OR COALESCE(jsonb_array_length(e.facts->'calendars'),0)>0
-                        OR ("""+RecommendationSql.CURRENT+"""
-                          AND saved.result->>'purpose'='CALENDAR_INVITE')
-                      WHEN 'UNCLASSIFIED' THEN requested.include_category AND ("""+LABELING_CATEGORY+"""
-                        )='UNCLASSIFIED' AND NOT COALESCE(("""+LOCAL_CURRENT+"""
-                        AND saved.local_label_reasons<>'{}'::jsonb),false)
+
                       ELSE (m.provider='google' AND m.label_evidence_known
                           AND ('Label_'||substring(requested.label from '^GMAIL_LABEL_([0-9]+)$'))=ANY(m.labels))
                         OR """+LOCAL_LABEL+"""
-                        OR (requested.include_category AND ("""+LABELING_CATEGORY+"""
-                        ) = CASE requested.label WHEN 'HUMAN_CORRESPONDENCE' THEN 'PERSONAL' ELSE requested.label END)
-                        OR ("""+RecommendationSql.CURRENT+"""
-                        AND (jsonb_exists(saved.result->'facets',requested.label) OR saved.result->>'purpose'=
-                          CASE requested.label WHEN 'HUMAN_CORRESPONDENCE' THEN 'PERSONAL' ELSE requested.label END)) OR """+REQUESTED_SEMANTIC_MATCH+"""
                         END
         """;
-    private static final String RECOMMENDATION_FILTERS = """
-                    AND (:recommendation='' OR CASE WHEN saved.message_id IS NULL THEN 'PENDING'
-                      WHEN """+RecommendationSql.CURRENT+"""
-                      THEN saved.result->>'action' ELSE 'STALE' END=:recommendation)
-                    AND (:importance='' OR ("""+RecommendationSql.CURRENT+"""
-                      AND saved.result->>'importance'=:importance))
+    private static final String LABEL_FILTERS = """
                     AND (:label='' OR EXISTS (
                       SELECT FROM (VALUES (CAST(:label AS text), false)) requested(label, include_category) WHERE
                       """+LABEL_MATCH+"""
@@ -148,7 +127,7 @@ public class DashboardRepository {
             """;
     // Keep membership as a keyed per-unit lookup even when freshness selectivity is underestimated.
     public static final String FILTERED = """
-            WITH """+RecommendationSql.ACCOUNT_CONTEXT+"""
+            WITH """+LocalLabelSql.ACCOUNT_CONTEXT+"""
             , pending AS MATERIALIZED (
             SELECT COALESCE(jsonb_object_agg(message_id,state),'{}'::jsonb) AS states FROM (
               SELECT message_id,CASE min(CASE state WHEN 'AWAITING_VERIFICATION' THEN 0 WHEN 'DISPATCH_INTENT' THEN 1 ELSE 2 END)
@@ -163,7 +142,7 @@ public class DashboardRepository {
                        AS address,
                       (SELECT states FROM pending)->>m.dashboard_message_id::text AS pending_state
                     FROM message_metadata m JOIN account_context a ON a.id=m.account_id
-                    """+RecommendationSql.JOINS+"""
+                    """+LocalLabelSql.JOINS+"""
                     """+GROUPING_JOINS+"""
                     WHERE m.account_id=:account
                       AND (m.provider<>'google' OR NOT(m.labels && ARRAY['SPAM','TRASH']))
@@ -175,7 +154,7 @@ public class DashboardRepository {
                     """ + LABELING_CATEGORY + """
                       =:category)
                     AND (:suggestion<>'large' OR m.size_estimate>1000000)
-                    """+RECOMMENDATION_FILTERS+"""
+                    """+LABEL_FILTERS+"""
                     AND (:scope IN ('all','indexed') OR 'INBOX'=ANY(m.labels))
                     AND (CAST(:start AS timestamptz) IS NULL OR m.received_at>=:start)
                     AND (CAST(:end AS timestamptz) IS NULL OR m.received_at<:end)
@@ -190,10 +169,10 @@ public class DashboardRepository {
                     """;
 
     private static final String KEYED_BASIC_FILTERED = FILTERED
-            .replace(RecommendationSql.ACCOUNT_CONTEXT+", pending", " pending")
+            .replace(LocalLabelSql.ACCOUNT_CONTEXT+", pending", " pending")
             .replace("JOIN account_context a ON a.id=m.account_id", "JOIN user_accounts a ON a.id=m.account_id")
-            .replace(RecommendationSql.JOINS, "")
-            .replace(RECOMMENDATION_FILTERS, "")
+            .replace(LocalLabelSql.JOINS, "")
+            .replace(LABEL_FILTERS, "")
             .replace(LABELING_CATEGORY, CATEGORY);
     private static final String BASIC_FILTERED = KEYED_BASIC_FILTERED
             .replace(GROUPING_LOOKUP,"""
@@ -205,13 +184,6 @@ public class DashboardRepository {
             .replace("identity.group_public_id","g.public_id AS group_public_id")
             .replace("identity.group_key","g.group_key").replace("identity.group_label,","g.label AS group_label,")
             .replace("lower(identity.group_label)","lower(g.label)");
-    private static final String CURRENT_ACTION_FILTERED = FILTERED.replace(RECOMMENDATION_FILTERS,
-        "AND saved.result->>'action'=:recommendation AND "+RecommendationSql.CURRENT+"\n"
-        +"AND (:importance='' OR saved.result->>'importance'=:importance)\n"
-        +"AND (:label='' OR jsonb_exists(saved.result->'facets',:label) OR saved.result->>'purpose'="
-        +"CASE :label WHEN 'HUMAN_CORRESPONDENCE' THEN 'PERSONAL' ELSE :label END)\n")
-        .replace(LABELING_CATEGORY,"COALESCE(m.classification_override,NULLIF(saved.result->>'purpose','UNKNOWN'),"+CATEGORY+")");
-
     private static String bySenderAddress(String filtered) {
         return filtered.replace(GROUPING_JOINS, SENDER_ADDRESS_JOINS)
                 .replace(DISPLAY_ADDRESS, "identity.group_label")
@@ -220,13 +192,12 @@ public class DashboardRepository {
     }
 
     private static final String SENDER_ADDRESS_BASIC_FILTERED = bySenderAddress(KEYED_BASIC_FILTERED);
-    private static final String SENDER_ADDRESS_ACTION_FILTERED = bySenderAddress(CURRENT_ACTION_FILTERED);
     private static final String SENDER_ADDRESS_FILTERED = bySenderAddress(FILTERED);
 
     /** Avoid enrichment joins entirely on the ordinary browsing path. */
     public String filtered(long account, DashboardFilter filter) {
-        if (filter.category().isEmpty() && filter.recommendation().isEmpty() && filter.importance().isEmpty()
-                && filter.label().isEmpty() && filter.labels().isEmpty()) {
+        filter.requireAvailable();
+        if (filter.label().isEmpty() && filter.labels().isEmpty()) {
             if (filter.bySenderAddress()) return SENDER_ADDRESS_BASIC_FILTERED;
             // Outlook's smaller index can make the ordinary join rescan the mailbox for each sender.
             // The keyed lookup avoids that plan while the ordinary join is faster on Gmail.
@@ -234,8 +205,6 @@ public class DashboardRepository {
                 Map.of("account", account), String.class);
             return "microsoft".equals(provider) ? KEYED_BASIC_FILTERED : BASIC_FILTERED;
         }
-        if(!filter.recommendation().isEmpty() && !java.util.Set.of("PENDING","STALE").contains(filter.recommendation()) && filter.labels().isEmpty())
-            return filter.bySenderAddress() ? SENDER_ADDRESS_ACTION_FILTERED : CURRENT_ACTION_FILTERED;
         return filter.bySenderAddress() ? SENDER_ADDRESS_FILTERED : FILTERED;
     }
 
@@ -446,6 +415,7 @@ public class DashboardRepository {
         return result;
     }
 
+    // Historical field name retained for saved previews; now tracks local/calendar label changes.
     public long classificationRevision(long account) {
         return jdbc.queryForObject(
                 "SELECT COALESCE((SELECT classification_revision FROM dashboard_account_settings WHERE account_id=:account),0)",
@@ -475,6 +445,10 @@ public class DashboardRepository {
         List<Message> messages = jdbc.query(
                 filtered + """
                 SELECT filtered.*,
+                (SELECT l.reasons::text FROM message_local_labels l JOIN message_metadata original
+                 ON original.account_id=l.account_id AND original.dashboard_message_id=l.message_id
+                 WHERE l.account_id=filtered.account_id AND l.message_id=filtered.dashboard_message_id
+                 AND l.input_hash=local_mail_label_hash(original)) local_label_reasons,
                 (SELECT facts::text FROM calendar_response_checks cr WHERE cr.account_id=filtered.account_id
                     AND cr.provider_message_id=filtered.provider_message_id) calendar_response,
                 (SELECT email FROM user_accounts a WHERE a.id=filtered.account_id) account_email,
@@ -486,16 +460,7 @@ public class DashboardRepository {
                   AND e.provider_message_id=filtered.provider_message_id
                   AND (jsonb_path_exists(e.facts,'$.parts[*] ? (@.calendar == true)')
                     OR jsonb_array_length(COALESCE(e.facts->'calendars','[]'::jsonb))>0)) calendar_invite,
-                (SELECT p.label FROM dashboard_pattern_labels p
-                JOIN dashboard_pattern_reviews review ON review.account_id=p.account_id AND review.id=p.review_id
-                JOIN message_metadata source ON source.account_id=p.account_id AND source.dashboard_message_id=p.source_id
-                JOIN message_metadata target ON target.account_id=p.account_id AND target.dashboard_message_id=p.message_id
-                WHERE p.account_id=filtered.account_id AND p.message_id=filtered.dashboard_message_id
-                AND review.version='"""+com.tidymail.service.ReviewedPatternService.VERSION+"'"+"""
-                AND dashboard_pattern_hash(target)=p.evidence_hash AND dashboard_pattern_hash(source)=p.source_hash
-                AND source.classification_override=p.label
-                AND NOT EXISTS(SELECT 1 FROM message_evidence e WHERE e.account_id=target.account_id
-                  AND e.provider_message_id IN (target.provider_message_id,source.provider_message_id) AND jsonb_array_length(e.facts->'calendars')>0)) reviewed_pattern
+                NULL::text reviewed_pattern
                 """ + inGroup
                         + " ORDER BY received_at DESC NULLS LAST,provider_message_id LIMIT 10 OFFSET :message_offset",
                 p, (r, n) -> message(r,r.getString("reviewed_pattern"), providerLinks.gmail(
@@ -547,10 +512,17 @@ public class DashboardRepository {
     private static Message message(ResultSet r,String pattern,String gmailWebLink,com.fasterxml.jackson.databind.JsonNode calendarResponse) throws SQLException {
         return new Message(uuid(r, "dashboard_message_id"), r.getString("subject_header"), r.getString("address"),
                 instant(r, "received_at"), r.getBoolean("unread"), uuid(r, "group_public_id"),
-                r.getString("pending_state"), r.getString("category"),r.getString("from_display_name"),r.getString("classification_override")!=null?"MANUAL":r.getString("category").equals("UNCLASSIFIED")?"NONE":"JEV",
+                r.getString("pending_state"), r.getString("category"),r.getString("from_display_name"),"LOCAL",
                 r.getObject("size_estimate",Long.class),r.getString("attachment_state"),r.getString("snippet_text"),r.getString("snippet_state"),pattern,java.util.Arrays.asList((String[])r.getArray("labels").getArray()).contains("SENT"),r.getBoolean("contact"),r.getBoolean("calendar_invite"),
                 r.getString("outlook_folder"),r.getArray("outlook_categories")==null?List.of():
-                    List.of((String[])r.getArray("outlook_categories").getArray()),r.getString("outlook_web_link"),gmailWebLink,calendarResponse);
+                    List.of((String[])r.getArray("outlook_categories").getArray()),r.getString("outlook_web_link"),gmailWebLink,calendarResponse,localLabelReasons(r),List.of((String[])r.getArray("labels").getArray()));
+    }
+
+    private static java.util.Map<String,String> localLabelReasons(ResultSet r) throws SQLException {
+        String raw=r.getString("local_label_reasons");
+        if(raw==null)return java.util.Map.of();
+        try {return new com.fasterxml.jackson.databind.ObjectMapper().readValue(raw,new com.fasterxml.jackson.core.type.TypeReference<java.util.Map<String,String>>(){});}
+        catch(Exception failure){throw new SQLException("Invalid local label data",failure);}
     }
 
     private com.fasterxml.jackson.databind.JsonNode calendarResponse(String facts) throws SQLException {
@@ -579,8 +551,6 @@ public class DashboardRepository {
     }
 
     private static String groupingEvidence(String key) {
-        if (key.startsWith("classified-domain:"))
-            return "Grouped by Jev classification of organization and service";
         if (key.startsWith("organization:"))
             return "Reviewed organization domain; message types remain separate";
         if (key.startsWith("domain:"))
@@ -598,7 +568,7 @@ public class DashboardRepository {
     public record Message(UUID id, String subject, String address, Instant receivedAt, boolean unread, UUID groupId,
             String pendingState, String category,String displayName,String categorySource,
             Long sizeEstimate,String attachmentState,String snippet,String snippetState,String reviewedPattern,boolean sent,boolean contact,boolean calendarInvite,
-            String outlookFolder,List<String> outlookCategories,String outlookWebLink,String gmailWebLink,com.fasterxml.jackson.databind.JsonNode calendarResponse) {
+            String outlookFolder,List<String> outlookCategories,String outlookWebLink,String gmailWebLink,com.fasterxml.jackson.databind.JsonNode calendarResponse,java.util.Map<String,String> labelReasons,List<String> labels) {
     }
 
     public record Address(String address, long messages, long unread,String displayName) {
@@ -608,20 +578,10 @@ public class DashboardRepository {
     public record Selected(UUID id, UUID groupId,  String address) {
     }
 
-    public record Details(List<Message> messages, long total,
-            long revision,long classificationRevision, java.util.List<com.tidymail.service.RecommendationService.View> recommendations) {
-        public Details(List<Message> messages,long total,long revision,long classificationRevision) {
-            this(messages,total,revision,classificationRevision,List.of());
-        }
-        public Details withRecommendations(java.util.List<com.tidymail.service.RecommendationService.View> views) {
-            return new Details(messages,total,revision,classificationRevision,views);
-        }
-    }
+    public record Details(List<Message> messages,long total,long revision,long classificationRevision) {}
 
     public record Addresses(List<Address> addresses, long revision, long classificationRevision) {}
 
-
     public record Page(List<Group> groups, Map<String, Object> summary, Map<String, Object> coverage,
-            Map<String, Object> sync, long revision, DashboardFilter filter,long classificationRevision) {
-    }
+            Map<String, Object> sync, long revision, DashboardFilter filter,long classificationRevision) {}
 }
