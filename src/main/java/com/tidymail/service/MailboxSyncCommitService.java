@@ -32,20 +32,32 @@ public class MailboxSyncCommitService {
     private final MailboxSyncStateRepository states;
     private final MessageMetadataSyncRepository metadata;
     private final MessageMetadataMapper mapper;
+    private final com.tidymail.repository.MailboxSyncActivityRepository activity;
 
     public MailboxSyncCommitService(
             MailboxSyncStateRepository states,
             MessageMetadataSyncRepository metadata,
-            MessageMetadataMapper mapper) {
+            MessageMetadataMapper mapper,
+            com.tidymail.repository.MailboxSyncActivityRepository activity) {
         this.states = states;
         this.metadata = metadata;
         this.mapper = mapper;
+        this.activity = activity;
     }
 
     /** Commits a freshness sync unit. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public CommitResult commitFreshnessUnit(SyncUnit unit) {
         return commit(unit, Lane.FRESHNESS);
+    }
+
+    /** Called only after the complete change-feed pass, never after an individual chunk. */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void completeFreshnessCheck(long accountId, String owner) {
+        StateSnapshot state = states.lockForCommit(accountId);
+        Instant now = Instant.now();
+        validateLease(state, Lane.FRESHNESS, owner, state.version(), now);
+        activity.checked(accountId, now);
     }
 
     /** Commits a backfill sync unit. */
@@ -69,6 +81,8 @@ public class MailboxSyncCommitService {
         Long total = estimate != null && estimate > 0 ? estimate : state.gmailScopeTotal();
         if ("COMPLETE".equals(phase)) total = metadata.finishGmailListing(accountId);
         states.checkpointGmailBackfill(accountId, phase, token, total, bootstrapHistoryId, now);
+        if ("COMPLETE".equals(phase) && !"COMPLETE".equals(state.backfillStatus()))
+            activity.record(accountId, "IMPORT_COMPLETE", now);
         states.recordActivity(accountId, Lane.BACKFILL, fetched, indexed, 0, indexed, total, now);
     }
 
@@ -224,6 +238,10 @@ public class MailboxSyncCommitService {
         if (!stateUpdated) {
             throw new IllegalStateException("Mailbox state changed before cursor commit");
         }
+        if (lane == Lane.BACKFILL && unit.cursorValue() == null && !"COMPLETE".equals(state.backfillStatus()))
+            activity.record(unit.accountId(), "IMPORT_COMPLETE", unit.completedAt());
+        if (lane == Lane.RESCAN && unit.cursorValue() == null)
+            activity.record(unit.accountId(), "RESCAN_COMPLETE", unit.completedAt());
         return new CommitResult(upserted, deleted, state.version() + 1);
     }
 

@@ -19,14 +19,17 @@ public class OutlookSyncService {
     private final TransactionTemplate tx;
     private final MailboxSyncStateRepository states;
     private final com.tidymail.service.DashboardJobService cleanup;
+    private final com.tidymail.repository.MailboxSyncActivityRepository activity;
 
     public OutlookSyncService(OutlookMailService outlook, JdbcTemplate jdbc,
-            TransactionTemplate tx, MailboxSyncStateRepository states, com.tidymail.service.DashboardJobService cleanup) {
+            TransactionTemplate tx, MailboxSyncStateRepository states, com.tidymail.service.DashboardJobService cleanup,
+            com.tidymail.repository.MailboxSyncActivityRepository activity) {
         this.outlook = outlook;
         this.jdbc = jdbc;
         this.tx = tx;
         this.states = states;
         this.cleanup = cleanup;
+        this.activity = activity;
     }
 
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(OutlookSyncService.class);
@@ -111,6 +114,9 @@ public class OutlookSyncService {
             return true;
         }
         commit(id, lease, () -> {
+            if (!"COMPLETE".equals(states.lockForCommit(id).backfillStatus()))
+                activity.record(id, "IMPORT_COMPLETE", Instant.now());
+            activity.checked(id, Instant.now());
             jdbc.update("UPDATE outlook_sync_round SET metadata_complete=true WHERE account_id=?", id);
             jdbc.update("""
                 UPDATE mailbox_sync_state SET backfill_status='COMPLETE',lifecycle='ACTIVE',

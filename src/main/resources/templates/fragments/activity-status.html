@@ -44,7 +44,7 @@
         </form>
         <a id="activity-primary-action" class="primary-button"
            th:unless="${status.action.post}"
-           th:href="${mvpEnabled == true and status.action.href.startsWith('/accounts/connect/')} ? '/oauth2/authorization/google' : (${mvpEnabled == true and status.action.href.startsWith('/senders')} ? '/dashboard' : ${status.action.href})"
+           th:href="${status.action.href}"
            th:attr="aria-label=${status.action.accessibleName}"
            th:text="${status.action.label}">Open cleanup</a>
     </div>
@@ -58,25 +58,29 @@
             <tbody>
             <tr>
                 <th scope="row">Indexed messages</th>
-                <td class="activity-numeric" th:text="${status.indexedMessages}">0</td>
+                <td class="activity-numeric" th:text="${status.formattedIndexedMessages()}">0</td>
+            </tr>
+            <tr th:if="${status.initialImport != null}">
+                <th scope="row">Initial import</th>
+                <td th:text="${status.initialImport}">In progress</td>
             </tr>
             <tr>
-                <th scope="row">Initial batch</th>
-                <td th:text="${status.initialBatch}">Preparing</td>
-            </tr>
-            <tr>
-                <th scope="row">Freshness</th>
+                <th scope="row">Last successful check</th>
                 <td>
                     <time th:if="${status.freshnessAt != null}"
                           th:datetime="${status.freshnessAt}"
                           th:text="${status.freshness}">Checked just now</time>
                     <span th:unless="${status.freshnessAt != null}"
-                          th:text="${status.freshness}">Not checked yet</span>
+                          th:text="${status.freshness}">Not completed yet</span>
                 </td>
             </tr>
             <tr>
-                <th scope="row">Rescan</th>
-                <td th:text="${status.rescan}">Not needed</td>
+                <th scope="row">Current activity</th>
+                <td th:text="${status.currentActivity}">Waiting for next check</td>
+            </tr>
+            <tr>
+                <th scope="row">Connection</th>
+                <td th:text="${status.connection}">Connected</td>
             </tr>
             </tbody>
         </table>
@@ -84,43 +88,13 @@
 
     <div class="activity-progress" th:if="${status.listing != null}">
         <p>
-            <span th:if="${status.listing.complete}">Initial sync</span>
+            <span th:text="${status.listing.scope}">Importing existing mail</span>
+            <span aria-hidden="true"> · </span>
             <span id="listing-progress-label" th:text="${status.listing.text()}">Counting messages…</span>
         </p>
         <progress max="100" th:value="${status.listing.barValue()}" aria-labelledby="listing-progress-label">
         </progress>
     </div>
-
-    <section class="activity-lanes" aria-labelledby="activity-lanes-heading"
-             th:if="${!status.lanes.isEmpty()}">
-        <h3 id="activity-lanes-heading">Sync lanes</h3>
-        <div class="activity-table-wrap">
-            <table class="activity-data-table activity-lanes-table">
-                <thead>
-                <tr>
-                    <th scope="col">Lane</th>
-                    <th scope="col">Status</th>
-                    <th scope="col">Last activity</th>
-                    <th scope="col">Work</th>
-                </tr>
-                </thead>
-                <tbody>
-                <tr th:each="lane : ${status.lanes}">
-                    <th scope="row" data-label="Lane" th:text="${lane.name}">New mail</th>
-                    <td data-label="Status" th:text="${lane.status}">Queued</td>
-                    <td data-label="Last activity">
-                        <time th:if="${lane.lastActivityAt != null}"
-                              th:datetime="${lane.lastActivityAt}"
-                              th:text="${lane.lastActivity}">just now</time>
-                        <span th:unless="${lane.lastActivityAt != null}"
-                              th:text="${lane.lastActivity}">Not started</span>
-                    </td>
-                    <td data-label="Work" th:text="${lane.work}">Waiting to start</td>
-                </tr>
-                </tbody>
-            </table>
-        </div>
-    </section>
 
     <section class="activity-events" aria-labelledby="activity-events-heading"
              th:if="${!status.events.isEmpty()}">
@@ -141,9 +115,9 @@
                               th:text="${event.occurred}">just now</time>
                     </td>
                     <th scope="row" data-label="Event"
-                        th:text="${event.summary}">New mail completed</th>
+                        th:text="${event.summary}">Mailbox check completed</th>
                     <td data-label="Detail"
-                        th:text="${event.detail}">No message changes recorded</td>
+                        th:text="${event.detail}">Included mail folders checked for changes</td>
                 </tr>
                 </tbody>
             </table>

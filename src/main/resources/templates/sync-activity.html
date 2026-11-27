@@ -25,13 +25,17 @@
                   aria-describedby="activity-page-help">
                 <sup class="page-help-icon" aria-hidden="true">?</sup>
                 <span id="activity-page-help" class="page-help-tooltip" role="tooltip">
+                    <span>
+                        Indexed messages are stored in TidyMail for this account.
+                        Last successful check means a completed check for mailbox changes.
+                    </span>
                     <span th:if="${page.providerName == 'Gmail'}">
                         Gmail indexes Inbox first, then All Mail. Spam and Trash are excluded.
                         The total is estimated until Gmail finishes listing messages.
                     </span>
                     <span th:unless="${page.providerName == 'Gmail'}">
-                        Counts and freshness come from the selected provider account.
-                        Totals, remaining work, and estimated time appear only when their source is reliable.
+                        Outlook checks included folders individually. A mailbox check completes
+                        after those folders and any moved or missing messages have been checked.
                     </span>
                 </span>
             </span>

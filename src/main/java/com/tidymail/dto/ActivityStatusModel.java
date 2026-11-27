@@ -9,7 +9,7 @@ import java.util.Locale;
  *
  * <p>Product functionality supported: the <em>Activity</em> workspace tab's
  * status widget, which shows the current indexed count, scoped listing progress,
- * freshness, per-lane work status, recent events, and an optional action. Exposes helper predicates so the template can conditionally render
+ * last completed check, current activity, recent events, and an optional action. Exposes helper predicates so the template can conditionally render
  * each section.</p>
  */
 public record ActivityStatusModel(
@@ -19,11 +19,11 @@ public record ActivityStatusModel(
     String guidance,
     long indexedMessages,
     ListingProgress listing,
-    String initialBatch,
+    String initialImport,
     String freshness,
     Instant freshnessAt,
-    String rescan,
-    List<Lane> lanes,
+    String currentActivity,
+    String connection,
     List<Event> events,
     Action action,
     Integer pollingSeconds,
@@ -31,21 +31,23 @@ public record ActivityStatusModel(
     String announcement
 ) {
     public ActivityStatusModel {
-        lanes = List.copyOf(lanes);
         events = List.copyOf(events);
     }
 
-    public record ListingProgress(long indexed, Long total, boolean complete) {
+    public record ListingProgress(long indexed, Long total, String scope) {
         public String text() {
             if (total == null) return String.format(Locale.US, "Counting messages… %,d indexed", indexed);
-            if (complete) return String.format(Locale.US, "%,d of %,d indexed · 100%%", indexed, total);
             return String.format(Locale.US, "%,d of ~%,d indexed (estimated total)", indexed, total);
         }
 
         public Double barValue() {
             if (total == null) return null;
-            return complete ? 100.0 : Math.min(99.99, 100.0 * indexed / total);
+            return Math.min(99.99, 100.0 * indexed / total);
         }
+    }
+
+    public String formattedIndexedMessages() {
+        return String.format(Locale.US, "%,d", indexedMessages);
     }
 
     public boolean hasAction() {
@@ -54,15 +56,6 @@ public record ActivityStatusModel(
 
     public boolean polls() {
         return pollingSeconds != null;
-    }
-
-    public record Lane(
-        String name,
-        String status,
-        Instant lastActivityAt,
-        String lastActivity,
-        String work
-    ) {
     }
 
     public record Event(

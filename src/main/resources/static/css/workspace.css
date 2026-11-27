@@ -2458,18 +2458,6 @@ main .analytics-chart-bar[data-value="0"] {
     font-weight: 600;
 }
 
-.activity-lanes-table th:nth-child(1) {
-    width: 18%;
-}
-
-.activity-lanes-table th:nth-child(2) {
-    width: 22%;
-}
-
-.activity-lanes-table th:nth-child(3) {
-    width: 20%;
-}
-
 .activity-events-table th:nth-child(1) {
     width: 18%;
 }
@@ -2488,8 +2476,6 @@ main .analytics-chart-bar[data-value="0"] {
     height: var(--space-2);
     accent-color: var(--tm-primary);
 }
-
-.activity-lanes,
 .activity-events {
     min-width: 0;
     display: grid;
@@ -2524,12 +2510,6 @@ main .analytics-chart-bar[data-value="0"] {
     .activity-table-wrap {
         overflow-x: visible;
     }
-
-    .activity-lanes-table,
-    .activity-lanes-table tbody,
-    .activity-lanes-table tr,
-    .activity-lanes-table th,
-    .activity-lanes-table td,
     .activity-events-table,
     .activity-events-table tbody,
     .activity-events-table tr,
@@ -2538,8 +2518,6 @@ main .analytics-chart-bar[data-value="0"] {
         display: block;
         width: 100%;
     }
-
-    .activity-lanes-table thead,
     .activity-events-table thead {
         position: absolute;
         width: 1px;
@@ -2547,20 +2525,13 @@ main .analytics-chart-bar[data-value="0"] {
         overflow: hidden;
         clip: rect(0, 0, 0, 0);
     }
-
-    .activity-lanes-table tr,
     .activity-events-table tr {
         padding-block: var(--space-2);
         border-block-end: 1px solid var(--tm-border);
     }
-
-    .activity-lanes-table tbody tr:last-child,
     .activity-events-table tbody tr:last-child {
         border-block-end: 0;
     }
-
-    .activity-lanes-table th,
-    .activity-lanes-table td,
     .activity-events-table th,
     .activity-events-table td {
         display: grid;
@@ -2569,9 +2540,6 @@ main .analytics-chart-bar[data-value="0"] {
         padding: var(--space-1) var(--space-2);
         border: 0;
     }
-
-    .activity-lanes-table th::before,
-    .activity-lanes-table td::before,
     .activity-events-table th::before,
     .activity-events-table td::before {
         color: var(--tm-text-muted);

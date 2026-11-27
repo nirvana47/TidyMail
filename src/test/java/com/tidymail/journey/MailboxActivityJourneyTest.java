@@ -11,9 +11,14 @@ import com.tidymail.support.PostgresJourneyTest;
 import java.sql.Timestamp;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.transaction.annotation.Transactional;
 
 class MailboxActivityJourneyTest extends PostgresJourneyTest {
+    @org.springframework.boot.test.mock.mockito.MockBean
+    com.tidymail.job.IncrementalSyncJob syncJob;
+
 
     @Test
     void cleanupDashboardIsAStandalonePageWithAccountScopedEmptyHistory() throws Exception {
@@ -38,7 +43,7 @@ class MailboxActivityJourneyTest extends PostgresJourneyTest {
         jdbc.update("""
             INSERT INTO mailbox_sync_state(
                 account_id, provider, lifecycle, incremental_cursor_kind,
-                incremental_cursor_value, incremental_last_success_at,
+                incremental_cursor_value, mailbox_checked_at,
                 backfill_status, initial_batch_completed_at
             ) VALUES (?, 'google', 'ACTIVE', 'GMAIL_HISTORY_ID', 'hidden-cursor', ?,
                 'COMPLETE', ?)
@@ -58,13 +63,17 @@ class MailboxActivityJourneyTest extends PostgresJourneyTest {
                 "aria-current=\"page\"",
                 "id=\"activity-status\"",
                 "Indexed messages",
-                "Initial batch",
-                "Freshness",
+                "Last successful check",
+                "Current activity",
+                "Connection",
                 "Checked ",
                 "datetime=\"" + checkedAt,
                 "role=\"status\"",
                 "aria-atomic=\"false\"")
             .doesNotContain(
+                "Initial batch",
+                "Freshness",
+                "Initial import",
                 "Provider total",
                 "Remaining",
                 "Estimated",
@@ -115,7 +124,7 @@ class MailboxActivityJourneyTest extends PostgresJourneyTest {
             INSERT INTO message_metadata(account_id, provider, provider_message_id, labels)
             VALUES (?, 'google', 'hidden', ARRAY['TRASH'])
             """, account);
-        assertThat(activityStatus(email)).contains("Counting messages… 70,029 indexed", "<progress max=\"100\"")
+        assertThat(activityStatus(email)).contains("Counting messages… 70,029 indexed", "class=\"activity-numeric\">70,029</td>", "<progress max=\"100\"")
             .doesNotContain("63,465", "100%");
 
         jdbc.update("UPDATE mailbox_sync_state SET gmail_scope_total=74500 WHERE account_id=?", account);
@@ -130,25 +139,45 @@ class MailboxActivityJourneyTest extends PostgresJourneyTest {
     }
 
     private String activityStatus(String email) throws Exception {
-        return mockMvc.perform(get("/activity/status").with(authenticatedAs(email)))
+        return activityStatus(email, "google");
+    }
+
+    private static org.springframework.test.web.servlet.request.RequestPostProcessor providerAuthentication(String email, String provider) {
+        var base = oauth2Authentication(email);
+        var attributes = new java.util.LinkedHashMap<String, Object>(base.getPrincipal().getAttributes());
+        attributes.put("sub", "synthetic-" + provider + "-" + email);
+        var principal = new org.springframework.security.oauth2.core.user.DefaultOAuth2User(base.getAuthorities(), attributes, "sub");
+        return org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication(
+            new org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken(
+                principal, base.getAuthorities(), provider));
+    }
+
+    private String activityStatus(String email, String provider) throws Exception {
+        return mockMvc.perform(get("/activity/status").with(providerAuthentication(email, provider)))
             .andExpect(status().isOk()).andReturn().getResponse()
             .getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
     }
 
-    @Test
-    void failedFirstImportShowsRetryAndKeepsPollingUntilRecovery() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"google", "microsoft"})
+    void failedFirstImportShowsRetryAndKeepsPollingUntilRecovery(String provider) throws Exception {
         String email = "failed-import@example.test";
-        long account = userAccounts.createAccount(email);
-        jdbc.update("INSERT INTO mailbox_sync_state(account_id,provider) VALUES(?,'google')", account);
+        long account = userAccounts.createAccount(email, provider);
+        jdbc.update("INSERT INTO mailbox_sync_state(account_id,provider) VALUES(?,?)", account, provider);
         jdbc.update("INSERT INTO sync_progress(account_id,job_type,lane,phase,status) VALUES(?,'MAILBOX_SYNC','BACKFILL','FAILED','FAILED')", account);
-        assertThat(activityStatus(email)).contains("Sync paused after a recoverable error", "Retry sync",
-                "every 30s", "<progress max=\"100\"", "value=\"/activity/sync\"");
+        assertThat(activityStatus(email, provider)).contains("Sync paused after a recoverable error", "Retry sync",
+                "Initial import", "Not completed yet", "Sync interrupted", "every 30s", "value=\"/activity/sync\"")
+            .doesNotContain("Historical mail completed", "No message changes recorded");
         mockMvc.perform(post("/api/metadata-sync").param("account", Long.toString(account))
-                .param("returnTo", "/activity/sync").with(authenticatedAs(email)).with(csrf()))
+                .param("returnTo", "/activity/sync").with(providerAuthentication(email, provider)).with(csrf()))
                 .andExpect(status().is3xxRedirection()).andExpect(redirectedUrl("/activity/sync"));
+        org.mockito.Mockito.verify(syncJob).requestSync(account);
         jdbc.update("INSERT INTO sync_progress(account_id,job_type,lane,phase,status) VALUES(?,'MAILBOX_SYNC','BACKFILL','PROVIDER','RUNNING')", account);
-        assertThat(activityStatus(email)).contains("Preparing your cleanup workspace", "every 5s")
+        assertThat(activityStatus(email, provider)).contains("Preparing your cleanup workspace", "every 5s")
                 .doesNotContain("Sync paused after a recoverable error");
+        jdbc.update("UPDATE mailbox_sync_state SET lifecycle='REAUTH_REQUIRED' WHERE account_id=?", account);
+        assertThat(activityStatus(email, provider)).contains("Reconnect required", "/oauth2/authorization/" + provider)
+            .doesNotContain("/oauth2/authorization/" + (provider.equals("google") ? "microsoft" : "google"));
     }
 
     @Test
@@ -193,7 +222,7 @@ class MailboxActivityJourneyTest extends PostgresJourneyTest {
         jdbc.update("""
             INSERT INTO mailbox_sync_state(
                 account_id, provider, lifecycle, incremental_cursor_kind,
-                incremental_cursor_value, incremental_last_success_at,
+                incremental_cursor_value, mailbox_checked_at,
                 backfill_status, backfill_completed_at, initial_batch_completed_at
             ) VALUES (?, 'google', 'ACTIVE', 'GMAIL_HISTORY_ID', 'server-only', ?,
                 'COMPLETE', ?, ?)

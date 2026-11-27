@@ -21,7 +21,7 @@ class DashboardMigrationTest {
     }
 
     @Test
-    void upgradeFromV49DropsRetiredRuleSuggestionStorageAndPreservesRulesAndMail() {
+    void upgradeFromV49PreservesRulesMailAndKnownCompletedMailboxChecks() {
         flyway("49").clean();
         flyway("49").migrate();
         var jdbc = new JdbcTemplate(new DriverManagerDataSource(
@@ -32,7 +32,11 @@ class DashboardMigrationTest {
         jdbc.update("INSERT INTO message_metadata(account_id,provider,provider_message_id,labels) VALUES(?,'google','retained-rule-upgrade',ARRAY['INBOX'])", account);
         String savedRules = jdbc.queryForObject("SELECT to_jsonb(r)::text FROM automation_rules r WHERE account_id=?", String.class, account);
         String mail = jdbc.queryForObject("SELECT (SELECT jsonb_object_agg(key,value) FROM jsonb_each(to_jsonb(m)) WHERE key NOT LIKE 'classification_%' AND key <> 'classified_at')::text FROM message_metadata m WHERE account_id=?", String.class, account);
-        assertThat(flyway(null).migrate().migrationsExecuted).isEqualTo(3);
+        long outlook = new UserAccountFixtures(jdbc).createAccount("sync-upgrade@example.test", "microsoft");
+        jdbc.update("INSERT INTO mailbox_sync_state(account_id,provider,incremental_last_success_at) VALUES(?,'google',now()),(?,'microsoft',now())", account, outlook);
+        assertThat(flyway(null).migrate().success).isTrue();
+        assertThat(jdbc.queryForObject("SELECT mailbox_checked_at IS NULL FROM mailbox_sync_state WHERE account_id=?", Boolean.class, account)).isTrue();
+        assertThat(jdbc.queryForObject("SELECT mailbox_checked_at=incremental_last_success_at FROM mailbox_sync_state WHERE account_id=?", Boolean.class, outlook)).isTrue();
         assertThat(jdbc.queryForObject("SELECT to_regclass('automation_rule_suggestion_dismissals') IS NULL", Boolean.class)).isTrue();
         assertThat(jdbc.queryForObject("SELECT to_jsonb(r)::text FROM automation_rules r WHERE account_id=?", String.class, account)).isEqualTo(savedRules);
         assertThat(jdbc.queryForObject("SELECT (SELECT jsonb_object_agg(key,value) FROM jsonb_each(to_jsonb(m)) WHERE key NOT LIKE 'classification_%' AND key <> 'classified_at')::text FROM message_metadata m WHERE account_id=?", String.class, account)).isEqualTo(mail);
@@ -81,7 +85,7 @@ class DashboardMigrationTest {
         assertThat(jdbc.queryForObject("SELECT (SELECT jsonb_object_agg(key,value) FROM jsonb_each(to_jsonb(m)) WHERE key NOT LIKE 'classification_%' AND key <> 'classified_at')::text FROM message_metadata m WHERE account_id=?", String.class, gmail)).isEqualTo(data);
         assertThat(jdbc.queryForObject("SELECT to_jsonb(a)::text FROM user_accounts a WHERE id=?", String.class, gmail)).isEqualTo(oauth);
         assertThat(jdbc.queryForObject("""
-            SELECT (to_jsonb(s)-'gmail_backfill_phase'-'gmail_scope_total')::text
+            SELECT (to_jsonb(s)-'gmail_backfill_phase'-'gmail_scope_total'-'mailbox_checked_at')::text
             FROM mailbox_sync_state s WHERE account_id=?
             """, String.class, outlook)).isEqualTo(outlookState);
     }

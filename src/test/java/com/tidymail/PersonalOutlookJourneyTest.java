@@ -111,11 +111,13 @@ class PersonalOutlookJourneyTest extends PostgresJourneyTest {
             .andExpect(status().isUnauthorized());
     }
 
-    @Test void resumesAnInterruptedBaselineAndReconcilesMovesDeletesAndFolderChanges() {
+    @Test void resumesAnInterruptedBaselineAndReconcilesMovesDeletesAndFolderChanges() throws Exception {
         unit();
         unit();
         assertThat(count(INBOX)).isEqualTo(2);
         assertThat(states.findByAccountId(accountId).orElseThrow().incrementalLastSuccessAt()).isNull();
+        assertThat(syncPage()).contains("Not completed yet", "Initial import")
+            .doesNotContain("Mailbox check completed", "Historical mail completed");
         unit();
         fixture.failNextInboxPage = true;
         assertThatThrownBy(this::unit).isInstanceOf(CleanupProviderException.class);
@@ -125,6 +127,10 @@ class PersonalOutlookJourneyTest extends PostgresJourneyTest {
         drain();
         assertThat(count(ALL)).isEqualTo(3);
         assertThat(states.findByAccountId(accountId).orElseThrow().incrementalLastSuccessAt()).isNotNull();
+        String completedSync = syncPage();
+        assertThat(completedSync).contains("Last successful check", "Checked just now", "Initial import completed", "Mailbox check completed")
+            .doesNotContain("<th scope=\"row\">Initial import</th>", "Historical mail completed", "No message changes recorded");
+        assertThat(completedSync.split("Mailbox check completed", -1)).hasSize(2);
         UUID move = id("move");
         assertThat(detail(move).outlookFolder()).isEqualTo("Inbox");
         UUID custom = id("comment");
@@ -144,6 +150,8 @@ class PersonalOutlookJourneyTest extends PostgresJourneyTest {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM message_metadata WHERE account_id=? AND provider_message_id='gone'",
             Integer.class, accountId)).isZero();
 
+        String lastCheck = jdbc.queryForObject("SELECT mailbox_checked_at FROM mailbox_sync_state WHERE account_id=?",
+            java.sql.Timestamp.class, accountId).toInstant().toString();
         fixture.round = 3;
         fixture.removeNested = true;
         fixture.failInventory = true;
@@ -152,6 +160,7 @@ class PersonalOutlookJourneyTest extends PostgresJourneyTest {
         assertThatThrownBy(this::unit).isInstanceOf(CleanupProviderException.class);
         assertThat(count(ALL)).isEqualTo(2);
         assertThat(detail(move).outlookFolder()).isEqualTo("Renamed / Nested");
+        assertThat(syncPage()).contains("Needs attention", "Retry sync", "datetime=\"" + lastCheck + "\"");
         drain();
         assertThat(count(ALL)).isEqualTo(1);
         assertThat(id("move")).isEqualTo(move);
@@ -389,6 +398,11 @@ class PersonalOutlookJourneyTest extends PostgresJourneyTest {
         cleanup.tick();
         assertThat(jobs.get(accountId,protectedJob).skipped()).isEqualTo(1);
         assertThat(fixture.writes).doesNotContain("POST:move");
+    }
+
+    private String syncPage() throws Exception {
+        return mockMvc.perform(get("/activity/sync").with(authentication(outlookAuth(account))))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
     }
 
     private OAuth2AuthenticationToken outlookAuth(UserAccount user) {

@@ -123,7 +123,8 @@ class GmailBackfillRecoveryJourneyTest extends PostgresJourneyTest {
             while (!freshness.isEmpty()) freshness.remove().run();
 
             assertThat(indexed(accountId)).isEqualTo(214);
-            assertThat(activity(email)).contains("214 of 214 indexed · 100%").doesNotContain("estimated total");
+            assertThat(activity(email)).contains("class=\"activity-numeric\">214</td>", "Initial import completed")
+                .doesNotContain("estimated total", "<th scope=\"row\">Initial import</th>", "<progress");
             assertThat(server.listings).containsExactly("INBOX:first", "INBOX:first", "INBOX:inbox-two", "ALL:first", "ALL:all-two");
             assertThat(server.metadataAttempts).hasSize(213).doesNotContainKeys("id199", "id214", "id215");
             assertThat(states.findByAccountId(accountId).orElseThrow().backfillStatus()).isEqualTo("COMPLETE");
@@ -248,7 +249,8 @@ class GmailBackfillRecoveryJourneyTest extends PostgresJourneyTest {
             }).when(provider).hydrateSyncPage(any(), anyList(), anyBoolean());
             runLane(accountId, provider, Lane.BACKFILL);
             assertThat(indexed(accountId)).isEqualTo(2);
-            assertThat(activity(email)).contains("2 of 2 indexed · 100%");
+            assertThat(activity(email)).contains("class=\"activity-numeric\">2</td>", "Initial import completed")
+                .doesNotContain("<th scope=\"row\">Initial import</th>", "<progress");
         }
     }
 

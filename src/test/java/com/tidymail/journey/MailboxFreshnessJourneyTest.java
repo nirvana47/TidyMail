@@ -120,7 +120,7 @@ class MailboxFreshnessJourneyTest extends PostgresJourneyTest {
         assertThat(jdbc.queryForObject("SELECT labels=ARRAY['TRASH'] FROM message_metadata WHERE account_id=?",Boolean.class,accountId)).isTrue();
     }
 
-    @Test void interruptedLabelWindowReplaysCommittedChunksWithoutSkippingTheSuffixOrReadingMetadata() {
+    @Test void interruptedLabelWindowReplaysCommittedChunksWithoutSkippingTheSuffixOrReadingMetadata() throws Exception {
         long accountId=userAccounts.createAccount("replay-labels@example.test");readyForFreshness(accountId,"10");
         acquire(accountId,Lane.FRESHNESS,"replay-worker");
         jdbc.update("""
@@ -137,10 +137,17 @@ class MailboxFreshnessJourneyTest extends PostgresJourneyTest {
             assertThatThrownBy(()->freshness.synchronizeFreshness(accounts.findById(accountId).orElseThrow(),gmailProvider,"replay-worker")).hasMessageContaining("FIXTURE_CURSOR_REJECT");
             assertThat(states.findByAccountId(accountId).orElseThrow().incrementalCursorValue()).isEqualTo("10");
             assertThat(jdbc.queryForObject("SELECT count(*) FROM message_metadata WHERE account_id=? AND provider_revision=11",Long.class,accountId)).isEqualTo(500);
+            String interrupted = mockMvc.perform(get("/activity/status").with(authenticatedAs("replay-labels@example.test")))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+            assertThat(interrupted).contains("Not completed yet").doesNotContain("Mailbox check completed");
         } finally {jdbc.execute("DROP TRIGGER reject_label_cursor ON mailbox_sync_state");jdbc.execute("DROP FUNCTION reject_label_cursor()");}
         freshness.synchronizeFreshness(accounts.findById(accountId).orElseThrow(),gmailProvider,"replay-worker");
         assertThat(states.findByAccountId(accountId).orElseThrow().incrementalCursorValue()).isEqualTo("12");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM message_metadata WHERE account_id=? AND labels=ARRAY['TRASH'] AND provider_revision=11",Long.class,accountId)).isEqualTo(600);
+        String recovered = mockMvc.perform(get("/activity/status").with(authenticatedAs("replay-labels@example.test")))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(recovered).contains("Checked just now", "Mailbox check completed")
+            .doesNotContain("Not completed yet", "Historical mail completed");
         verify(gmailProvider,never()).getCurrentMetadata(any(),any());
     }
 

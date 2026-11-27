@@ -107,6 +107,7 @@ public class MailboxFreshnessService {
                 pageToken=page.nextPageToken();
                 if(pageToken!=null&&!visitedPages.add(pageToken))throw new IllegalStateException("History continuation did not advance");
             } while(pageToken!=null);
+            commits.completeFreshnessCheck(account.getId(), leaseOwner);
             return SyncOutcome.complete();
         } catch(GmailClientInitException exception) {
             if(!"HISTORY_EXPIRED".equals(exception.getMessage()))throw exception;
