@@ -16,6 +16,33 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.transaction.annotation.Transactional;
 
 class MailboxActivityJourneyTest extends PostgresJourneyTest {
+    @org.springframework.beans.factory.annotation.Autowired
+    com.tidymail.mail.gmail.GmailRateLimiter gmailLimiter;
+
+    @Test
+    void syncDetailsShowsLiveBatchRetryWaitAndAccountScopedProgress() throws Exception {
+        String email = "batch-feedback@example.test";
+        long account = userAccounts.createAccount(email);
+        long other = userAccounts.createAccount("other-batch-feedback@example.test");
+        gmailLimiter.beginSyncRead(account,500);
+        gmailLimiter.updateSyncRead(account,75,true);
+        gmailLimiter.beginSyncRead(other,200);
+        gmailLimiter.updateSyncRead(other,25,false);
+        gmailLimiter.recordSyncThrottle(account,null);
+        try {
+            String html = mockMvc.perform(get("/activity/status").param("account",Long.toString(account))
+                    .with(authenticatedAs(email))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+            assertThat(html).contains("75 of 500 messages read", "Waiting for Gmail", "retries automatically",
+                "Last refreshed", "checks every 5 seconds").doesNotContain("25 of 200");
+        } finally {
+            gmailLimiter.finishSyncRead(account);
+            gmailLimiter.finishSyncRead(other);
+            // Fixture cleanup reuses database account IDs between journeys.
+            ((java.util.Map<?,?>) org.springframework.test.util.ReflectionTestUtils.getField(gmailLimiter,"budgets")).remove(account);
+        }
+        assertThat(gmailLimiter.readProgress().snapshot(account)).isNull();
+    }
+
     @org.springframework.boot.test.mock.mockito.MockBean
     com.tidymail.job.IncrementalSyncJob syncJob;
 
@@ -200,7 +227,7 @@ class MailboxActivityJourneyTest extends PostgresJourneyTest {
     }
 
     @Test
-    void pollingStopsAtServerReportedCompletionWithoutExposingCursor() throws Exception {
+    void pollingSlowsAtCompletionAndKeepsDetectingNewWorkWithoutExposingCursor() throws Exception {
         String email = "polling-activity@example.test";
         long accountId = userAccounts.createAccount(email);
 
@@ -233,8 +260,8 @@ class MailboxActivityJourneyTest extends PostgresJourneyTest {
             .andExpect(status().isOk())
             .andReturn().getResponse().getContentAsString();
         assertThat(terminal)
-            .contains("Mailbox activity is current", "Checked ")
-            .doesNotContain("hx-trigger=", "server-only", "GMAIL_HISTORY_ID");
+            .contains("Mailbox activity is current", "Checked ", "hx-trigger=\"every 30s\"", "Last refreshed", "data-local-time")
+            .doesNotContain("server-only", "GMAIL_HISTORY_ID");
 
     }
 }

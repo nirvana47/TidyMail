@@ -63,6 +63,44 @@ class GmailBackfillRecoveryJourneyTest extends PostgresJourneyTest {
     @Autowired DashboardService dashboard;
 
     @Test
+    void expiredLeaseAfterSleepCommitsButAReplacedWorkerCannotOverwriteProgress() throws Exception {
+        long first = userAccounts.createAccount("sleep-recovery@example.test");
+        long second = userAccounts.createAccount("replacement-recovery@example.test");
+        states.ensureState(first,"google");
+        states.ensureState(second,"google");
+        try (GmailServer server = new GmailServer()) {
+            server.smallMailbox = true;
+            var provider = provider(server,limiter());
+            server.duringBatch = () -> jdbc.update(
+                "UPDATE mailbox_sync_state SET backfill_lease_expires_at=? WHERE account_id=?",
+                java.sql.Timestamp.from(Instant.now().minusSeconds(10)),first);
+            runLane(first,provider,Lane.BACKFILL);
+            runLane(first,provider,Lane.BACKFILL);
+            assertThat(indexed(first)).isEqualTo(3);
+            UUID original = dashboardId(first,"id0");
+
+            server.duringBatch = () -> jdbc.update("""
+                UPDATE mailbox_sync_state SET backfill_lease_owner='replacement',
+                    backfill_lease_expires_at=?, version=version+1 WHERE account_id=?
+                """, java.sql.Timestamp.from(Instant.now().plusSeconds(60)),second);
+            assertThatThrownBy(() -> runLane(second,provider,Lane.BACKFILL))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("lease or version is stale");
+            assertThat(indexed(second)).isZero();
+            assertThat(states.findByAccountId(second).orElseThrow().initialBatchCompletedAt()).isNull();
+            // A replacement process resumes from persisted state after the abandoned lease expires.
+            jdbc.update("UPDATE mailbox_sync_state SET backfill_lease_expires_at=? WHERE account_id=?",
+                java.sql.Timestamp.from(Instant.now().minusSeconds(1)),second);
+            server.duringBatch = () -> {};
+            runLane(second,provider,Lane.BACKFILL);
+            runLane(second,provider,Lane.BACKFILL);
+            runLane(first,provider,Lane.BACKFILL);
+            assertThat(indexed(second)).isEqualTo(3);
+            assertThat(indexed(first)).isEqualTo(3);
+            assertThat(dashboardId(first,"id0")).isEqualTo(original);
+        }
+    }
+
+    @Test
     void scheduledSyncRecoversAfter200AndRetriesOnlyThrottledMetadata() throws Exception {
         String email = "backfill-recovery@example.test";
         long accountId = userAccounts.createAccount(email);
@@ -83,7 +121,7 @@ class GmailBackfillRecoveryJourneyTest extends PostgresJourneyTest {
             // Exercise heartbeat during provider work near the lease boundary.
             server.duringBatch = () -> {
                 jdbc.update("UPDATE mailbox_sync_state SET backfill_lease_expires_at = ? WHERE account_id = ?",
-                    java.sql.Timestamp.from(Instant.now().plusMillis(500)), accountId);
+                    java.sql.Timestamp.from(Instant.now().minusSeconds(10)), accountId);
                 job.renewActiveLeases();
                 assertThat(states.findByAccountId(accountId).orElseThrow().backfillLeaseExpiresAt())
                     .isAfter(Instant.now().plusSeconds(30));

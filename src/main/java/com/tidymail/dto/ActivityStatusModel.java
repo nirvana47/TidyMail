@@ -28,7 +28,9 @@ public record ActivityStatusModel(
     Action action,
     Integer pollingSeconds,
     boolean alert,
-    String announcement
+    String announcement,
+    String batchProgress,
+    Instant refreshedAt
 ) {
     public ActivityStatusModel {
         events = List.copyOf(events);

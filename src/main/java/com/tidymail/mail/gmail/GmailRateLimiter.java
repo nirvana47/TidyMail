@@ -40,6 +40,47 @@ public class GmailRateLimiter {
     private final java.util.function.LongConsumer sleeper;
     private final ConcurrentHashMap<Long, AccountBudget> budgets = new ConcurrentHashMap<>();
     private final Bucket projectBudget;
+    private final GmailSyncReadProgress readProgress = new GmailSyncReadProgress();
+
+    public GmailSyncReadProgress readProgress() { return readProgress; }
+    public void beginSyncRead(Long account, int total) { readProgress.begin(account, total); }
+    public void updateSyncRead(Long account, int completed, boolean retrying) { readProgress.update(account, completed, retrying); }
+    public void finishSyncRead(Long account) { readProgress.finish(account); }
+
+    public boolean coolingDown(long accountId) {
+        var budget = budgets.get(accountId);
+        if (budget == null) return false;
+        synchronized (budget) {
+            return budget.cooldownActive && budget.cooldownUntil - nanoTime.getAsLong() > 0;
+        }
+    }
+
+    /** A minute gives an unspecified per-minute quota time to reset. Keep mutation admission separate. */
+    public void recordSyncThrottle(Long accountId, HttpHeaders headers) {
+        String value = headers == null ? null : headers.getRetryAfter();
+        boolean explicitDelay = false;
+        if (value != null) {
+            try { explicitDelay = Long.parseLong(value) > 0; }
+            catch (NumberFormatException error) {
+                try { explicitDelay = ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME)
+                    .toInstant().isAfter(Instant.now()); }
+                catch (DateTimeParseException ignored) { }
+            }
+        }
+        recordThrottle(accountId, explicitDelay ? headers : new HttpHeaders().setRetryAfter("60"));
+    }
+
+    /** Defer long provider waits before entering backoff, so they cannot occupy a worker for hours. */
+    public void deferLongSyncCooldown(Long accountId) {
+        if (accountId == null) return;
+        var budget = budgets.get(accountId);
+        if (budget == null) return;
+        synchronized (budget) {
+            long remaining = budget.cooldownActive ? budget.cooldownUntil - nanoTime.getAsLong() : 0;
+            if (remaining > TimeUnit.MINUTES.toNanos(1))
+                throw new CooldownRejection(TimeUnit.NANOSECONDS.toSeconds(remaining) + 1);
+        }
+    }
 
     /**
      * Weighted per-account admission shared by cleanup and sync, with background

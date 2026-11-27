@@ -111,6 +111,12 @@
             element.textContent = formatter.format(date);
             element.title = date.toLocaleString();
         });
+        scope.querySelectorAll("time[data-local-time]").forEach((element) => {
+            const date = new Date(element.getAttribute("datetime"));
+            if (Number.isNaN(date.getTime())) return;
+            element.textContent = date.toLocaleTimeString();
+            element.title = date.toLocaleString();
+        });
     }
 
     /**

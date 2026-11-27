@@ -44,14 +44,15 @@ public class ActivityQueryService {
     private final UserAccountRepository accounts;
     private final JdbcTemplate jdbc;
     private final Clock clock;
+    private final com.tidymail.mail.gmail.GmailRateLimiter gmailRateLimiter;
 
     @Autowired
     public ActivityQueryService(
             OwnedAccountScopeService accountScope,
             WorkspaceModelService workspaceModels,
             UserAccountRepository accounts,
-            JdbcTemplate jdbc) {
-        this(accountScope, workspaceModels, accounts, jdbc, Clock.systemUTC());
+            JdbcTemplate jdbc, com.tidymail.mail.gmail.GmailRateLimiter gmailRateLimiter) {
+        this(accountScope, workspaceModels, accounts, jdbc, Clock.systemUTC(), gmailRateLimiter);
     }
 
     ActivityQueryService(
@@ -59,12 +60,13 @@ public class ActivityQueryService {
             WorkspaceModelService workspaceModels,
             UserAccountRepository accounts,
             JdbcTemplate jdbc,
-            Clock clock) {
+            Clock clock, com.tidymail.mail.gmail.GmailRateLimiter gmailRateLimiter) {
         this.accountScope = accountScope;
         this.workspaceModels = workspaceModels;
         this.accounts = accounts;
         this.jdbc = jdbc;
         this.clock = clock;
+        this.gmailRateLimiter = gmailRateLimiter;
     }
 
     /** Builds the activity page model for the selected account. */
@@ -108,7 +110,7 @@ public class ActivityQueryService {
         String headline = checkedAt == null ? "Waiting for a completed mailbox check" : "Mailbox activity is current";
         String guidance = "Indexed cleanup data is available for this account.";
         String stateClass = "current";
-        Integer polling = null;
+        Integer polling = supported ? 30 : null;
         Action action = null;
         ListingProgress listing = !outlook && importing ? listingProgress(state, indexed) : null;
         if (!supported) {
@@ -153,10 +155,24 @@ public class ActivityQueryService {
         }
         String phase = rechecking && state != null && "__VERIFY_MISSING__".equals(state.rescanAnchor())
             ? "Checking missing messages" : "Mailbox status";
+        String batchProgress = null;
+        if (!outlook && supported && !reconnect) {
+            var read = gmailRateLimiter.readProgress().snapshot(account.getId());
+            if (read != null) {
+                batchProgress = String.format(java.util.Locale.US,
+                    "%,d of %,d messages read in this batch; indexed count updates when the batch is saved",
+                    read.completed(), read.total());
+                if (read.retrying()) current = "Retrying interrupted reads";
+            }
+            if (gmailRateLimiter.coolingDown(account.getId())) {
+                current = "Waiting for Gmail’s rate limit";
+                guidance = "Gmail requested a wait. Sync retries automatically; saved mail is kept.";
+            }
+        }
         return new ActivityStatusModel(stateClass, headline, phase, guidance, indexed, listing,
             importing ? "In progress — making existing mail available for cleanup" : null,
             freshness(checkedAt, now), checkedAt, current, connection, events, action, polling,
-            reconnect || failed, headline);
+            reconnect || failed, headline, batchProgress, now);
     }
 
     /** Loads the account's current sync state row. */

@@ -61,6 +61,42 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class GmailSynchronizationContractTest {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {true,false})
+    void providerRetryTimeDefersBeforeBackoffInsteadOfOccupyingAWorker(boolean header) throws Exception {
+        var clock = new java.util.concurrent.atomic.AtomicLong(0);
+        var limiter = new GmailRateLimiter(configuredProperties(),clock::get,
+            millis -> clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(millis)));
+        limiter.init();
+        var fixture = fixture(limiter);
+        fixture.account.setId(1L);
+        fixture.throttleOnce.add("retry");
+        if (header) fixture.throttleRetryAfter = "120";
+        else fixture.throttleMessage = "User-rate limit exceeded. Retry after " + Instant.now().plusSeconds(120);
+        assertThatThrownBy(() -> fixture.service.hydrateSyncPage(fixture.account,List.of("good","retry"),false))
+            .isInstanceOf(com.tidymail.mail.CleanupProviderException.class);
+        assertThat(fixture.metadataExecutions).containsEntry("good",1).containsEntry("retry",1);
+        assertThat(limiter.readProgress().snapshot(1L)).isNull();
+        assertThat(clock.get()).isZero();
+        assertThatThrownBy(() -> limiter.charge(1L,20,false))
+            .isInstanceOfSatisfying(com.tidymail.mail.CleanupProviderException.class,
+                error -> assertThat(error.retryAt()).isAfter(Instant.now().plusSeconds(100)));
+    }
+
+    @Test
+    void timeoutAfterOneCallbackRetriesOnlyUnresolvedMessagesAndRemainsBounded() throws Exception {
+        var fixture = fixture();
+        fixture.timeoutOnce.add("retry");
+        var messages = fixture.service.hydrateSyncPage(fixture.account, List.of("good", "retry"), false);
+        assertThat(messages).hasSize(2);
+        assertThat(fixture.metadataRequests).containsEntry("good", 1).containsEntry("retry", 2);
+
+        fixture.alwaysTimeout = true;
+        assertThatThrownBy(() -> fixture.service.hydrateSyncPage(fixture.account, List.of("broken"), false))
+            .isInstanceOf(GmailClientInitException.class).hasCauseInstanceOf(java.net.SocketTimeoutException.class);
+        assertThat(fixture.metadataRequests).containsEntry("broken", 6);
+    }
+
     @Test
     void metadataThrottleRetriesOnlyRejectedMessagesAndKeepsCompletedReads() throws Exception {
         var clock = new java.util.concurrent.atomic.AtomicLong(0);
@@ -73,7 +109,7 @@ class GmailSynchronizationContractTest {
         var messages = fixture.service.hydrateSyncPage(fixture.account, List.of("good", "retry"), false);
         assertThat(messages).hasSize(2);
         assertThat(fixture.metadataRequests).containsEntry("good", 1).containsEntry("retry", 2);
-        assertThat(clock.get()).isBetween(30_000_000_000L, 31_000_000_000L);
+        assertThat(clock.get()).isBetween(60_000_000_000L, 61_000_000_000L);
     }
 
     @Test
@@ -448,13 +484,16 @@ class GmailSynchronizationContractTest {
             doAnswer(queue -> {
                 JsonBatchCallback<Message> callback = queue.getArgument(1);
                 fixture.pendingCallbacks.add(() -> {
+                fixture.metadataExecutions.merge(id,1,Integer::sum);
+                if (fixture.alwaysTimeout || fixture.timeoutOnce.remove(id)) throw new java.net.SocketTimeoutException("synthetic timeout");
                 if (fixture.throttleOnce.remove(id)) {
                     var error = new GoogleJsonError();
                     error.setCode(429);
+                    error.setMessage(fixture.throttleMessage);
                     var reason = new GoogleJsonError.ErrorInfo();
                     reason.setReason("userRateLimitExceeded");
                     error.setErrors(List.of(reason));
-                    callback.onFailure(error, new HttpHeaders());
+                    callback.onFailure(error, new HttpHeaders().setRetryAfter(fixture.throttleRetryAfter));
                 } else if (fixture.notFoundMetadataIds.contains(id)) {
                     GoogleJsonError error = new GoogleJsonError();
                     error.setCode(404);
@@ -489,7 +528,12 @@ class GmailSynchronizationContractTest {
     private static final class Fixture {
         final List<BatchCallback> pendingCallbacks = new ArrayList<>();
         final Set<String> throttleOnce = new java.util.HashSet<>();
+        final Set<String> timeoutOnce = new java.util.HashSet<>();
+        boolean alwaysTimeout;
+        String throttleMessage;
+        String throttleRetryAfter;
         final java.util.Map<String,Integer> metadataRequests = new java.util.HashMap<>();
+        final java.util.Map<String,Integer> metadataExecutions = new java.util.HashMap<>();
         GmailMailService service;
         GmailSyncConfigProperties config=configuredProperties();
         UserAccount account;

@@ -17,6 +17,20 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.core.*;
 
 class GmailBudgetAndCredentialsTest {
+    @Test void syncCooldownUsesMinuteFallbackAndKeepsAccountsIndependent() {
+        var clock = new java.util.concurrent.atomic.AtomicLong(0);
+        var limiter = new GmailRateLimiter(new GmailSyncConfigProperties(), clock::get,
+            millis -> clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(millis)));
+        limiter.recordSyncThrottle(1L, null);
+        assertThat(limiter.coolingDown(1L)).isTrue();
+        assertThat(limiter.coolingDown(2L)).isFalse();
+        limiter.chargeForSync(2L,20,true);
+        assertThat(clock.get()).isZero();
+        limiter.chargeForSync(1L,20,true);
+        assertThat(clock.get()).isBetween(60_000_000_000L,60_100_000_000L);
+        assertThat(limiter.coolingDown(1L)).isFalse();
+    }
+
     @Test void freshNegativeMonotonicClockDoesNotInventACooldownOrPacingDelay() {
         var clock = new java.util.concurrent.atomic.AtomicLong(-60_000_000_000L);
         var config = new GmailSyncConfigProperties();

@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class GmailInitialSyncService {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(GmailInitialSyncService.class);
     private final GmailSyncConfigProperties config;
     private final MessageMetadataSyncRepository metadata;
     private final MailboxSyncCommitService commits;
@@ -26,6 +27,7 @@ public class GmailInitialSyncService {
 
     SyncOutcome synchronizePage(UserAccount account, GmailMailService gmail, String owner, StateSnapshot state) {
         if ("COMPLETE".equals(state.gmailBackfillPhase())) return SyncOutcome.complete();
+        long started = System.nanoTime();
         MailboxFreshnessService.assertProviderOutsideTransaction();
         boolean bootstrap = state.initialBatchCompletedAt() == null || state.incrementalCursorValue() == null;
         boolean inbox = "INBOX".equals(state.gmailBackfillPhase());
@@ -48,6 +50,9 @@ public class GmailInitialSyncService {
         Long estimate = inbox ? null : page.estimate();
         commits.commitGmailBackfillPage(account.getId(), owner, phase, page.nextPageToken(),
             estimate, historyId, ids, messages, hydrate.size());
+        log.info("Gmail import page committed account={} phase={} listed={} metadataResponses={} durationMs={}",
+            account.getId(), state.gmailBackfillPhase(), ids.size(), messages.size(),
+            java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-started));
         if (bootstrap) return SyncOutcome.bootstrapComplete();
         return "COMPLETE".equals(phase) ? SyncOutcome.complete() : SyncOutcome.requeue();
     }

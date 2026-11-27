@@ -13,7 +13,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-VERSION = "0.1.2"
+VERSION = "0.1.3"
 
 
 def run(*args, **kwargs):
@@ -295,6 +295,8 @@ def main():
             "MAC-DISTRIBUTION.md",
             "src/main/java/com/tidymail/security/DesktopLoopbackFilter.java",
             "src/main/java/com/tidymail/mail/gmail/GmailSyncReadException.java",
+            "src/main/java/com/tidymail/mail/gmail/GmailSyncReadProgress.java",
+            "docs/GMAIL-SYNC-RELIABILITY.md",
         ]
     )
     with zipfile.ZipFile(

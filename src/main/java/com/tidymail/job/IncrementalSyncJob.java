@@ -121,8 +121,7 @@ public class IncrementalSyncJob {
             try {
                 for (int attempt = 0; attempt < 4; attempt++) {
                     StateSnapshot state = states.findByAccountId(key.accountId()).orElse(null);
-                    if (state == null || !laneOwnedBy(state, key.lane(), owner)
-                            || !laneOwnedAndLive(state, key.lane(), Instant.now())) {
+                    if (state == null || !laneOwnedBy(state, key.lane(), owner)) {
                         return;
                     }
                     Instant expiry = key.lane() == Lane.FRESHNESS

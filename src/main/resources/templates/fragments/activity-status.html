@@ -82,6 +82,15 @@
                 <th scope="row">Connection</th>
                 <td th:text="${status.connection}">Connected</td>
             </tr>
+            <tr th:if="${status.batchProgress != null}">
+                <th scope="row">Current batch</th>
+                <td th:text="${status.batchProgress}">Reading messages…</td>
+            </tr>
+            <tr>
+                <th scope="row">Last refreshed</th>
+                <td><time data-local-time th:datetime="${status.refreshedAt}" th:text="${status.refreshedAt}">Just now</time>
+                    <span class="muted" th:if="${status.polls()}" th:text="| · checks every ${status.pollingSeconds} seconds|"> · checks every 5 seconds</span></td>
+            </tr>
             </tbody>
         </table>
     </div>

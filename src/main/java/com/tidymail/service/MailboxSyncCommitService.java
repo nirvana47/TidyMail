@@ -33,16 +33,19 @@ public class MailboxSyncCommitService {
     private final MessageMetadataSyncRepository metadata;
     private final MessageMetadataMapper mapper;
     private final com.tidymail.repository.MailboxSyncActivityRepository activity;
+    private final com.tidymail.config.MailboxSyncExecutorConfig executorConfig;
 
     public MailboxSyncCommitService(
             MailboxSyncStateRepository states,
             MessageMetadataSyncRepository metadata,
             MessageMetadataMapper mapper,
-            com.tidymail.repository.MailboxSyncActivityRepository activity) {
+            com.tidymail.repository.MailboxSyncActivityRepository activity,
+            com.tidymail.config.MailboxSyncExecutorConfig executorConfig) {
         this.states = states;
         this.metadata = metadata;
         this.mapper = mapper;
         this.activity = activity;
+        this.executorConfig = executorConfig;
     }
 
     /** Commits a freshness sync unit. */
@@ -73,6 +76,14 @@ public class MailboxSyncCommitService {
             List<MailMessage> messages, int fetched) {
         StateSnapshot state = states.lockForCommit(accountId);
         Instant now = Instant.now();
+        // Sleep can expire a worker's lease before its next heartbeat. The row lock
+        // lets that same owner renew safely; a replacement owner's results still win.
+        if (owner != null && owner.equals(state.backfillLeaseOwner())
+                && state.backfillLeaseExpiresAt() != null && !state.backfillLeaseExpiresAt().isAfter(now)) {
+            states.heartbeatLaneLease(accountId, Lane.BACKFILL, owner,
+                now.plus(executorConfig.laneLeaseDuration()), state.version());
+            state = states.lockForCommit(accountId);
+        }
         validateLease(state, Lane.BACKFILL, owner, state.version(), now);
         Set<String> deleted = metadata.gmailScanDeletions(accountId, messages.stream().map(MailMessage::id).toList());
         var current = messages.stream().filter(message -> !deleted.contains(message.id())).toList();
