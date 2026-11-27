@@ -113,7 +113,8 @@ their replay/schema guards. See `tools/verification/README.md`.
 The frontend selection journey runs in Chromium with fixture responses only:
 `node tools/verification/dashboard-selection.cjs` (requires Playwright and its
 Chromium browser, with Playwright available on Node's module path). It checks
-address/message checkbox synchronization, selection within one parent group,
+the shared parent/child action toolbar, deduplicated combined review and rule
+addresses, clear-all, address/message checkbox synchronization, selection within one parent group,
 exact Trash preview IDs, unread scope, and delayed-response handling. It does
 not connect to the live mailbox or perform cleanup.
 

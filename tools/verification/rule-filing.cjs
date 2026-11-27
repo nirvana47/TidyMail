@@ -59,11 +59,11 @@ const output = path.resolve(process.argv[3] || '/tmp/tidymail-filing-screenshots
     await page.locator('#confirmAction').click(); await expect.poll(() => confirmations).toBe(1);
     await expect(page.locator('#notice')).toContainText('saved');
     await page.goto(target.origin + '/activity'); await expect(page.locator('table')).toContainText('Apply label: Offers');
-    // Both action menus expose filing, and a sender selection still opens the same destination control.
+    // The shared action menu exposes filing, and a sender selection still opens the same destination control.
     await page.goto(target.href); await page.locator('#senders input[data-selection]').first().check();
-    await page.locator('#senderAction').selectOption('ORGANIZE'); await page.locator('#reviewSenders').click();
+    await page.locator('#messageAction').selectOption('ORGANIZE'); await page.locator('#review').click();
     await expect(page.locator('#filingDestination')).toBeVisible(); await page.keyboard.press('Escape');
     for (const width of [1280, 1440]) { await page.setViewportSize({ width, height: 900 }); assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)); }
-    assert.deepEqual(errors, []); console.log('PASS: multi-phrase rule draft, explicit duplicate selection, retained choices after permission failure, deferred new destination, exact manual filing review, Activity destination, both selection menus, desktop layout.');
+    assert.deepEqual(errors, []); console.log('PASS: multi-phrase rule draft, explicit duplicate selection, retained choices after permission failure, deferred new destination, exact manual filing review, Activity destination, shared selection toolbar, desktop layout.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

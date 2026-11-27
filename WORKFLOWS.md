@@ -91,7 +91,10 @@ continue to use explicitly chosen addresses or domains.
 many emails are selected. If only 3 of a sender's 10 matching emails are selected,
 show a dash in that address's checkbox in Sender addresses, rather than a full
 tick. Unticking an email must update that checkbox and the selected count.
-**6.2** The left/right arrows only change the page being viewed. They do not
+**6.2** Use one shared action toolbar for parent sender rows, child addresses and
+individual emails. Review their combined selection, counting overlapping emails
+once. Clear selection clears all selected rows and messages.
+The left/right arrows only change the page being viewed. They do not
 select emails. Tick the rows or emails you want; ticking a second sender address
 adds its matching emails to the first selection. The checkbox above the sender
 list selects the sender rows currently shown. “Select all matching senders” is a

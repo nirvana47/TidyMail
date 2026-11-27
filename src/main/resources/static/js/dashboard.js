@@ -47,7 +47,7 @@
       const job = await api('jobs', { preview: preview.id });
       state.preview = null;
       if (fromRule) document.dispatchEvent(new Event('tidymail:rule-filing-started'));
-      else if (fromSenders) senderSelection.clear();
+      else if (fromSenders) { senderSelectionVersion++; senderSelection.clear(); selectionGeneration++; selected.clear(); }
       else { selectionGeneration++; selected.clear(); }
       $('confirm').close(); renderSelectionControls();
       if (!fromRule) notice(actionName(preview.action) + ' saved. You can close this page; work continues.');
@@ -137,21 +137,23 @@
     e.addEventListener('change', () => onChange(e.checked)); return e;
   }
   function updateSelection() {
-    $('selectionRow').hidden = selected.size === 0;
-    $('dock').hidden = selected.size === 0 && !jobs.some(activeJob);
-    $('selectionCount').textContent = `${fmt(selected.size)} messages selected`;
-    const addresses = new Set([...selected.values()].map(m => m.address));
-    $('selectionDescription').textContent = `${state.focused?.label || 'Current group'} · ${fmt(addresses.size)} sender ${addresses.size === 1 ? 'address' : 'addresses'} · Fixed message selection`;
-    const reviewBusy = previewLoading || confirming || selectionBusy > 0;
-    $('review').textContent = selected.size ? `Review ${fmt(selected.size)} emails →` : 'Review selection →';
-    $('review').disabled = !selected.size || reviewBusy;
-    $('createMessageRule').disabled = !selected.size || reviewBusy;
     const byAddress = $('groupBy').value === 'address', count = senderSelection.size;
-    const unit = byAddress ? 'sender address' : 'domain or sender row';
-    $('senderSelectionToolbar').hidden = count === 0;
-    $('senderSelectionCount').textContent = `${fmt(count)} ${unit}${count === 1 ? '' : byAddress ? 'es' : 's'} selected`;
-    $('reviewSenders').disabled = !count || reviewBusy || $('senderTable').hasAttribute('aria-busy');
-    $('createSenderSelectionRule').disabled = $('reviewSenders').disabled;
+    const hasSelection = count > 0 || selected.size > 0;
+    $('selectionRow').hidden = !hasSelection;
+    $('dock').hidden = !hasSelection && !jobs.some(activeJob);
+    const unit = byAddress ? 'sender address' : 'sender row';
+    const senderCount = `${fmt(count)} ${unit}${count === 1 ? '' : byAddress ? 'es' : 's'}`;
+    $('selectionCount').textContent = count
+      ? `${senderCount}${selected.size ? ` + ${fmt(selected.size)} messages` : ''} selected`
+      : `${fmt(selected.size)} messages selected`;
+    const addresses = new Set([...selected.values()].map(m => m.address));
+    $('selectionDescription').textContent = count
+      ? 'Matching emails across all pages for selected senders' + (selected.size ? ', plus individually selected messages. Overlapping emails count once.' : '.')
+      : `${state.focused?.label || 'Current group'} · ${fmt(addresses.size)} sender ${addresses.size === 1 ? 'address' : 'addresses'} · Fixed message selection`;
+    const reviewBusy = previewLoading || confirming || selectionBusy > 0 || listLoading;
+    $('review').textContent = count ? 'Review selected emails →' : selected.size ? `Review ${fmt(selected.size)} emails →` : 'Review selection →';
+    $('review').disabled = !hasSelection || reviewBusy;
+    $('createMessageRule').disabled = $('review').disabled;
     const visible=state.data?.groups || [], visibleSelected=visible.filter(g=>senderSelection.has(g.id)).length;
     const header=$('selectPageSenders'), total=Number(state.data?.summary.groups || 0);
     header.checked=visible.length>0 && visibleSelected===visible.length;
@@ -536,11 +538,13 @@
     const epoch = filterEpoch, revision = state.revision, activeFilter = filter();
     let classificationRevision = state.data?.classificationRevision;
     const selection = fromSenders ? senderSelection : selected;
-    const keys = [...selection.keys()];
-    const actionType = fromSenders ? $('senderAction').value : state.action;
+    const keys = [...selection.keys()], messageKeys = [...selected.keys()], generation = selectionGeneration, senderVersion = senderSelectionVersion;
+    const actionType = state.action;
     const isCurrent = () => epoch === filterEpoch && revision === state.revision
+      && generation === selectionGeneration && senderVersion === senderSelectionVersion
+      && messageKeys.length === selected.size && messageKeys.every(id => selected.has(id))
       && (fromSenders || !activeFilter.labels || classificationRevision === state.data?.classificationRevision)
-      && actionType === (fromSenders ? $('senderAction').value : state.action)
+      && actionType === state.action
       && keys.length === selection.size && keys.every(id => selection.has(id));
     if (!keys.length) return;
     if (actionType === 'ORGANIZE' && !destination) {
@@ -568,8 +572,8 @@
         }
         const rows = await api('selection', { filter: activeFilter, groups: keys, revision });
         if (!isCurrent()) return;
-        if (!rows.length) { notice('No emails match the current filters for these senders.'); return; }
-        ids = rows.map(row => row.id);
+        ids = [...new Set([...messageKeys, ...rows.map(row => row.id)])];
+        if (!ids.length) { notice('No emails match the current filters for these senders.'); return; }
       }
       const preview = await api('previews', { filter: activeFilter, ids, action: actionType, revision, classificationRevision, destination });
       if (!isCurrent()) { api(`previews/${preview.id}/invalidate`, {}).catch(() => { }); return; }
@@ -589,7 +593,7 @@
       $('confirmTitle').textContent = 'Review ' + actionName(preview.action).toLowerCase(); $('confirmAction').textContent = action;
       $('confirmAction').classList.toggle('danger', preview.action === 'TRASH');
       $('confirmScope').textContent = `${preview.filter.scope === 'inbox' ? 'Inbox' : preview.filter.scope === 'indexed' ? 'All indexed mail' : preview.filter.suggestion === 'large' && !outlook ? 'Received and Sent mail' : 'All Mailbox'} · ${preview.filter.start || 'All indexed dates'}${preview.filter.end ? ' through ' + preview.filter.end : ''} · ${preview.filter.zone}${preview.filter.q ? ' · Search: ' + preview.filter.q : ''}`;
-      if (previewFromSenders) $('confirmScope').textContent += ' · ' + $('senderSelectionCount').textContent;
+      if (previewFromSenders) $('confirmScope').textContent += ' · ' + $('selectionCount').textContent;
       $('confirmCounts').textContent = `${fmt(preview.selected)} fixed targets · ${fmt(preview.effective)} eligible changes · ${fmt(preview.skipped)} will be skipped (${fmt(preview.protectedCount)} protected) · ${bytesText(preview.knownBytes)} selected${preview.unknownSizes ? ' · '+fmt(preview.unknownSizes)+' sizes unknown' : ''}`;
       $('confirmCoverage').textContent = `Indexed messages only · ${dateText(preview.coverage.oldest)}–${dateText(preview.coverage.newest)} · As of ${dateText(preview.coverage.as_of)}`;
       $('actionExplanation').textContent = preview.action === 'ORGANIZE' ? `${preview.destination.mode === 'NEW' ? 'Create' : 'Use existing'} ${outlook ? 'folder' : 'label'} “${preview.destination.name}”. ${outlook || preview.destination.skipInbox ? 'Messages leave the Inbox.' : 'Messages stay in the Inbox.'} No future-mail rule is created. New destinations are created only after you confirm Apply.` : preview.action === 'ARCHIVE' ? (outlook ? 'Move selected emails to Archive.' : 'Archive removes mail from Inbox but does not free storage.') : preview.action === 'TRASH' ? outlook ? 'Move selected emails to Deleted Items.' : `Move to Trash may reclaim approximately ${bytesText(preview.effectiveBytes)} after Gmail permanently deletes the emails, normally after 30 days.` : preview.action === 'MARK_READ_ARCHIVE' ? (outlook ? 'Mark selected emails as read, then move them to Archive.' : 'Gmail removes the Unread and Inbox labels in one request. Messages already read and outside Inbox are skipped.') : 'Already-read messages will be skipped.';
@@ -845,32 +849,33 @@
     } catch(error){if(epoch===filterEpoch)notice(error.message);}
     finally{selectionBusy--;renderSelectionControls();}
   };
-  $('clearGroups').onclick = () => { senderSelectionVersion++;senderSelection.clear(); renderSelectionControls(); };
-  $('clear').onclick = () => clearSelection();
-  $('review').onclick = () => openPreview();
+  $('clear').onclick = () => { senderSelectionVersion++; senderSelection.clear(); clearSelection(); };
+  $('review').onclick = () => openPreview(senderSelection.size > 0);
   function createInboxRule(addresses, action, context) {
     const senders = [...new Set(addresses.filter(Boolean))].sort();
     if (!senders.length) { notice('Choose at least one exact sender address for a rule.'); return; }
     document.dispatchEvent(new CustomEvent('tidymail:create-rule', { detail: { senders, action, context, mailScope: state.scope, account: document.body.dataset.account } }));
   }
-  $('createMessageRule').onclick = () => createInboxRule([...selected.values()].map(m => m.address), state.action, `From ${fmt(selected.size)} selected emails`);
-  $('createSenderSelectionRule').onclick = async () => {
-    const epoch = filterEpoch, revision = state.revision, generation = selectionGeneration, groups = [...senderSelection.keys()], action = $('senderAction').value;
-    if (!groups.length || selectionBusy || listLoading) return;
+  $('createMessageRule').onclick = async () => {
+    const epoch = filterEpoch, revision = state.revision, generation = selectionGeneration, version = senderSelectionVersion;
+    const groups = [...senderSelection.keys()], messages = [...selected.values()], action = state.action;
+    if ((!groups.length && !messages.length) || selectionBusy || listLoading) return;
     selectionBusy++; updateSelection();
     try {
-      const rows = await api('selection', { filter: filter(), revision, groups });
-      if (epoch !== filterEpoch || revision !== state.revision || generation !== selectionGeneration || groups.length !== senderSelection.size || groups.some(id => !senderSelection.has(id)) || action !== $('senderAction').value) return;
-      createInboxRule(rows.map(m => m.address), action, `From ${fmt(groups.length)} selected sender groups · ${fmt(rows.length)} matching emails`);
-    } catch (error) { notice(error.message); } finally { selectionBusy--; updateSelection(); }
+      const rows = groups.length ? await api('selection', { filter: filter(), revision, groups }) : [];
+      if (epoch !== filterEpoch || revision !== state.revision || generation !== selectionGeneration || version !== senderSelectionVersion || messages.length !== selected.size || messages.some(m => !selected.has(m.id)) || action !== state.action) return;
+      const matches = [...new Map([...rows, ...messages].map(m => [m.id, m])).values()];
+      if (!matches.length) { notice('No emails match the current filters for these senders.'); return; }
+      createInboxRule(matches.map(m => m.address), action, `From ${fmt(matches.length)} selected emails`);
+    } catch (error) { if (epoch === filterEpoch && generation === selectionGeneration && version === senderSelectionVersion) notice(error.message); }
+    finally { selectionBusy--; updateSelection(); }
   };
-  $('reviewSenders').onclick = () => openPreview(true);
   $('messageAction').onchange = () => { state.action = $('messageAction').value; invalidatePreview(); };
   document.querySelectorAll('[data-tab]').forEach((button, index, tabs) => { button.onclick = () => { const changed = state.tab !== button.dataset.tab; state.tab = button.dataset.tab; if (changed) state.details = null; tabs.forEach(b => { b.classList.toggle('active', b === button); b.setAttribute('aria-selected', String(b === button)); b.tabIndex = b === button ? 0 : -1; }); $('detailContent').setAttribute('aria-labelledby', button.id); renderDetail(); if (changed) loadDetails(); }; button.onkeydown = e => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) { e.preventDefault(); const next = tabs[e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : (index + 1) % 2]; next.click(); next.focus(); } }; });
   document.querySelectorAll('[data-close]').forEach(button => button.onclick = () => $(button.dataset.close).close());
   $('confirm').addEventListener('close', () => {
     if (previewFromRule && $('inboxRule').open) { $('inboxRule').querySelector('[data-rule-existing]')?.focus({ preventScroll: true }); return; }
-    const review = $(previewFromSenders ? 'reviewSenders' : 'review');
+    const review = $('review');
     (review.disabled ? $('senderTable') : review).focus();
   });
   $('targetPrev').onclick = () => { state.targetPage--; loadTargets(); }; $('targetNext').onclick = () => { state.targetPage++; loadTargets(); };

@@ -509,14 +509,6 @@ th[aria-sort=descending] .column-sort {
 #groupingToolbar button,#groupingToolbar select {
     font-size:12px
 }
-#senderActionScope {
-    margin:7px 0;
-    font-size:11px
-}
-.sender-action {
-    width:auto;
-    max-width:100%
-}
 #groupingToolbar .row:last-child button {
     min-height:28px;
     background:transparent

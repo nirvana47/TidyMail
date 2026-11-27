@@ -68,25 +68,6 @@
         <button id="clearComposition" hidden></button>
         <section class="workspace" aria-label="Mailbox workspace">
             <div class="list">
-                <div class="evidence" id="senderSelectionToolbar" hidden>
-                    <div class="row">
-                        <strong id="senderSelectionCount" role="status"></strong>
-                        <label for="senderAction" class="muted">Email action</label>
-                        <select id="senderAction" class="sender-action" aria-describedby="senderActionScope">
-                            <option value="MARK_READ">Mark as read</option>
-                            <option value="ARCHIVE">Archive</option>
-                            <option value="MARK_READ_ARCHIVE">Mark as read + archive</option>
-                            <option value="TRASH" th:text="${outlook?'Move to Deleted Items':'Move to Trash'}">Move to Trash</option><option value="ORGANIZE" th:text="${outlook?'Move to a folder':'Apply a label'}">Apply a label</option>
-                        </select>
-                        <button id="reviewSenders" class="primary">Review email action →</button><button id="createSenderSelectionRule">Rules…</button>
-                    </div>
-                    <p id="senderActionScope" class="muted">Applies to matching emails across all pages for the selected senders.</p>
-                    <div class="row">
-                        <button id="selectAllMatchingSenders" hidden>Select all matching senders</button>
-                        <span id="senderBulkStatus" role="status" hidden></span>
-                        <button id="clearGroups">Clear senders</button>
-                    </div>
-                </div>
                 <div class="tablewrap">
                     <table id="senderTable" tabindex="-1">
                         <thead>
@@ -123,10 +104,12 @@
                 <div id="detailContent" class="tab-content" role="tabpanel" aria-labelledby="messagesTab"></div>
             </aside>
         </section>
-        <section class="dock" id="dock" hidden aria-label="Selected messages">
+        <section class="dock" id="dock" hidden aria-label="Mailbox selection">
             <div class="selection row" id="selectionRow">
-                <div><strong id="selectionCount"></strong>
+                <div><strong id="selectionCount" role="status"></strong>
                     <p class="muted" id="selectionDescription">Selection stays while paging.</p>
+                    <button id="selectAllMatchingSenders" hidden>Select all matching senders</button>
+                    <span id="senderBulkStatus" role="status" hidden></span>
                 </div><button class="ghost" id="clear">Clear selection</button>
                 <div class="actions row" role="group" aria-label="Choose cleanup action">
                     <label class="action-choice">Action <select id="messageAction"><option value="MARK_READ">Mark as read</option><option value="ARCHIVE">Archive</option><option value="MARK_READ_ARCHIVE">Mark as read + archive</option><option value="TRASH" th:text="${outlook?'Move to Deleted Items':'Move to Trash'}">Move to Trash</option><option value="ORGANIZE" th:text="${outlook?'Move to a folder':'Apply a label'}">Apply a label</option></select></label>
