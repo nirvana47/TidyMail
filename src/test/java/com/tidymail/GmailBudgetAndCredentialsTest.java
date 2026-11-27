@@ -17,6 +17,30 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.core.*;
 
 class GmailBudgetAndCredentialsTest {
+    @Test void freshNegativeMonotonicClockDoesNotInventACooldownOrPacingDelay() {
+        var clock = new java.util.concurrent.atomic.AtomicLong(-60_000_000_000L);
+        var config = new GmailSyncConfigProperties();
+        org.springframework.test.util.ReflectionTestUtils.setField(config, "metadataBatchDelayMs", 1000);
+        var limiter = new GmailRateLimiter(config, clock::get, millis -> clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(millis)));
+        limiter.chargeForSync(1L, 20, true);
+        limiter.paceMetadataBatch();
+        assertThat(clock.get()).isEqualTo(-60_000_000_000L);
+        limiter.paceMetadataBatch();
+        assertThat(clock.get()).isBetween(-59_000_000_000L, -58_900_000_000L);
+    }
+    @Test void syncWaitsOutShortCooldownButCleanupStillReturnsItsRejection() {
+        var clock = new java.util.concurrent.atomic.AtomicLong(-10_000_000_000L);
+        var config = new GmailSyncConfigProperties();
+        var limiter = new GmailRateLimiter(config, clock::get, millis -> clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(millis)));
+        limiter.recordThrottle(1L, null);
+        assertThatThrownBy(() -> limiter.charge(1L, 20, false)).isInstanceOf(CleanupProviderException.class);
+        limiter.chargeForSync(1L, 20, true);
+        assertThat(clock.get()).isBetween(20_000_000_000L, 20_100_000_000L);
+        limiter.recordThrottle(1L, new HttpHeaders().setRetryAfter("120"));
+        long before = clock.get();
+        assertThatThrownBy(() -> limiter.chargeForSync(1L, 20, true)).isInstanceOf(CleanupProviderException.class);
+        assertThat(clock.get()).isEqualTo(before);
+    }
     @Test void sharedCooldownHonorsRetryAfterAndDoesNotBlockAnotherAccount() {
         var config=new GmailSyncConfigProperties();var limiter=new GmailRateLimiter(config);
         limiter.recordThrottle(1L,new HttpHeaders().setRetryAfter("120"));

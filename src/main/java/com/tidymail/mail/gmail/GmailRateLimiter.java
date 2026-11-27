@@ -35,8 +35,11 @@ public class GmailRateLimiter {
     private Semaphore backfillCapacity;
     private int delayMs;
     private long nextMetadataBatchNanos;
+    private boolean metadataBatchScheduled;
+    private final java.util.function.LongSupplier nanoTime;
+    private final java.util.function.LongConsumer sleeper;
     private final ConcurrentHashMap<Long, AccountBudget> budgets = new ConcurrentHashMap<>();
-    private final Bucket projectBudget = new Bucket(960000);
+    private final Bucket projectBudget;
 
     /**
      * Weighted per-account admission shared by cleanup and sync, with background
@@ -47,15 +50,14 @@ public class GmailRateLimiter {
             throw new IllegalArgumentException("Gmail reservation must cost 1–500 units");
         if (accountId == null || config.getQuotaUnitsPerMinute() == 0)
             return;
-        var budget = budgets.computeIfAbsent(accountId, id -> new AccountBudget(config));
+        var budget = budgets.computeIfAbsent(accountId, id -> new AccountBudget(config, nanoTime.getAsLong()));
         for (;;) {
             long wait;
             synchronized (budget) {
-                long now = System.nanoTime();
-                long cooldown = budget.cooldownUntil - now;
+                long now = nanoTime.getAsLong();
+                long cooldown = budget.cooldownActive ? budget.cooldownUntil - now : 0;
                 if (cooldown > 0)
-                    throw new CleanupProviderException(429,
-                            Long.toString(Math.max(1, TimeUnit.NANOSECONDS.toSeconds(cooldown) + 1)), true);
+                    throw new CooldownRejection(Math.max(1, TimeUnit.NANOSECONDS.toSeconds(cooldown) + 1));
                 synchronized (projectBudget) {
                     wait = Math.max(budget.total.waitNanos(units, now), projectBudget.waitNanos(units, now));
                     if (backfill)
@@ -71,7 +73,30 @@ public class GmailRateLimiter {
             }
             // Never sleep holding the budget monitor; foreground requests can use their
             // reservation.
-            sleep(Math.min(1000, Math.max(1, TimeUnit.NANOSECONDS.toMillis(wait) + 1)));
+            sleeper.accept(Math.min(1000, Math.max(1, TimeUnit.NANOSECONDS.toMillis(wait) + 1)));
+        }
+    }
+
+    /** Read-only sync may wait through a short cooldown without losing its page.
+     * Mutations keep using charge(), so their rejection/reconciliation stays unchanged. */
+    public void chargeForSync(Long accountId, int units, boolean backfill) {
+        long started = nanoTime.getAsLong();
+        long maxWait = TimeUnit.SECONDS.toNanos(60);
+        for (;;) {
+            try {
+                charge(accountId, units, backfill);
+                return;
+            } catch (CleanupProviderException rejection) {
+                AccountBudget budget = budgets.get(accountId);
+                if (budget == null || rejection.status() != 429 || !rejection.retryableRejection()) throw rejection;
+                long remaining;
+                synchronized (budget) {
+                    remaining = budget.cooldownActive ? budget.cooldownUntil - nanoTime.getAsLong() : 0;
+                }
+                if (remaining <= 0) continue;
+                if (nanoTime.getAsLong() - started + remaining > maxWait) throw rejection;
+                sleeper.accept(Math.min(1000, Math.max(1, TimeUnit.NANOSECONDS.toMillis(remaining) + 1)));
+            }
         }
     }
 
@@ -90,20 +115,23 @@ public class GmailRateLimiter {
                 } catch (DateTimeParseException ignored) {
                 }
             }
-        var budget = budgets.computeIfAbsent(accountId, id -> new AccountBudget(config));
+        var budget = budgets.computeIfAbsent(accountId, id -> new AccountBudget(config, nanoTime.getAsLong()));
         synchronized (budget) {
-            budget.cooldownUntil = Math.max(budget.cooldownUntil,
-                    System.nanoTime() + TimeUnit.SECONDS.toNanos(Math.min(seconds, 86400)));
+            long now = nanoTime.getAsLong();
+            long remaining = budget.cooldownActive ? Math.max(0, budget.cooldownUntil - now) : 0;
+            budget.cooldownUntil = now + Math.max(remaining, TimeUnit.SECONDS.toNanos(Math.min(seconds, 86400)));
+            budget.cooldownActive = true;
         }
     }
 
     private static final class AccountBudget {
         final Bucket total, background;
         long cooldownUntil;
+        boolean cooldownActive;
 
-        AccountBudget(GmailSyncConfigProperties config) {
-            total = new Bucket(config.getQuotaUnitsPerMinute());
-            background = new Bucket(config.getBackfillQuotaUnitsPerMinute());
+        AccountBudget(GmailSyncConfigProperties config, long now) {
+            total = new Bucket(config.getQuotaUnitsPerMinute(), now);
+            background = new Bucket(config.getBackfillQuotaUnitsPerMinute(), now);
         }
     }
 
@@ -111,12 +139,13 @@ public class GmailRateLimiter {
         final int perMinute;
         final double capacity;
         double tokens;
-        long at = System.nanoTime();
+        long at;
 
-        Bucket(int perMinute) {
+        Bucket(int perMinute, long now) {
             this.perMinute = perMinute;
             capacity = Math.max(500, perMinute / 12.0);
             tokens = capacity;
+            at = now;
         }
 
         long waitNanos(int cost, long now) {
@@ -133,8 +162,17 @@ public class GmailRateLimiter {
         }
     }
 
+    @org.springframework.beans.factory.annotation.Autowired
     public GmailRateLimiter(GmailSyncConfigProperties config) {
+        this(config, System::nanoTime, GmailRateLimiter::sleep);
+    }
+
+    public GmailRateLimiter(GmailSyncConfigProperties config, java.util.function.LongSupplier nanoTime,
+                            java.util.function.LongConsumer sleeper) {
         this.config = config;
+        this.nanoTime = nanoTime;
+        this.sleeper = sleeper;
+        this.projectBudget = new Bucket(960000, nanoTime.getAsLong());
     }
 
     @PostConstruct
@@ -163,12 +201,13 @@ public class GmailRateLimiter {
 
     /** Pace every metadata HTTP batch, sharing the budget across sync lanes. */
     public synchronized void paceMetadataBatch() {
-        long remaining = nextMetadataBatchNanos - System.nanoTime();
+        long remaining = metadataBatchScheduled ? nextMetadataBatchNanos - nanoTime.getAsLong() : 0;
         if (remaining > 0) {
-            sleep(TimeUnit.NANOSECONDS.toMillis(remaining) + 1);
+            sleeper.accept(TimeUnit.NANOSECONDS.toMillis(remaining) + 1);
         }
-        nextMetadataBatchNanos = System.nanoTime()
+        nextMetadataBatchNanos = nanoTime.getAsLong()
                 + TimeUnit.MILLISECONDS.toNanos(config.getMetadataBatchDelayMs());
+        metadataBatchScheduled = true;
     }
 
     /** Bounded exponential backoff with jitter; respect Google's Retry-After. */
@@ -192,7 +231,11 @@ public class GmailRateLimiter {
                 // Ignore an unrepresentable provider delay.
             }
         }
-        sleep(delay);
+        sleeper.accept(delay);
+    }
+
+    public static final class CooldownRejection extends CleanupProviderException {
+        CooldownRejection(long seconds) { super(429, Long.toString(seconds), true); }
     }
 
     private static void sleep(long milliseconds) {

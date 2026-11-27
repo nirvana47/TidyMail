@@ -4,6 +4,17 @@ public final class FailureDiagnostics {
     private FailureDiagnostics() {
     }
 
+    public static String gmailReason(com.google.api.client.googleapis.json.GoogleJsonError error) {
+        if (error == null || error.getErrors() == null) return "unspecified";
+        var allowed = java.util.Set.of("rateLimitExceeded", "userRateLimitExceeded", "dailyLimitExceeded",
+            "quotaExceeded", "accessNotConfigured", "forbidden", "insufficientPermissions", "authError",
+            "backendError", "internalError", "notFound", "invalidArgument");
+        return error.getErrors().stream().filter(java.util.Objects::nonNull)
+            .map(com.google.api.client.googleapis.json.GoogleJsonError.ErrorInfo::getReason)
+            .filter(java.util.Objects::nonNull).filter(allowed::contains).distinct().sorted().collect(java.util.stream.Collectors.collectingAndThen(
+                java.util.stream.Collectors.joining(","), value -> value.isEmpty() ? "unspecified" : value));
+    }
+
     /**
      * Logs locations and status codes, never provider payloads or exception text.
      */
@@ -15,6 +26,12 @@ public final class FailureDiagnostics {
             diagnostic.append(failure.getClass().getSimpleName());
             if (failure instanceof com.google.api.client.http.HttpResponseException response) {
                 diagnostic.append(" status=").append(response.getStatusCode());
+            }
+            if (failure instanceof com.google.api.client.googleapis.json.GoogleJsonResponseException google) {
+                diagnostic.append(" reason=").append(gmailReason(google.getDetails()));
+            }
+            if (failure instanceof com.tidymail.mail.gmail.GmailSyncReadException metadata) {
+                diagnostic.append(" status=").append(metadata.status()).append(" reason=").append(metadata.reason());
             }
             if (failure instanceof java.sql.SQLException sql) {
                 diagnostic.append(" sqlState=").append(sql.getSQLState());

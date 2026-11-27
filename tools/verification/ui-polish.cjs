@@ -33,6 +33,59 @@ const output = path.resolve(process.argv[3]); fs.mkdirSync(output, { recursive: 
       assert(metrics.messageRows >= 4, `${label}: only ${metrics.messageRows} messages fit`);
     };
     await noOverflow(); await density('1440x900'); await shot('mailbox-rendered');
+    // Inspect account utilities without signing out or deleting fixture data.
+    await page.locator('#settingsOpen').click();
+    const settings=page.getByRole('dialog',{name:'Account & settings'});
+    await expect(settings.locator('#settingsAccountEmail')).toHaveText('browser-fixture@example.test');
+    await expect(settings.locator('.dialog-footer').getByRole('button',{name:'Sign out',exact:true})).toBeVisible();
+    const footerSignOut=await settings.getByRole('button',{name:'Sign out',exact:true}).boundingBox();
+    const identity=await settings.locator('.settings-identity').boundingBox();
+    assert(footerSignOut.y>identity.y+identity.height,'sign out should follow the account section');
+    await shot('settings-rendered');
+    await settings.getByText('Delete local account data',{exact:true}).click();
+    const confirmation=settings.getByLabel('Type DELETE to confirm');
+    assert.equal(await confirmation.evaluate(input=>input.checkValidity()),false);
+    await confirmation.fill('DELETE');
+    assert.equal(await confirmation.evaluate(input=>input.checkValidity()),true);
+    await confirmation.clear();
+    await shot('settings-delete-rendered');
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#settingsOpen')).toBeFocused();
+    await page.locator('[data-settings-link]').click();
+    await expect(settings).toBeVisible();
+    // Long addresses must fit without pushing session actions out of the dialog.
+    await settings.locator('#settingsAccountEmail').evaluate(e=>e.textContent='a-very-long-linked-account-address-for-layout-review@example.test');
+    await page.setViewportSize({width:1280,height:800});
+    await page.evaluate(()=>document.body.style.zoom='2');
+    assert.equal(await settings.evaluate(e=>e.scrollWidth>e.clientWidth),false);
+    const settingsBounds=await settings.boundingBox();
+    assert(settingsBounds.y>=0 && settingsBounds.y+settingsBounds.height<=800,'settings must fit the zoomed viewport');
+    const closeBounds=await settings.getByRole('button',{name:'Close',exact:true}).boundingBox();
+    assert(closeBounds.y>=0 && closeBounds.y+closeBounds.height<=800,'footer close must stay on screen');
+    await shot('settings-zoom-200');
+    await settings.getByRole('button',{name:'Close',exact:true}).click();
+    await expect(page.locator('[data-settings-link]')).toBeFocused();
+    await page.evaluate(()=>document.body.style.zoom='1');
+    await page.setViewportSize({width:1440,height:900});
+    await page.locator('#settingsOpen').click();
+    const accountChoice=settings.getByRole('combobox',{name:'Mailbox account'});
+    if (await accountChoice.count()) {
+      const original=await accountChoice.inputValue();
+      const outlook=await accountChoice.locator('option').filter({hasText:'Outlook'}).getAttribute('value');
+      await accountChoice.selectOption(outlook);
+      await settings.getByRole('button',{name:'Switch',exact:true}).click();
+      await page.locator('#settingsOpen').click();
+      await expect(settings.getByRole('button',{name:'Refresh mail',exact:true})).toBeVisible();
+      await expect(settings.locator('.settings-account')).toContainText('Microsoft Outlook');
+      await shot('settings-outlook-rendered');
+      await settings.getByRole('combobox',{name:'Mailbox account'}).selectOption(original);
+      await settings.getByRole('button',{name:'Switch',exact:true}).click();
+      await expect(page.locator('#senders tr').first()).toBeVisible();
+    } else {
+      await settings.getByRole('button',{name:'Close',exact:true}).click();
+    }
+
+
     // All following traffic remains in the isolated synthetic fixture.
     await page.locator('#filtersOpen').click();
     await page.getByRole('checkbox', { name: 'Bill', exact: true }).check();
@@ -89,6 +142,6 @@ const output = path.resolve(process.argv[3]); fs.mkdirSync(output, { recursive: 
     await page.evaluate(() => { document.body.style.zoom = '2'; });
     await noOverflow(); await shot('mailbox-zoom-200');
     assert.deepEqual(errors, []);
-    console.log('PASS: rendered mailbox, filter chips, selection, exact review, contextual rule save/preview, standalone Rules, cancel/confirm removal, editor, sync, sign-in, 1280px layout and 200% zoom. Synthetic fixture only.');
+    console.log('PASS: rendered mailbox, account settings and typed deletion guard, optional linked-account switching, focus return and zoomed footer, filter chips, selection, exact review, contextual rule save/preview, standalone Rules, cancel/confirm removal, editor, sync, sign-in, 1280px layout and 200% zoom. Synthetic fixture only.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

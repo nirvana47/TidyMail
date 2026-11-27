@@ -51,6 +51,9 @@ public class SecurityConfig {
     @Value("${app.mvp.enabled:true}")
     private boolean mvpEnabled;
 
+    @Value("${app.desktop.enabled:false}")
+    private boolean desktopEnabled;
+
 
     /**
      * Builds an OAuth2AuthorizedClientProvider that enables refresh-token renewal with
@@ -184,7 +187,7 @@ public class SecurityConfig {
                 new DefaultOAuth2AuthorizationRequestResolver(
                     clientRepo, "/oauth2/authorization");
             defaultResolver.setAuthorizationRequestCustomizer(
-                SecurityConfig::customizeAuthorizationRequest);
+                builder -> customizeAuthorizationRequest(builder, desktopEnabled));
             final OAuth2AuthorizationRequestResolver customResolver = new OAuth2AuthorizationRequestResolver() {
                 private OAuth2AuthorizationRequest augment(jakarta.servlet.http.HttpServletRequest request, OAuth2AuthorizationRequest resolved) {
                     if (resolved == null || !"true".equals(request.getParameter("rules"))) return resolved;
@@ -231,15 +234,23 @@ public class SecurityConfig {
      * made available after the Gmail/Outlook login.
      */
     static void customizeAuthorizationRequest(OAuth2AuthorizationRequest.Builder requestBuilder) {
+        customizeAuthorizationRequest(requestBuilder, false);
+    }
+
+    static void customizeAuthorizationRequest(OAuth2AuthorizationRequest.Builder requestBuilder, boolean desktop) {
         OAuth2AuthorizationRequest built = requestBuilder.build();
         boolean isGoogle = built.getClientId() != null
             && built.getClientId().endsWith(".apps.googleusercontent.com");
         if (isGoogle) {
+            // Desktop clients cannot keep a shared secret confidential. Bind every
+            // authorization code to this browser session, including rules consent.
+            OAuth2AuthorizationRequestCustomizers.withPkce().accept(requestBuilder);
             // Google uses access_type=offline to request a refresh token.
             // prompt=consent ensures an existing grant is eligible to issue one again.
             requestBuilder.additionalParameters(params -> {
                 params.put("access_type", "offline");
-                params.put("include_granted_scopes", "true");
+                // Google installed clients do not support incremental authorization.
+                if (!desktop) params.put("include_granted_scopes", "true");
                 params.put("prompt", "consent");
             });
         } else if ("microsoft".equals(built.getAttribute(OAuth2ParameterNames.REGISTRATION_ID))) {
@@ -262,6 +273,9 @@ public class SecurityConfig {
                     .registrationId("google")
                     .clientId(props.getGoogleClientId())
                     .clientSecret(props.getGoogleClientSecret())
+                    .clientAuthenticationMethod(desktopEnabled
+                        ? ClientAuthenticationMethod.CLIENT_SECRET_POST
+                        : ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
                     // NOTE: Google does NOT accept the literal string "offline_access" as a
                     // scope (that's Microsoft/Azure AD terminology).  Requesting a refresh token
                     // from Google is driven SOLELY by the access_type=offline QUERY PARAMETER on

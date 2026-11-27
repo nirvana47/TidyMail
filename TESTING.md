@@ -119,7 +119,12 @@ exact Trash preview IDs, unread scope, and delayed-response handling. It does
 not connect to the live mailbox or perform cleanup.
 
 The desktop polish journey also checks filter chips, settings navigation,
-pane dismissal and unsaved-rule protection. Set `TIDYMAIL_UI_SCREENSHOTS` to an
+pane dismissal and unsaved-rule protection. Settings checks cover the separate
+sign-out footer, typed deletion validation without submitting deletion, long
+addresses, keyboard dismissal/focus return and footer visibility at 200% desktop
+zoom. Add `-Ddashboard.browser.settings=true` when starting the fixture to include
+a linked synthetic Outlook mailbox and check switching both ways plus the
+Outlook refresh-control layout. Set `TIDYMAIL_UI_SCREENSHOTS` to an
 existing output directory to capture its fixture mailbox and cleanup dialog.
 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` may point to an installed Chromium binary.
 

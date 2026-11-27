@@ -9,6 +9,9 @@ Use [local setup](DEPLOY.md), [product behavior](PROJECT.md),
 [workflows](WORKFLOWS.md), [test accounting](WORKFLOW-TEST-REVIEW.md) and
 [test commands](TESTING.md).
 
+For the private Apple Silicon installer (macOS 15+), see
+[Mac distribution](MAC-DISTRIBUTION.md). Recipients do not need developer tools.
+
 Manual saved sender groups, Jev/OpenRouter classification and automatic cleanup
 recommendations are removed. Local header/provider labels and calendar response
 checks remain. No mailbox action is authorized by a label alone.

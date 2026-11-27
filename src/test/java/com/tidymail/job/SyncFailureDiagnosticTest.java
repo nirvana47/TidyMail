@@ -8,6 +8,21 @@ import org.junit.jupiter.api.Test;
 
 class SyncFailureDiagnosticTest {
     @Test
+    void reportsAllowlistedGoogleReasonWithoutLeakingProviderText() {
+        var details = new com.google.api.client.googleapis.json.GoogleJsonError();
+        details.setCode(403);
+        details.setMessage("synthetic private message");
+        var known = new com.google.api.client.googleapis.json.GoogleJsonError.ErrorInfo();
+        known.setReason("userRateLimitExceeded");
+        var unknown = new com.google.api.client.googleapis.json.GoogleJsonError.ErrorInfo();
+        unknown.setReason("synthetic-private-token");
+        details.setErrors(java.util.List.of(known, unknown));
+        var failure = new com.google.api.client.googleapis.json.GoogleJsonResponseException(
+            new HttpResponseException.Builder(403, "synthetic private message", new HttpHeaders()), details);
+        assertThat(com.tidymail.util.FailureDiagnostics.failureDiagnostic(failure))
+            .contains("status=403", "reason=userRateLimitExceeded").doesNotContain("private", "token");
+    }
+    @Test
     void reportsStatusAndLocationsWithoutProviderPayloads() {
         var provider = new HttpResponseException.Builder(403, "private subject", new HttpHeaders())
             .setContent("secret-token private@example.com").build();

@@ -64,6 +64,10 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
     @Test
     void serveSyntheticDashboardForBrowserAcceptance() throws Exception {
         long account = userAccounts.createAccount("browser-fixture@example.test");
+        if (Boolean.getBoolean("dashboard.browser.settings")) {
+            long linked=userAccounts.createAccount("linked-outlook@example.test","microsoft");
+            jdbc.update("UPDATE user_accounts SET owner_key=(SELECT owner_key FROM user_accounts WHERE id=?) WHERE id=?",account,linked);
+        }
         jdbc.update("UPDATE user_accounts SET scopes=ARRAY['https://www.googleapis.com/auth/gmail.settings.basic'] WHERE id=?",account);
         var nativeRules=new java.util.concurrent.CopyOnWriteArrayList<com.tidymail.rules.RuleProvider.NativeRule>();
         var ruleIds=new java.util.concurrent.atomic.AtomicInteger();

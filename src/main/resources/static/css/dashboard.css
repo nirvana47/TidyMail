@@ -582,16 +582,32 @@ th[aria-sort=descending] .column-sort {
     padding:12px;
     font-size:13px
 }
-.identity .row {
-    justify-content:flex-start;
-    margin:12px 0
-}
-.identity #settingsAccountEmail {
-    overflow-wrap:anywhere
-}
-.identity form {
-    margin:0
-}
+/* Account identity, mailbox utilities and session actions have separate places. */
+#settings { max-width:560px; max-height:calc(100% - 48px); }
+#settings form { margin:0; }
+#settings button,#settings select,#settings input { min-height:38px; }
+#settings p { margin:0; }
+#settings .settings-identity { display:flex; align-items:center; gap:12px; padding:14px; background:var(--tm-surface-subtle); border:1px solid var(--line); border-radius:8px; }
+#settings .settings-account { min-width:0; }
+#settingsAccountEmail { display:block; font-size:var(--font-body); font-weight:600; overflow-wrap:anywhere; }
+#settings .settings-label,#settings .settings-description { font-size:var(--font-label); color:var(--muted); font-weight:400; line-height:1.5; }
+#settings .settings-label { margin-bottom:2px; }
+#settings .settings-description { margin-top:3px; }
+#settings .settings-connections { margin-top:6px; }
+#settings .settings-option { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px 16px; padding:14px 0; border-bottom:1px solid var(--line); }
+#settings .settings-option>div { flex:1 1 180px; }
+#settings h3 { margin:0; font-size:var(--font-body); font-weight:600; }
+#settings .settings-switch { display:flex; flex:1 1 100%; align-items:center; gap:8px; }
+#settings .settings-switch select { min-width:0; flex:1; }
+#settings .settings-switch button { flex-shrink:0; }
+#settings .settings-delete { margin-top:16px; border:1px solid var(--line); border-radius:8px; padding:0 14px; }
+#settings .settings-delete>summary { color:var(--danger); font-size:var(--font-label); font-weight:500; padding:12px 0; }
+#settings .settings-delete-content { display:grid; gap:10px; padding-bottom:14px; font-size:var(--font-label); color:var(--muted); }
+#settings .settings-delete-content form { display:grid; gap:8px; justify-items:start; }
+#settings .settings-delete-content label { margin:0; }
+#settings .settings-delete-content input { width:100%; max-width:240px; }
+#settings .settings-delete-content button { margin-top:4px; }
+#settings .dialog-footer { margin-top:16px; }
 .muted-link {
     color:var(--muted);
     font-size:12px

@@ -116,7 +116,15 @@ tidymail-ux-rehaul-draft/
 
 # Private account-specific relay recipients
 /config/gmail-relays/application.properties
+/config/client_secret_*.json
+
+# Private desktop distribution (contains Google desktop client configuration)
+/desktop-dist/
 
 # Local runtime observations and temporary recorders
 .local-observations/
 .local-runtime/
+MAC-DISTRIBUTION.md
+tools/desktop/INSTALL.txt
+tools/desktop/Launcher.swift
+tools/desktop/__pycache__/build.cpython-315.pyc

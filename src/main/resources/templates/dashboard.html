@@ -171,36 +171,54 @@
     </dialog>
     <dialog id="settings" aria-labelledby="settingsTitle">
         <div class="dialog-heading row spread"><h2 id="settingsTitle">Account &amp; settings</h2><button data-close="settings" aria-label="Close settings">×</button></div>
-            <div class="identity">
-                <div class="row"><span class="avatar" aria-hidden="true">@</span><span id="settingsAccountEmail">Loading
-                        account…</span>
-                    <form th:action="@{/logout}" method="post"><button>Sign out</button></form>
-                </div>
-                <div class="row">
-                    <form th:if="${#lists.size(mailboxAccounts)>1}" th:action="@{/dashboard/accounts/switch}" method="post">
-                        <select name="account" aria-label="Mailbox account">
-                            <option th:each="mailbox : ${mailboxAccounts}" th:value="${mailbox.id}"
+        <section class="settings-identity" aria-label="Signed-in account">
+            <span class="account-avatar" aria-hidden="true">@</span>
+            <div class="settings-account">
+                <p class="settings-label">Signed in as</p>
+                <strong id="settingsAccountEmail" th:text="${mailboxEmail}">Loading account…</strong>
+                <p class="settings-description" th:text="${outlook ? 'Microsoft Outlook' : 'Gmail'}">Gmail</p>
+            </div>
+        </section>
+        <section class="settings-connections" aria-label="Mailbox connections"
+                 th:if="${#lists.size(mailboxAccounts)>1 or outlookAvailable == true or outlook == true}">
+            <div class="settings-option" th:if="${#lists.size(mailboxAccounts)>1}">
+                <div><h3>Active mailbox</h3><p class="settings-description">Choose a linked mailbox to work with.</p></div>
+                <form th:action="@{/dashboard/accounts/switch}" method="post" class="settings-switch">
+                    <select name="account" aria-label="Mailbox account">
+                        <option th:each="mailbox : ${mailboxAccounts}" th:value="${mailbox.id}"
                                 th:selected="${mailbox.id == activeAccount}"
                                 th:text="${mailbox.email + (mailbox.provider == 'microsoft' ? ' · Outlook' : ' · Gmail')}"></option>
-                        </select>
-                        <button>Switch</button>
-                    </form>
-                    <form th:if="${outlookAvailable}" th:action="@{/dashboard/accounts/connect/microsoft}" method="post">
-                        <button>Connect Outlook</button>
-                    </form>
-                    <form th:if="${outlook}" th:action="@{/api/metadata-sync}" method="post">
-                        <input name="returnTo" type="hidden" value="/dashboard"><button>Refresh mail</button>
-                    </form>
-                </div>
-            </div>        <hr>
-        <details>
+                    </select>
+                    <button>Switch</button>
+                </form>
+            </div>
+            <div class="settings-option" th:if="${outlookAvailable}">
+                <div><h3>Connect Outlook</h3><p class="settings-description">Link another Microsoft mailbox.</p></div>
+                <form th:action="@{/dashboard/accounts/connect/microsoft}" method="post"><button>Connect Outlook</button></form>
+            </div>
+            <div class="settings-option" th:if="${outlook}">
+                <div><h3>Mailbox sync</h3><p class="settings-description">Check Outlook for the latest mail.</p></div>
+                <form th:action="@{/api/metadata-sync}" method="post">
+                    <input name="returnTo" type="hidden" value="/dashboard"><button>Refresh mail</button>
+                </form>
+            </div>
+        </section>
+        <details class="settings-delete">
             <summary>Delete local account data</summary>
-            <p>This removes your locally indexed data and connection credentials for linked accounts. It does not delete
-                messages in Gmail or Outlook.</p>
-            <p>Native Gmail and Outlook rules continue after deleting local TidyMail data. Pause or remove them in Rules first to stop automation.</p><form th:action="@{/logout/delete-data}" method="post"><label>Type DELETE <input name="confirmation"
-                        pattern="DELETE" required autocomplete="off"></label><button>Delete local data and sign
-                    out</button></form>
+            <div class="settings-delete-content">
+                <p>This removes your locally indexed data and connection credentials for linked accounts. It does not delete messages in Gmail or Outlook.</p>
+                <p>Native Gmail and Outlook rules continue after deleting local TidyMail data. Pause or remove them in Rules first to stop automation.</p>
+                <form th:action="@{/logout/delete-data}" method="post">
+                    <label for="settingsDeleteConfirmation">Type DELETE to confirm</label>
+                    <input id="settingsDeleteConfirmation" name="confirmation" pattern="DELETE" required autocomplete="off" placeholder="DELETE">
+                    <button class="danger" type="submit">Delete local data and sign out</button>
+                </form>
+            </div>
         </details>
+        <footer class="dialog-footer row spread">
+            <button type="button" data-close="settings">Close</button>
+            <form th:action="@{/logout}" method="post"><button class="primary" type="submit">Sign out</button></form>
+        </footer>
     </dialog>
     <dialog id="inboxRule" class="drawer" aria-labelledby="inboxRuleTitle">
         <header class="row spread"><h2 id="inboxRuleTitle">Create rule</h2><button type="button" data-close="inboxRule">Close</button></header>

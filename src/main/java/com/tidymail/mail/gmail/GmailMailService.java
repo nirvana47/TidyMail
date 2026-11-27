@@ -583,21 +583,24 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
                         int code=error==null?0:error.getCode();
                         if(ignoreNotFound&&code==404)return;
                         boolean retryable=retryableReadFailure(code,error);
-                        failures.add(new MetadataFailure(code,retryable,headers));
+                        failures.add(new MetadataFailure(code,retryable,headers,com.tidymail.util.FailureDiagnostics.gmailReason(error)));
                         if(retryable)retryIds.add(messageId);
                         if(code==429||(code==403&&retryable))rateLimiter.recordThrottle(accountId,headers);
                     }
                 });
             }
-            rateLimiter.charge(accountId,pending.ids().size()*20,background);
+            if (retryReads) rateLimiter.chargeForSync(accountId,pending.ids().size()*20,background);
+            else rateLimiter.charge(accountId,pending.ids().size()*20,background);
             rateLimiter.paceMetadataBatch();observedSince[0]=Instant.now();
             try{batch.execute();}
             catch(GoogleJsonResponseException error) {
                 if(error.getStatusCode()==429||(error.getStatusCode()==403&&retryableReadFailure(403,error.getDetails())))rateLimiter.recordThrottle(accountId,error.getHeaders());
                 if(!retryReads||!retryableReadFailure(error.getStatusCode(),error.getDetails())||pending.retry()>=MAX_SYNC_RETRIES)throw error;
-                failures.add(new MetadataFailure(error.getStatusCode(),true,error.getHeaders()));
+                failures.add(new MetadataFailure(error.getStatusCode(),true,error.getHeaders(),com.tidymail.util.FailureDiagnostics.gmailReason(error.getDetails())));
                 pending.ids().stream().filter(id->!fetchedById.containsKey(id)).forEach(retryIds::add);
             }
+            failures.stream().map(f -> "status=" + f.status() + " reason=" + f.reason() + " retryable=" + f.retryable())
+                .distinct().limit(8).forEach(diagnostic -> logger.warn("Gmail metadata read rejected {} attempt={}", diagnostic, pending.retry() + 1));
             if(!retryReads&&!failures.isEmpty()) {
                 var failure=failures.stream().filter(f->f.status()==401||f.status()==403).findFirst().orElse(failures.getFirst());
                 var guidance=failures.stream().map(MetadataFailure::headers).filter(h->h!=null&&h.getRetryAfter()!=null)
@@ -605,9 +608,9 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
                 throw new com.tidymail.mail.CleanupProviderException(failure.status(),guidance==null?null:guidance.getRetryAfter());
             }
             var fatal=failures.stream().filter(f->!f.retryable()).findFirst().orElse(null);
-            if(fatal!=null)throw new IOException("Gmail metadata request failed with status "+fatal.status());
+            if(fatal!=null)throw new GmailSyncReadException(fatal.status(),fatal.reason());
             if(retryIds.isEmpty())continue;
-            if(pending.retry()>=MAX_SYNC_RETRIES)throw new IOException("Gmail metadata retries exhausted after temporary provider errors");
+            if(pending.retry()>=MAX_SYNC_RETRIES)throw new GmailSyncReadException(failures.getFirst().status(),failures.getFirst().reason());
             rateLimiter.pauseBeforeRetry(pending.retry(),failures.stream().map(MetadataFailure::headers)
                 .filter(h->h!=null&&h.getRetryAfter()!=null).max(java.util.Comparator.comparingLong(GmailMailService::retryAfterSeconds)).orElse(null));
             var remaining=retryIds.stream().distinct().toList();
@@ -629,7 +632,7 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
         return error.getStatusCode()==403&&content!=null&&(content.contains("rateLimitExceeded")||content.contains("userRateLimitExceeded")||content.contains("RESOURCE_EXHAUSTED"));
     }
 
-    private record MetadataFailure(int status, boolean retryable, HttpHeaders headers) {}
+    private record MetadataFailure(int status, boolean retryable, HttpHeaders headers, String reason) {}
 
     private static long retryAfterSeconds(HttpHeaders headers) {
         try {
@@ -662,9 +665,11 @@ public class GmailMailService implements MailProvider, MailboxSyncProvider {
     private <T> T readWithRetry(Long accountId,int cost,boolean background,SyncRead<T> read) throws IOException {
         for (int attempt = 0; ; attempt++) {
             try {
-                rateLimiter.charge(accountId,cost,background);
+                rateLimiter.chargeForSync(accountId,cost,background);
                 return read.execute();
             } catch (GoogleJsonResponseException exception) {
+                logger.warn("Gmail sync read rejected status={} reason={} attempt={}", exception.getStatusCode(),
+                    com.tidymail.util.FailureDiagnostics.gmailReason(exception.getDetails()), attempt + 1);
                 if (attempt >= MAX_SYNC_RETRIES
                         || !retryableReadFailure(exception.getStatusCode(), exception.getDetails())) {
                     throw exception;

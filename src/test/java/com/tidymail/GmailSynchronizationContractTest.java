@@ -61,6 +61,20 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class GmailSynchronizationContractTest {
+    @Test
+    void metadataThrottleRetriesOnlyRejectedMessagesAndKeepsCompletedReads() throws Exception {
+        var clock = new java.util.concurrent.atomic.AtomicLong(0);
+        var limiter = new GmailRateLimiter(configuredProperties(), clock::get,
+            millis -> clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(millis)));
+        limiter.init();
+        var fixture = fixture(limiter);
+        fixture.account.setId(1L);
+        fixture.throttleOnce.add("retry");
+        var messages = fixture.service.hydrateSyncPage(fixture.account, List.of("good", "retry"), false);
+        assertThat(messages).hasSize(2);
+        assertThat(fixture.metadataRequests).containsEntry("good", 1).containsEntry("retry", 2);
+        assertThat(clock.get()).isBetween(30_000_000_000L, 31_000_000_000L);
+    }
 
     @Test
     @DisplayName("providerProfilesBootstrapsAndBackfillsMetadataOnly")
@@ -366,9 +380,12 @@ class GmailSynchronizationContractTest {
     }
 
     @SuppressWarnings("unchecked")
-    private static Fixture fixture() throws IOException {
+    private static Fixture fixture() throws IOException { return fixture(null); }
+
+    @SuppressWarnings("unchecked")
+    private static Fixture fixture(GmailRateLimiter realLimiter) throws IOException {
         GmailClientFactory clientFactory = mock(GmailClientFactory.class);
-        GmailRateLimiter rateLimiter = mock(GmailRateLimiter.class);
+        GmailRateLimiter rateLimiter = realLimiter == null ? mock(GmailRateLimiter.class) : realLimiter;
         Gmail gmail = mock(Gmail.class);
         Gmail.Users users = mock(Gmail.Users.class);
         Gmail.Users.Messages messages = mock(Gmail.Users.Messages.class);
@@ -393,10 +410,12 @@ class GmailSynchronizationContractTest {
         when(historyRequest.setMaxResults(anyLong())).thenReturn(historyRequest);
         when(historyRequest.setPageToken(anyString())).thenReturn(historyRequest);
         when(clientFactory.buildFor(any(UserAccount.class))).thenReturn(gmail);
-        when(rateLimiter.supplyWithFreshnessPermit(any())).thenAnswer(invocation ->
-            ((Supplier<Object>) invocation.getArgument(0)).get());
-        when(rateLimiter.supplyWithBackfillRescanPermit(any())).thenAnswer(invocation ->
-            ((Supplier<Object>) invocation.getArgument(0)).get());
+        if (realLimiter == null) {
+            when(rateLimiter.supplyWithFreshnessPermit(any())).thenAnswer(invocation ->
+                ((Supplier<Object>) invocation.getArgument(0)).get());
+            when(rateLimiter.supplyWithBackfillRescanPermit(any())).thenAnswer(invocation ->
+                ((Supplier<Object>) invocation.getArgument(0)).get());
+        }
 
         Fixture fixture = new Fixture();
         fixture.account = new UserAccount();
@@ -407,9 +426,16 @@ class GmailSynchronizationContractTest {
         fixture.listRequest = listRequest;
         fixture.historyRequest = historyRequest;
         fixture.gmail = gmail;
+        doAnswer(invocation -> {
+            var callbacks = new ArrayList<>(fixture.pendingCallbacks);
+            fixture.pendingCallbacks.clear();
+            for (var callback : callbacks) callback.run();
+            return null;
+        }).when(batch).execute();
 
         when(messages.get(eq("me"), anyString())).thenAnswer(invocation -> {
             String id = invocation.getArgument(1);
+            fixture.metadataRequests.merge(id, 1, Integer::sum);
             Gmail.Users.Messages.Get get = mock(Gmail.Users.Messages.Get.class);
             when(get.setFormat(anyString())).thenAnswer(setter -> {
                 fixture.metadataFormats.add(setter.getArgument(0));
@@ -421,13 +447,22 @@ class GmailSynchronizationContractTest {
             });
             doAnswer(queue -> {
                 JsonBatchCallback<Message> callback = queue.getArgument(1);
-                if (fixture.notFoundMetadataIds.contains(id)) {
+                fixture.pendingCallbacks.add(() -> {
+                if (fixture.throttleOnce.remove(id)) {
+                    var error = new GoogleJsonError();
+                    error.setCode(429);
+                    var reason = new GoogleJsonError.ErrorInfo();
+                    reason.setReason("userRateLimitExceeded");
+                    error.setErrors(List.of(reason));
+                    callback.onFailure(error, new HttpHeaders());
+                } else if (fixture.notFoundMetadataIds.contains(id)) {
                     GoogleJsonError error = new GoogleJsonError();
                     error.setCode(404);
                     callback.onFailure(error, new HttpHeaders());
                 } else {
                     callback.onSuccess(metadataMessage(id), new HttpHeaders());
                 }
+                });
                 return null;
             }).when(get).queue(eq(batch), any(JsonBatchCallback.class));
             return get;
@@ -450,7 +485,11 @@ class GmailSynchronizationContractTest {
                 new MessagePartHeader().setName("Subject").setValue("fixture"))));
     }
 
+    @FunctionalInterface private interface BatchCallback { void run() throws IOException; }
     private static final class Fixture {
+        final List<BatchCallback> pendingCallbacks = new ArrayList<>();
+        final Set<String> throttleOnce = new java.util.HashSet<>();
+        final java.util.Map<String,Integer> metadataRequests = new java.util.HashMap<>();
         GmailMailService service;
         GmailSyncConfigProperties config=configuredProperties();
         UserAccount account;
