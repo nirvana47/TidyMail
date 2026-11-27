@@ -113,9 +113,9 @@ public class DashboardJobService {
                 VALUES(:job,:account,:preview,:scope,:action,:total,jsonb_set(CAST(:snapshot AS jsonb),'{executionMode}',to_jsonb(CAST(:mode AS text))))
                 """,p.addValue("mode","microsoft".equals(row.get("provider"))?"OUTLOOK":configuredMode()));
             jdbc.update("""
-                INSERT INTO cleanup_job_targets(job_id,account_id,ordinal,provider_message_id,message_id,target_fingerprint,state,reason)
+                INSERT INTO cleanup_job_targets(job_id,account_id,ordinal,provider_message_id,message_id,target_fingerprint,state,reason,size_estimate)
                 SELECT :job,account_id,ordinal,provider_message_id,message_id,encode(digest(convert_to(provider_message_id,'UTF8'),'sha256'),'hex'),
-                CASE WHEN effective THEN 'QUEUED' ELSE 'SKIPPED' END,reason
+                CASE WHEN effective THEN 'QUEUED' ELSE 'SKIPPED' END,reason,size_estimate
                 FROM dashboard_preview_targets WHERE account_id=:account AND preview_id=:preview
                 """,p);
             jdbc.update("""

@@ -80,7 +80,7 @@ const output = path.resolve(process.argv[3]); fs.mkdirSync(output, { recursive: 
     await expect(page.locator('[name="name"]')).toBeVisible();
     await noOverflow(); await shot('rule-editor-rendered');
     await page.goto(target.origin + '/activity/sync');
-    await expect(page.locator('h1')).toHaveText('Sync / Activity');
+    await expect(page.locator('h1')).toHaveText('Sync details');
     await noOverflow(); await shot('sync-rendered');
     await page.goto(target.origin + '/login'); await shot('signin-rendered');
     await page.goto(target.href); await expect(page.locator('#senders tr').first()).toBeVisible();

@@ -27,7 +27,7 @@ class MailboxActivityJourneyTest extends PostgresJourneyTest {
         String page = mockMvc.perform(get("/activity").with(authenticatedAs(email)))
             .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         assertThat(page).contains("<h1>Activity</h1>", "Total mail cleared", "Top cleared senders",
-            "Cleanup history", "No cleanup activity yet", "Page 1 of 1", "Storage saved: unavailable",
+            "Cleanup history", "No cleanup activity yet", "Page 1 of 1", "Estimated space freed after deletion", "≈ 0 B", "Back to Mailbox",
             "href=\"/activity\" data-activity-link aria-current=\"page\"")
             .doesNotContain("<dialog", "id=\"senderTable\"");
         mockMvc.perform(get("/activity").param("page", "-1").with(authenticatedAs(email)))
@@ -57,9 +57,8 @@ class MailboxActivityJourneyTest extends PostgresJourneyTest {
 
         assertThat(page)
             .contains(
-                "<title>TidyMail - Sync / Activity</title>",
-                "Mailbox status",
-                "<h1>Sync / Activity</h1>",
+                "<title>TidyMail - Sync details</title>",
+                "<h1>Sync details</h1>", "href=\"/activity\">← Back to Activity",
                 "aria-current=\"page\"",
                 "id=\"activity-status\"",
                 "Indexed messages",

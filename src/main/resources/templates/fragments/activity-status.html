@@ -17,7 +17,7 @@
 
     <header class="activity-status-header">
         <div>
-            <p class="state-label" th:text="${status.phase}">Mailbox status</p>
+            <p class="state-label" th:unless="${status.phase == 'Mailbox status'}" th:text="${status.phase}">Mailbox status</p>
             <h2 th:text="${status.headline}">Loading sync activity</h2>
         </div>
         <p class="activity-guidance" th:unless="${status.alert}"

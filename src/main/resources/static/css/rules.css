@@ -12,7 +12,7 @@
     padding:16px
 }
 .rules-page>.surface>h2 {
-    font-size:18px
+    font-size:var(--font-section-title)
 }
 .rules-page p {
     margin:6px 0
@@ -25,7 +25,7 @@
 }
 .rules-page .app-header p {
     margin:0;
-    font-size:12px
+    font-size:var(--font-label)
 }
 .rule-form {
     display:grid;
@@ -42,7 +42,7 @@
     display:grid;
     gap:7px;
     font-weight:550;
-    font-size:13px
+    font-size:var(--font-body)
 }
 .rule-form input,.rule-form textarea,.rule-form select {
     width:100%;
@@ -70,7 +70,7 @@
     gap:10px
 }
 .rule-alert {
-    font-size:13px
+    font-size:var(--font-body)
 }
 .native-rule {
     border-top:1px solid var(--line);
@@ -81,7 +81,7 @@
     overflow-wrap:anywhere;
     max-height:250px;
     overflow:auto;
-    font-size:12px;
+    font-size:var(--font-label);
     background:#f6f8fc;
     border-radius:7px;
     padding:12px
@@ -93,7 +93,7 @@
     align-items:center
 }
 .rule-actions button,.rule-actions a {
-    font-size:12px
+    font-size:var(--font-label)
 }
 .rules-page td {
     vertical-align:top;
@@ -103,7 +103,7 @@
 .rules-page td p {
     margin:6px 0;
     max-width:480px;
-    font-size:12px
+    font-size:var(--font-label)
 }
 .rules-page table {
     width:100%
@@ -132,7 +132,7 @@
     background:#f7f9fd
 }
 .rule-example-group table {
-    font-size:12px
+    font-size:var(--font-label)
 }
 .rule-example-group td {
     max-width:280px
@@ -140,16 +140,16 @@
 .preview-counts {
     padding:12px 0;
     color:var(--muted);
-    font-size:13px
+    font-size:var(--font-body)
 }
 .preview-counts strong {
     color:var(--blue)
 }
 .matching-help {
-    font-size:12px
+    font-size:var(--font-label)
 }
 .matching-help p,.preview-coverage p {
-    font-size:12px
+    font-size:var(--font-label)
 }
 .preview-coverage {
     margin:12px 0
@@ -192,18 +192,18 @@ dialog#inboxRule {
 }
 #inboxRuleContent .surface p {
     margin:6px 0;
-    font-size:12px
+    font-size:var(--font-label)
 }
 #inboxRuleContent [aria-busy=true] {
     opacity:.7
 }
 #inboxRuleContext {
-    font-size:12px;
+    font-size:var(--font-label);
     color:var(--muted);
     overflow-wrap:anywhere
 }
 #inboxRule>details {
-    font-size:12px
+    font-size:var(--font-label)
 }
 #inboxRuleContent [data-rule-preview] {
     border-top:1px solid var(--line);
@@ -270,7 +270,7 @@ dialog#inboxRule {
 .rules-inventory { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(0,1fr); gap:12px; align-items:start; margin:12px 0; }
 .rules-inventory-single { grid-template-columns:minmax(0,1fr); }
 .rules-inventory>.surface { padding:16px; min-width:0; max-height:calc(100vh - 180px); overflow:auto; }
-.rules-inventory h2 { margin:0 0 12px; font-size:18px; }
+.rules-inventory h2 { margin:0 0 12px; font-size:var(--font-section-title); }
 .rules-inventory .native-rule:first-of-type { border-top:0; }
 .rules-inventory td { overflow-wrap:anywhere; }
 

@@ -2,7 +2,11 @@
 (() => {
   const bars = [...document.querySelectorAll('[data-value]')];
   const max = Math.max(1, ...bars.map(bar => Number(bar.dataset.value)));
-  bars.forEach(bar => { bar.style.height = (Number(bar.dataset.value) / max * 100) + '%'; });
+  bars.forEach(bar => {
+    const value = Number(bar.dataset.value);
+    bar.style.height = value > 0 ? 'max(2px, ' + (value / max * 100) + '%)' : '0px';
+    bar.hidden = value === 0;
+  });
   document.querySelectorAll('[data-cancel-job]').forEach(button => button.addEventListener('click', async () => {
     button.disabled = true;
     try {

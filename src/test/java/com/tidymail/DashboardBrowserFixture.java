@@ -29,6 +29,31 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
     @org.springframework.beans.factory.annotation.Autowired
     com.tidymail.service.CorrespondentHistory correspondence;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    com.tidymail.service.DashboardPreviewService previews;
+    @org.springframework.beans.factory.annotation.Autowired
+    com.tidymail.service.DashboardJobService jobs;
+
+    private void seedActivityReview(long account) {
+        jdbc.update("""
+            INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,dashboard_from_address,
+                dashboard_unit_kind,dashboard_unit_key,received_at,labels,label_evidence_known,unread,size_estimate)
+            SELECT ?,'google','activity-review-'||i,'newsletter@example.test','newsletter@example.test',
+                'ADDRESS','newsletter@example.test',now(),ARRAY['INBOX','UNREAD'],true,true,200000
+            FROM generate_series(1,1234) i
+            """,account);
+        var ids=jdbc.queryForList("SELECT dashboard_message_id FROM message_metadata WHERE account_id=? AND provider_message_id LIKE 'activity-review-%'",java.util.UUID.class,account);
+        var preview=previews.create(account,new com.tidymail.service.DashboardPreviewService.Request(
+            new com.tidymail.dto.DashboardFilter("inbox","","","","UTC",0),ids,"TRASH",0));
+        var job=jobs.confirm(account,preview.id());
+        jdbc.update("UPDATE cleanup_job_targets SET state='CHANGED' WHERE job_id=?",job.id());
+        jdbc.update("UPDATE cleanup_jobs SET status='COMPLETED',settled_at=now() WHERE public_id=?",job.id());
+        jdbc.update("DELETE FROM cleanup_active_targets WHERE job_id=?",job.id());
+        jdbc.update("UPDATE message_metadata SET labels=ARRAY['TRASH'] WHERE account_id=? AND provider_message_id LIKE 'activity-review-%'",account);
+        jdbc.update("UPDATE mailbox_sync_state SET mailbox_checked_at=now() WHERE account_id=?",account);
+        jdbc.update("INSERT INTO mailbox_sync_events(account_id,kind,occurred_at) VALUES(?,'CHECK_COMPLETE',now())",account);
+    }
+
     private static java.util.Set<String> withUnread(java.util.Set<String> labels, boolean unread) {
         var result = new java.util.HashSet<>(labels);
         if (unread)
@@ -127,6 +152,7 @@ class DashboardBrowserFixture extends PostgresJourneyTest {
             java.util.List<String> ids=call.getArgument(1);String label=call.getArgument(2);boolean skip=call.getArgument(3);
             for(String id:ids)providerLabels.computeIfPresent(id,(key,current)->{var next=new java.util.HashSet<>(current);next.add(label);if(skip)next.remove("INBOX");return next;});return null;
         }).when(gmailProvider).fileOnce(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.anyList(),org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.anyBoolean());
+        if (Boolean.getBoolean("dashboard.browser.activity")) seedActivityReview(account);
         var cleanup = java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
         cleanup.scheduleWithFixedDelay(cleanupWorker::tick, 1, 1, java.util.concurrent.TimeUnit.SECONDS);
         var session = new MockHttpSession();

@@ -472,8 +472,8 @@ main {
 .route-heading h1 {
     margin: var(--space-1) 0;
     color: var(--tm-text-strong);
-    font-size: 30px;
-    font-weight: 600;
+    font-size: var(--font-page-title, 24px);
+    font-weight: 650;
     line-height: 1.15;
 }
 
@@ -1742,6 +1742,7 @@ td label {
     border-radius: var(--radius-md);
     background: var(--tm-surface);
     box-shadow: var(--shadow-1);
+}
 .analytics-control-row {
     display: grid;
     grid-template-columns: minmax(360px, 1.4fr) minmax(180px, .65fr) minmax(112px, auto);
@@ -2315,6 +2316,7 @@ main .analytics-chart-bar[data-value="0"] {
 }
 
 .activity-account-context strong {
+    font-weight: 500;
     min-width: 0;
     color: var(--tm-text-strong);
     overflow-wrap: anywhere;
@@ -2349,7 +2351,7 @@ main .analytics-chart-bar[data-value="0"] {
 
 .activity-status-header {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(240px, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--space-4);
     align-items: start;
 }
@@ -2363,7 +2365,7 @@ main .analytics-chart-bar[data-value="0"] {
 .activity-status h2,
 .activity-status h3 {
     color: var(--tm-text-strong);
-    font-size: 16px;
+    font-size: var(--font-detail-title, 16px);
     font-weight: 600;
     line-height: 1.3;
 }
@@ -2395,7 +2397,7 @@ main .analytics-chart-bar[data-value="0"] {
 }
 
 .activity-actions .primary-button {
-    min-height: 44px;
+    min-height: 38px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -2442,8 +2444,22 @@ main .analytics-chart-bar[data-value="0"] {
 }
 
 .activity-data-table tbody th {
-    font-weight: 600;
+    color:var(--tm-text-strong);
+    background:transparent;
+    font-size:var(--font-body,14px);
+    font-weight:500;
 }
+.activity-data-table thead th { background:#f1f4f9; }
+.activity-facts-table tbody th { color:var(--tm-text-muted); font-size:var(--font-label,12px); }
+.activity-events-table tbody th { font-weight:500; }
+.activity-events-table td:last-child { color:var(--tm-text-muted); font-size:var(--font-label,12px); }
+.activity-status .state-label { margin-bottom:4px; }
+.activity-status .activity-guidance { font-size:var(--font-body,14px); }
+.activity-status .activity-status-header h2 { font-size:var(--font-section-title,18px); }
+.activity-page .activity-account-context { font-size:var(--font-label,12px); }
+.activity-page .back-link { margin-bottom:0; }
+.activity-events h3 { margin-top:4px; }
+
 
 .activity-data-table tbody tr:last-child > * {
     border-block-end: 0;

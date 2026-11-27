@@ -24,7 +24,7 @@
 <h2 tabindex="-1" th:text="${senderAdditionNotApplied==true?'Senders were not added':(rule.state=='ACTIVE'?'Rule enabled':(rule.state=='ATTENTION'?'Rule needs attention':'Rule '+#strings.toLowerCase(rule.state)))}"></h2>
 <p th:if="${rule.state=='ACTIVE' and senderAdditionNotApplied!=true}">Applies to future incoming mail.</p><p th:if="${rule.state=='ACTIVE' and provider=='microsoft' and rule.definition.trash()}">After moving a matching message to Deleted Items, Outlook stops applying later rules to that message.</p><p th:if="${rule.state!='ACTIVE' or senderAdditionNotApplied==true}" th:text="${rule.detail}"></p>
 <section th:if="${existingMail!=null and existingMail.total>0}" class="rule-existing-mail">
-<p><strong th:text="${existingMail.total+' matching emails '+(mailScope=='inbox'?'in Inbox':'in All mailbox')}"></strong><span th:if="${mailScope=='inbox'}" th:text="${' · '+existingMail.unread+' unread'}"></span></p>
+<p><strong th:text="${#numbers.formatInteger(existingMail.total,1,'COMMA')+' matching emails '+(mailScope=='inbox'?'in Inbox':'in All mailbox')}"></strong><span th:if="${mailScope=='inbox'}" th:text="${' · '+#numbers.formatInteger(existingMail.unread,1,'COMMA')+' unread'}"></span></p>
 <p th:unless="${mailScope=='inbox'}" class="muted" th:text="${existingMail.inbox+' in Inbox'}"></p>
 <button type="button" data-rule-existing th:attr="data-rule-id=${rule.id},data-mail-scope=${mailScope}">Review existing emails</button>
 <p class="muted">Applying to existing emails requires a separate confirmation.</p>
@@ -62,12 +62,12 @@
 <section th:if="${ruleResults!=null}" class="surface" data-rule-results>
 <h2 th:text="${provider=='google'?'Gmail label results':'Outlook folder results'}"></h2>
 <p th:text="${'Destination: '+rule.definition.destination+' · Tracking since '+#temporals.format(ruleResults.started_at,'MMM d, HH:mm', 'America/Los_Angeles')}"></p>
-<div class="preview-counts row"><strong th:text="${ruleResults.current_count+' currently in destination'}"></strong><span th:text="${ruleResults.baseline_count+' at start'}"></span><span th:text="${ruleResults.observed+' new messages observed'}"></span></div>
+<div class="preview-counts row"><strong th:text="${#numbers.formatInteger(ruleResults.current_count,1,'COMMA')+' currently in destination'}"></strong><span th:text="${#numbers.formatInteger(ruleResults.baseline_count,1,'COMMA')+' at start'}"></span><span th:text="${#numbers.formatInteger(ruleResults.observed,1,'COMMA')+' new messages observed'}"></span></div>
 <p class="muted" th:text="${'Destination count checked: '+#temporals.format(ruleResults.counted_at,'MMM d, HH:mm', 'America/Los_Angeles')}"></p>
 <p th:if="${ruleResults.count_error}" class="rule-alert">Destination count could not be refreshed. The last successful count is shown.</p>
 <table><thead><tr><th>Review period</th><th>New messages observed</th><th>Status</th></tr></thead><tbody>
-<tr><td>First 7 days</td><td th:text="${ruleResults.week_count}"></td><td th:text="${ruleResults.week_ready?'Ready to review':'Collecting'}"></td></tr>
-<tr><td>First 14 days</td><td th:text="${ruleResults.fortnight_count}"></td><td th:text="${ruleResults.fortnight_ready?'Ready to review':'Collecting'}"></td></tr>
+<tr><td>First 7 days</td><td th:text="${#numbers.formatInteger(ruleResults.week_count,1,'COMMA')}"></td><td th:text="${ruleResults.week_ready?'Ready to review':'Collecting'}"></td></tr>
+<tr><td>First 14 days</td><td th:text="${#numbers.formatInteger(ruleResults.fortnight_count,1,'COMMA')}"></td><td th:text="${ruleResults.fortnight_ready?'Ready to review':'Collecting'}"></td></tr>
 </tbody></table>
 <p class="muted">New-message counts include mail received since tracking began and observed in this destination through TidyMail sync. Coverage may be incomplete. Counts persist after messages leave. Manual moves, other rules, and paused periods can affect attribution; these are observations, not a rule execution log.</p>
 <p class="muted" th:text="${'Latest indexed mail sync: '+(ruleResults.metadata_synced==null?'Unknown':#temporals.format(ruleResults.metadata_synced,'MMM d, HH:mm', 'America/Los_Angeles'))}"></p>

@@ -83,6 +83,51 @@ class DashboardJobJourneyTest extends PostgresJourneyTest {
         assertThat(foreign).contains("No cleanup activity yet").doesNotContain("31 jobs");
     }
 
+    @Test void activityIncludesCombinedAndPartialReadOutcomesAndDeduplicatesKnownTrashSizes() throws Exception {
+        preview(8);
+        var ids=jdbc.queryForList("SELECT dashboard_message_id FROM message_metadata WHERE account_id=? ORDER BY provider_message_id",UUID.class,account);
+        jdbc.update("UPDATE message_metadata SET size_estimate=2000000 WHERE dashboard_message_id=?",ids.get(3));
+        jdbc.update("UPDATE message_metadata SET size_estimate=3000000 WHERE dashboard_message_id=?",ids.get(6));
+        jdbc.update("UPDATE message_metadata SET size_estimate=9000000 WHERE dashboard_message_id IN (?,?)",ids.get(5),ids.get(7));
+        var filter=new DashboardFilter("inbox","","","","UTC",0);
+        for(int i=0;i<8;i++) {
+            String action=i<3?"MARK_READ_ARCHIVE":i==7?"ARCHIVE":"TRASH";
+            var preview=previews.create(account,new DashboardPreviewService.Request(filter,List.of(ids.get(i)),action,0));
+            var job=jobs.confirm(account,preview.id());
+            String state=i==1||i==5?"FAILED":i==2?"AWAITING_VERIFICATION":"CHANGED";
+            jdbc.update("UPDATE cleanup_job_targets SET state=?,outlook_read_completed=? WHERE job_id=?",state,i==1,job.id());
+            if(i==3) assertThat(jdbc.queryForObject("SELECT size_estimate FROM cleanup_job_targets WHERE job_id=?",Long.class,job.id())).isEqualTo(2000000L);
+            if(i==6) jdbc.update("UPDATE cleanup_job_targets SET size_estimate=NULL WHERE job_id=?",job.id()); // Legacy history uses retained metadata.
+            jdbc.update("DELETE FROM cleanup_active_targets WHERE job_id=?",job.id());
+        }
+        var repeated=previews.create(account,new DashboardPreviewService.Request(filter,List.of(ids.get(3)),"TRASH",0));
+        var duplicate=jobs.confirm(account,repeated.id());
+        jdbc.update("UPDATE cleanup_job_targets SET state='CHANGED' WHERE job_id=?",duplicate.id());
+        jdbc.update("DELETE FROM message_metadata WHERE dashboard_message_id=?",ids.get(3));
+        var result=mockMvc.perform(get("/activity").with(authenticatedAs(OWNER))).andExpect(status().isOk()).andReturn();
+        @SuppressWarnings("unchecked") var totals=(Map<String,Object>)result.getModelAndView().getModel().get("totals");
+        assertThat(totals).containsEntry("cleared",5L).containsEntry("archived",2L).containsEntry("trashed",4L).containsEntry("read",2L);
+        assertThat(result.getResponse().getContentAsString()).contains("≈ 5.0 MB", "Known sizes for 2 of 3 emails", "the estimate is incomplete");
+        jdbc.update("DELETE FROM message_metadata WHERE dashboard_message_id=?",ids.get(6));
+        String missing=mockMvc.perform(get("/activity").with(authenticatedAs(OWNER))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(missing).contains("≈ 2.0 MB", "Known sizes for 1 of 3 emails");
+        jdbc.update("""
+            INSERT INTO message_metadata(account_id,provider,provider_message_id,from_address,received_at,labels,unread,label_evidence_known)
+            SELECT ?,'google','format-'||i,'format@example.test',now(),ARRAY['INBOX','UNREAD'],true,true
+            FROM generate_series(1,1234) i
+            """,account);
+        var formatIds=jdbc.queryForList("SELECT dashboard_message_id FROM message_metadata WHERE account_id=? AND provider_message_id LIKE 'format-%'",UUID.class,account);
+        var formatPreview=previews.create(account,new DashboardPreviewService.Request(filter,formatIds,"MARK_READ",0));
+        var formatJob=jobs.confirm(account,formatPreview.id());
+        jdbc.update("UPDATE cleanup_job_targets SET state='CHANGED' WHERE job_id=?",formatJob.id());
+        String formatted=mockMvc.perform(get("/activity").with(authenticatedAs(OWNER))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(formatted).contains("<strong>1,236</strong>","1,234 / 1,234");
+        jdbc.update("UPDATE cleanup_job_targets SET size_estimate=NULL WHERE account_id=?",account);
+        jdbc.update("UPDATE message_metadata SET size_estimate=NULL WHERE account_id=?",account);
+        String unknown=mockMvc.perform(get("/activity").with(authenticatedAs(OWNER))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(unknown).contains("Size data unavailable","Known sizes for 0 of 3 emails").doesNotContain("≈ 0 B");
+    }
+
     @Test void concurrentDuplicateConfirmationReturnsOneJobAndOtherOverlappingPreviewConflicts() throws Exception {
         var preview=preview(3);var pool=Executors.newFixedThreadPool(2);
         try {

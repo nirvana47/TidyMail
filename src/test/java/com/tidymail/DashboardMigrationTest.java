@@ -341,7 +341,7 @@ class DashboardMigrationTest {
             """,job);
         var savedJob = jdbc.queryForMap("SELECT * FROM cleanup_jobs WHERE public_id=?",job);
         String originalTargets = """
-            SELECT (to_jsonb(t)-'outlook_read_required'-'outlook_read_completed')::text
+            SELECT (to_jsonb(t)-'outlook_read_required'-'outlook_read_completed'-'size_estimate')::text
             FROM cleanup_job_targets t WHERE job_id=? ORDER BY ordinal
             """;
         var targets = jdbc.queryForList(originalTargets,String.class,job);
@@ -351,6 +351,7 @@ class DashboardMigrationTest {
         assertThat(flyway(null).migrate().success).isTrue();
         assertThat(jdbc.queryForMap("SELECT * FROM cleanup_jobs WHERE public_id=?",job)).isEqualTo(savedJob);
         assertThat(jdbc.queryForList(originalTargets,String.class,job)).isEqualTo(targets);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM cleanup_job_targets WHERE size_estimate IS NOT NULL", Long.class)).isZero();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM cleanup_job_targets WHERE outlook_read_required OR outlook_read_completed", Long.class)).isZero();
         assertThat(jdbc.queryForList("SELECT * FROM cleanup_active_targets WHERE job_id=? ORDER BY target_fingerprint",job)).isEqualTo(holds);
         assertThat(flyway(null).validateWithResult().validationSuccessful).isTrue();

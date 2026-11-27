@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>TidyMail - Sync / Activity</title>
+    <title>TidyMail - Sync details</title>
     <link rel="stylesheet" th:href="@{/static/css/workspace.css}">
     <link rel="stylesheet" th:href="@{/static/css/ui.css}"><script defer th:src="@{/static/js/htmx-lite.js}"></script>
 </head>
@@ -15,10 +15,10 @@
 <div class="workspace-shell activity-page" th:classappend="${mvpEnabled} ? 'mvp-activity'">
     <div th:unless="${mvpEnabled}"><div th:replace="~{fragments/workspace-rail :: rail(${page.workspace})}"></div></div>
     <main id="workspace-main">
+        <a class="back-link" href="/activity">← Back to Activity</a>
         <header class="page-header">
             <div class="page-title-stack">
-                <p class="eyebrow">Mailbox status</p>
-                <h1>Sync / Activity</h1>
+                <h1>Sync details</h1>
             </div>
             <span class="page-help" tabindex="0"
                   aria-label="How mailbox activity is calculated"

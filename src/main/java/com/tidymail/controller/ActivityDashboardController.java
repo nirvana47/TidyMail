@@ -17,6 +17,15 @@ public class ActivityDashboardController {
     public ActivityDashboardController(OwnedAccountScopeService accounts, DashboardJobService jobs, JdbcTemplate jdbc) {
         this.accounts = accounts; this.jobs = jobs; this.jdbc = jdbc;
     }
+    public record StorageEstimate(long total, long known, double bytes) {
+        public String formattedBytes() {
+            String[] units = {"B", "KB", "MB", "GB", "TB"};
+            double value = bytes;
+            int unit = 0;
+            while (value >= 1000 && unit < units.length - 1) { value /= 1000; unit++; }
+            return String.format(java.util.Locale.US, unit == 0 ? "%,.0f %s" : "%,.1f %s", value, units[unit]);
+        }
+    }
     @ModelAttribute
     public void noStore(jakarta.servlet.http.HttpServletResponse response) { response.setHeader("Cache-Control", "no-store"); }
     @GetMapping("/activity")
@@ -28,13 +37,25 @@ public class ActivityDashboardController {
         model.addAttribute("history", jobs.history(account, page));
         model.addAttribute("active", jobs.list(account).stream().filter(j -> j.remaining() > 0 || j.unresolved() > 0).toList());
         model.addAttribute("totals", jdbc.queryForMap("""
-            SELECT count(DISTINCT t.message_id) FILTER(WHERE j.action_type IN ('ARCHIVE','TRASH')) cleared,
-              count(*) FILTER(WHERE j.action_type='ARCHIVE') archived,
-              count(*) FILTER(WHERE j.action_type='TRASH') trashed,
-              count(*) FILTER(WHERE j.action_type='MARK_READ') read
+            SELECT count(DISTINCT t.message_id) FILTER(WHERE t.state='CHANGED' AND j.action_type IN ('ARCHIVE','MARK_READ_ARCHIVE','TRASH')) cleared,
+              count(*) FILTER(WHERE t.state='CHANGED' AND j.action_type IN ('ARCHIVE','MARK_READ_ARCHIVE')) archived,
+              count(*) FILTER(WHERE t.state='CHANGED' AND j.action_type='TRASH') trashed,
+              count(*) FILTER(WHERE (t.state='CHANGED' AND j.action_type IN ('MARK_READ','MARK_READ_ARCHIVE'))
+                OR (j.action_type='MARK_READ_ARCHIVE' AND t.outlook_read_completed)) read
             FROM cleanup_jobs j JOIN cleanup_job_targets t ON t.job_id=j.public_id
-            WHERE j.account_id=? AND t.state='CHANGED'
+            WHERE j.account_id=?
             """, account));
+        var storage = jdbc.queryForMap("""
+            WITH trashed AS (
+                SELECT t.message_id, max(COALESCE(t.size_estimate,m.size_estimate)) bytes
+                FROM cleanup_jobs j JOIN cleanup_job_targets t ON t.job_id=j.public_id AND t.account_id=j.account_id
+                LEFT JOIN message_metadata m ON m.account_id=j.account_id AND m.dashboard_message_id=t.message_id
+                WHERE j.account_id=? AND j.action_type='TRASH' AND t.state='CHANGED'
+                GROUP BY t.message_id
+            ) SELECT count(*) total, count(bytes) known, COALESCE(sum(bytes),0) bytes FROM trashed
+            """, account);
+        model.addAttribute("storage", new StorageEstimate(((Number)storage.get("total")).longValue(),
+            ((Number)storage.get("known")).longValue(), ((Number)storage.get("bytes")).doubleValue()));
         model.addAttribute("trend", jdbc.queryForList("""
             SELECT to_char(d.day,'Mon DD') label, count(t.ordinal) changed
             FROM generate_series(current_date-13,current_date,interval '1 day') d(day)
@@ -46,7 +67,7 @@ public class ActivityDashboardController {
             SELECT COALESCE(NULLIF(m.from_address,''),'Sender unavailable') sender, count(DISTINCT t.message_id) cleared
             FROM cleanup_jobs j JOIN cleanup_job_targets t ON t.job_id=j.public_id
             LEFT JOIN message_metadata m ON m.account_id=j.account_id AND m.dashboard_message_id=t.message_id
-            WHERE j.account_id=? AND t.state='CHANGED' AND j.action_type IN ('ARCHIVE','TRASH')
+            WHERE j.account_id=? AND t.state='CHANGED' AND j.action_type IN ('ARCHIVE','MARK_READ_ARCHIVE','TRASH')
             GROUP BY 1 ORDER BY cleared DESC, sender LIMIT 5
             """, account));
         return "activity";

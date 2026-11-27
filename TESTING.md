@@ -149,11 +149,18 @@ Activity dashboard verification uses the same isolated browser fixture:
 node tools/verification/activity-dashboard.cjs http://127.0.0.1:PORT/dashboard
 ```
 
-It checks standalone navigation, sidebar highlighting, summary cards, the chart,
-sync navigation and absence of a modal or desktop overflow. The focused Java
+It checks standalone navigation, sidebar highlighting, summary cards, zero-day
+chart bars, explicit return links, Sync table text hierarchy, desktop layout and
+200% zoom, including a date-label fit check and keyboard-accessible chart/history scrolling. Add `-Ddashboard.browser.activity=true` to the fixture command for
+1,234 synthetic confirmed Trash changes, retained sizes and a completed sync event;
+no provider mutation is sent to populate this review history. The focused Java
 journeys are `MailboxActivityJourneyTest` and
 `DashboardJobJourneyTest#activityDashboardPagesAllJobsAndCountsOnlyConfirmedChanges`;
 they cover template rendering, populated pagination and account isolation.
+`DashboardJobJourneyTest#activityIncludesCombinedAndPartialReadOutcomesAndDeduplicatesKnownTrashSizes`
+checks combined/partial read totals, comma formatting, deduplicated Trash sizes,
+size retention after metadata deletion, legacy fallback and missing-size coverage.
+The migration journey verifies retained history and unset historical size snapshots.
 
 Rule and manual-filing desktop journeys use the same synthetic fixture:
 `node tools/verification/rule-filing.cjs http://127.0.0.1:PORT/dashboard /tmp/tidymail-filing-screenshots`.

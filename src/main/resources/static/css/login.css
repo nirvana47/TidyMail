@@ -28,7 +28,7 @@ body {
     color:#3761a6
 }
 .intro h1 {
-    font-size:34px;
+    font-size:var(--font-page-title);
     letter-spacing:-1px;
     margin:20px 0 16px;
     max-width:350px;
@@ -48,7 +48,7 @@ body {
 .promise-list li {
     display:flex;
     gap:12px;
-    font-size:13px;
+    font-size:var(--font-body);
     color:var(--muted)
 }
 .promise-list strong {
@@ -64,7 +64,7 @@ body {
     border-radius:7px;
     background:#e5edff;
     color:#3462ac;
-    font-size:12px
+    font-size:var(--font-label)
 }
 .card {
     padding:48px 36px
@@ -83,7 +83,7 @@ body {
     background:var(--blue);
     border-radius:6px;
     color:#fff;
-    font-size:12px;
+    font-size:var(--font-label);
     font-weight:650
 }
 .brand-name {
@@ -92,10 +92,10 @@ body {
     letter-spacing:-.5px
 }
 .card h1 {
-    font-size:24px
+    font-size:var(--font-page-title)
 }
 .subtitle {
-    font-size:13px;
+    font-size:var(--font-body);
     color:var(--muted);
     margin:12px 0 26px
 }
@@ -112,7 +112,7 @@ body {
     border:1px solid #ced8e8;
     border-radius:8px;
     color:var(--ink);
-    font-size:13px;
+    font-size:var(--font-body);
     font-weight:550;
     text-decoration:none
 }
@@ -132,7 +132,7 @@ body {
     margin:26px 0
 }
 .privacy-note {
-    font-size:12px;
+    font-size:var(--font-label);
     color:var(--muted);
     line-height:1.65
 }
@@ -141,7 +141,7 @@ body {
     background:#fff8e8;
     border:1px solid #ecdcb7;
     border-radius:8px;
-    font-size:12px
+    font-size:var(--font-label)
 }
 .warning-title {
     font-weight:600;
