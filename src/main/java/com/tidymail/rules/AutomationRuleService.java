@@ -26,10 +26,28 @@ public class AutomationRuleService {
     private RuleProvider provider(UserAccount a){var p=providers.get(a.getProvider());if(p==null)throw new IllegalStateException("Rules are unavailable for this provider.");return p;}
     public boolean permitted(UserAccount a){var scope=provider(a).scope();return a.getScopes()!=null&&a.getScopes().stream().anyMatch(s->s.equals(scope)||s.equals("https://graph.microsoft.com/"+scope));}
     private void requirePermission(UserAccount a){if(!permitted(a))RuleStore.conflict("Connect rule permissions first. Drafts and local previews remain available.");}
+    private String inventoryFailure(RuleProvider provider,RuntimeException failure){
+        log.warn("Rule inventory read failed provider={} diagnostic={}",provider.provider(),com.tidymail.util.FailureDiagnostics.failureDiagnostic(failure));
+        String mailbox=provider.provider().equals("google")?"Gmail":"Outlook";
+        for(Throwable cause=failure;cause!=null;cause=cause.getCause()){
+            if(cause instanceof com.tidymail.mail.CleanupProviderException rejected&&rejected.status()==429)
+                return mailbox+" requests are temporarily rate limited. Wait a minute, then retry.";
+            if(cause instanceof com.google.api.client.googleapis.json.GoogleJsonResponseException google){
+                String reason=com.tidymail.util.FailureDiagnostics.gmailReason(google.getDetails());
+                if(google.getStatusCode()==429||reason.contains("LimitExceeded")||reason.contains("quotaExceeded"))
+                    return "Gmail requests are temporarily rate limited. Wait a minute, then retry.";
+                if(google.getStatusCode()==401||reason.contains("insufficientPermissions")||reason.contains("authError"))
+                    return "Gmail could not authorize reading filters. Reconnect rule permissions, then retry.";
+                if(google.getStatusCode()>=500)
+                    return "Gmail is temporarily unavailable. Retry shortly to check the current filters.";
+            }
+        }
+        return mailbox+" rules could not be read. Retry to check the current rules.";
+    }
     private <T>T serial(long account,Supplier<T> work){synchronized(locks.computeIfAbsent(account,k->new Object())){return work.get();}}
     public Map<String,Object> page(long id,boolean refresh){return serial(id,()->{
         var a=account(id);var p=provider(a);List<RuleProvider.NativeRule> nativeRules=List.of();String error="";
-        if(permitted(a))try{nativeRules=p.list(a);if(refresh)reconcile(a,p,nativeRules);}catch(RuntimeException e){error="Mailbox rules could not be refreshed. No rule changes were confirmed. Check permissions or try again.";}
+        if(permitted(a))try{nativeRules=p.list(a);if(refresh)reconcile(a,p,nativeRules);}catch(RuntimeException e){error=inventoryFailure(p,e);}
         var result=new LinkedHashMap<String,Object>();result.put("rules",store.list(id));result.put("nativeRules",nativeRules);
         result.put("permission",permitted(a));result.put("provider",a.getProvider());result.put("settingsUrl",p.settingsUrl());result.put("error",error);
         result.put("account",id);result.put("email",a.getEmail());
@@ -152,7 +170,7 @@ public class AutomationRuleService {
         }
         List<RuleProvider.NativeRule> inventory=List.of();String inventoryHash=null,inventoryError="";
         if(permitted(a))try{inventory=p.list(a);inventoryHash=inventoryFingerprint(p,inventory);}
-            catch(RuntimeException e){inventoryError="Native rules could not be checked; activation is unavailable until a fresh preview succeeds.";}
+            catch(RuntimeException e){inventoryError=inventoryFailure(p,e)+" Retry the preview before creating this rule.";}
         var protectedAddresses=protectedSenders(id,d);var snapshot=new LinkedHashMap<String,Object>();
         snapshot.put("protected",protectedAddresses);snapshot.put("counts",counts);snapshot.put("definition",d);snapshot.put("originalState",r.state());
         // The preview records whether provider-specific subject matching was successfully checked.

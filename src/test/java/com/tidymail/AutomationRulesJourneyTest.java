@@ -55,6 +55,36 @@ class AutomationRulesJourneyTest extends PostgresJourneyTest {
     private UUID draft(long a){return rules.save(a,null,0,definition());}
     private UUID preview(long a,UUID id){return (UUID)rules.preview(a,id).get("id");}
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+        "403,rateLimitExceeded,temporarily rate limited",
+        "503,backendError,temporarily unavailable",
+        "401,authError,could not authorize"
+    })
+    void failedFilterReadShowsReasonAndRetryAndRecoversWithoutResavingDraft(int statusCode,String reasonCode,String explanation) throws Exception {
+        UUID id=draft(account);
+        var error=new com.google.api.client.googleapis.json.GoogleJsonError();
+        var reason=new com.google.api.client.googleapis.json.GoogleJsonError.ErrorInfo();reason.setReason(reasonCode);
+        error.setErrors(List.of(reason));
+        var rejection=new com.google.api.client.googleapis.json.GoogleJsonResponseException(
+            new com.google.api.client.http.HttpResponseException.Builder(statusCode,"Rejected",new com.google.api.client.http.HttpHeaders()),error);
+        doThrow(new IllegalStateException("Private provider response must never reach the page",rejection)).when(gmailRules).list(any());
+        var page=mockMvc.perform(get("/rules").with(authenticatedAs(EMAIL))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(page).contains(explanation,"Retry refresh").doesNotContain("No additional mailbox rules found","Private provider response");
+        var review=mockMvc.perform(get("/rules/"+id+"?preview=true&inbox=true").with(authenticatedAs(EMAIL))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(review).contains(explanation,"Retry preview").doesNotContain("Private provider response");
+        var blocked=rules.preview(account,id);
+        assertThatThrownBy(()->rules.enable(account,id,(UUID)blocked.get("id"),true)).isInstanceOf(IllegalStateException.class);
+        assertThat(creates).isZero();
+        doAnswer(i->List.copyOf(nativeGmail)).when(gmailRules).list(any());
+        // A preview made without a successful inventory read cannot be used after recovery.
+        assertThatThrownBy(()->rules.enable(account,id,(UUID)blocked.get("id"),true)).isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+        assertThat(creates).isZero();
+        rules.enable(account,id,preview(account,id),true);
+        assertThat(rules.get(account,id).state()).isEqualTo("ACTIVE");
+        assertThat(creates).isEqualTo(1);
+    }
+
     @Test void browserDraftPreviewEnablePauseResumeAndRemoveHaveRealPersistence() throws Exception {
         var session=new MockHttpSession();var auth=authenticatedAs(EMAIL);
         mockMvc.perform(get("/rules").session(session).with(auth)).andExpect(status().isOk());

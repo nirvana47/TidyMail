@@ -80,7 +80,7 @@
 <p th:if="${rule.definition.hasDomains()}" class="info-callout" th:text="${rule.definition.sentence(provider)}"></p>
 <p class="muted" th:if="${!preview.matchingNote.isEmpty()}" th:text="${preview.matchingNote}"></p>
 <p class="rule-alert" th:unless="${#lists.isEmpty(preview.protected)}">This rule includes a protected sender. Resolve the protection before creating the rule.</p>
-<p class="rule-alert" th:unless="${preview.inventoryError.isEmpty()}" th:text="${preview.inventoryError}"></p>
+<div class="rule-alert" th:unless="${preview.inventoryError.isEmpty()}" role="alert"><p th:text="${preview.inventoryError}"></p><a class="button" th:href="@{/rules/{id}(id=${rule.id},preview=true,inbox=${inbox},mailScope=${mailScope})}">Retry preview</a></div>
 <section class="rule-sample"><h3>Recent matching emails</h3>
 <table><thead><tr><th>Sender</th><th>Subject</th><th>Received</th></tr></thead><tbody>
 <tr th:each="e:${preview.examples}" th:if="${e.bucket=='match'}" th:attr="data-rule-extra-example=${e.rn>3}" th:hidden="${e.rn>3}"><td th:text="${e.sender}"></td><td><a th:if="${!e.url.isEmpty()}" th:href="${e.url}" target="_blank" rel="noopener noreferrer" th:text="${e.subject_header==null?'(no subject)':e.subject_header}"></a><span th:if="${e.url.isEmpty()}" th:text="${e.subject_header==null?'(no subject)':e.subject_header}"></span></td><td th:text="${e.received_at==null?'Unknown':#dates.format(e.received_at,'MMM d, yyyy')}"></td></tr>

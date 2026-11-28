@@ -5,7 +5,7 @@
 <body class="tm-shell"><aside th:replace="~{fragments/app-sidebar :: sidebar('rules', ${email})}"></aside><main class="app rules-page">
 <header class="app-header row spread"><div><h1>Rules</h1><p class="muted" th:text="${email}"></p></div><div class="row rules-header-actions"><a class="button" th:href="${data.settingsUrl}" target="_blank" rel="noopener noreferrer" th:text="${provider=='google'?'Gmail filter settings ↗':'Outlook rule settings ↗'}"></a><a class="button primary" href="/rules/new">Create rule</a></div></header>
 <form class="rules-mailbox-switch row" th:action="@{/dashboard/accounts/switch}" method="post" th:if="${#lists.size(mailboxAccounts)>1}"><label>Mailbox <select name="account"><option th:each="a:${mailboxAccounts}" th:value="${a.id}" th:selected="${a.id==account}" th:text="${a.email}"></option></select></label><button>Switch mailbox</button></form>
-<p th:if="${error}" class="rule-alert" role="alert" th:text="${error}"></p><p th:if="${!data.error.isEmpty()}" class="rule-alert" role="alert" th:text="${data.error}"></p>
+<p th:if="${error}" class="rule-alert" role="alert" th:text="${error}"></p><div th:if="${!data.error.isEmpty()}" class="rule-alert" role="alert"><p th:text="${data.error}"></p><a class="button" href="/rules">Retry refresh</a></div>
 <div class="rules-inventory" th:classappend="${data.permission ? '' : 'rules-inventory-single'}">
 <section class="surface" aria-labelledby="yourRulesTitle"><div class="row spread"><h2 id="yourRulesTitle">Your rules</h2>
 <form th:action="@{/rules/drafts/delete}" method="post" data-confirm="Enabled and paused rules are unaffected. No emails, labels, or folders will change." data-confirm-title="Delete drafts" data-confirm-danger th:attr="data-confirm-preview=@{/rules/drafts/deletion-preview(account=${account})}"><input type="hidden" name="account" th:value="${account}"><input type="hidden" name="confirmation"><button th:disabled="${#lists.isEmpty(data.rules.?[state=='DRAFT' and remoteId==null and pending==null])}">Delete all drafts</button></form></div>
@@ -20,7 +20,8 @@
 <form th:if="${r.pending==null and !(r.state=='DRAFT' and r.remoteId==null)}" th:action="@{/rules/{id}/remove(id=${r.id})}" method="post" data-confirm="Remove this rule from your mailbox? Previously handled emails will stay as they are." data-confirm-title="Remove rule" data-confirm-action="Remove rule" data-confirm-danger><input type="hidden" name="account" th:value="${account}"><button>Remove</button></form></div></td></tr>
 </tbody></table></div></section>
 <section class="surface" th:if="${data.permission}" aria-labelledby="mailboxRulesTitle"><h2 id="mailboxRulesTitle" th:text="${provider=='google'?'Existing Gmail filters':'Existing Outlook rules'}"></h2>
-<p th:if="${#lists.isEmpty(data.nativeRules.?[!#root.data.bound.contains(id)])}" class="muted">No additional mailbox rules found.</p>
+<p th:if="${!data.error.isEmpty()}" class="muted">Mailbox rules are unavailable until refresh succeeds.</p>
+<p th:if="${data.error.isEmpty() and #lists.isEmpty(data.nativeRules.?[!#root.data.bound.contains(id)])}" class="muted">No additional mailbox rules found.</p>
 <div th:each="n:${data.nativeRules}" th:unless="${data.bound.contains(n.id)}" class="native-rule"><div class="row spread"><strong th:text="${n.name}"></strong><span th:text="${n.enabled?'Enabled':'Disabled'}"></span></div>
 <p th:if="${n.compatible!=null}" th:text="${n.compatible.sentence(provider)}"></p><p th:unless="${n.compatible!=null}" class="muted">This rule uses settings outside the shared editor.</p>
 <details><summary>Native rule details</summary><pre th:text="${n.raw.toPrettyString()}"></pre></details>

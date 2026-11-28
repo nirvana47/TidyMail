@@ -34,6 +34,8 @@ Their old counts and retention decisions describe that checkout, before removals
 | Return safely after restart/upgrade (13) | DashboardMigrationTest, DashboardSimplificationTest, SecurityConfigIntegrationTest | Live restart acceptance from isolated tests alone. |
 | Activity and errors (14) | MailboxActivityJourneyTest and existing job result checks | The new shared error/retry view and complete visible partial-action accounting. |
 
+November 27 rule recovery checks exercise empty Gmail filter inventories through the real SDK with simulated HTTP, followed by creation of a filter with actual actions. The HTTP 204 case reproduced the reported NullPointerException at GmailRuleProvider.list before the fix; the previous fixtures only supplied JSON objects and missed the null SDK response. A redundant service test that mocked away this boundary was removed. HTTP/SQL workflow checks remain for draft/review/create/pause/resume/remove and failed reads (rate limit, authorization, server error) followed by a fresh preview and successful creation. Failed reads show retry controls rather than claiming an empty mailbox inventory. Providers are simulated, so these checks do not prove live mailbox behavior. Updated rule-read diagnostics log only sanitized failure types, locations and status/reason codes; the newer supplied log identified the null-response crash.
+
 ## Features and tests removed
 
 Manual saved sender groups and their endpoints/UI are removed; automatic domains,

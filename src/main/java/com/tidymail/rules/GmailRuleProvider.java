@@ -25,7 +25,9 @@ public class GmailRuleProvider implements RuleProvider {
         catch(Exception e){throw new IllegalStateException("Gmail rule request failed. Reconnect if permission is missing, then refresh rules before retrying.",e);}
     }
     public List<NativeRule> list(UserAccount a){
-        var filters=call(a,1,c->c.users().settings().filters().list("me").execute()).getFilter();
+        // The Gmail SDK returns null for a successful no-content response (HTTP 204).
+        var response=call(a,1,c->c.users().settings().filters().list("me").execute());
+        var filters=response==null?null:response.getFilter();
         if(filters==null)return List.of();
         return filters.stream().map(f->{
             JsonNode raw;

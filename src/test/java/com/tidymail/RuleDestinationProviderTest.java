@@ -20,6 +20,42 @@ class RuleDestinationProviderTest {
     private final UserAccount account=new UserAccount();
     private RuleDefinition definition(boolean skip){return new RuleDefinition("Offers",List.of("offers@example.test"),"weekly offers\nmonthly sale","receipt\ninvoice","ORGANIZE","TidyMail - Offers",skip);}
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.MethodSource("emptyGmailInventories")
+    void gmailWithAllFiltersDeletedCanListThenCreateAnActionableFilter(int statusCode,String emptyResponse) throws Exception {
+        var bodies=new ArrayList<JsonNode>();
+        var transport=new MockHttpTransport(){
+            @Override public LowLevelHttpRequest buildRequest(String method,String url){
+                return new MockLowLevelHttpRequest(url){
+                    @Override public LowLevelHttpResponse execute() throws IOException {
+                        assertThat(url).endsWith("/settings/filters");
+                        String body=emptyResponse;
+                        if(method.equals("POST")){
+                            bodies.add(json.readTree(getContentAsString()));body="{\"id\":\"new-filter\"}";
+                        }else assertThat(method).isEqualTo("GET");
+                        return new MockLowLevelHttpResponse().setStatusCode(method.equals("POST")?200:statusCode)
+                            .setContentType("application/json").setContent(body).setContentLength(body.length());
+                    }
+                };
+            }
+        };
+        var clients=mock(GmailClientFactory.class);
+        when(clients.buildFor(account)).thenReturn(new Gmail.Builder(transport,JacksonFactory.getDefaultInstance(),null).setApplicationName("Rule fixture").build());
+        var provider=new GmailRuleProvider(clients,mock(GmailRateLimiter.class),json);
+        assertThat(provider.list(account)).isEmpty();
+        var d=new RuleDefinition("Archive offers",List.of("offers@example.test"),"","","READ_ARCHIVE");
+        assertThat(provider.create(account,provider.compile(account,d,List.of()))).isEqualTo("new-filter");
+        assertThat(bodies).hasSize(1);
+        assertThat(bodies.getFirst().path("action").path("removeLabelIds")).isEqualTo(json.readTree("[\"INBOX\",\"UNREAD\"]"));
+    }
+
+    private static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> emptyGmailInventories(){
+        return java.util.stream.Stream.of(
+            org.junit.jupiter.params.provider.Arguments.of(204,""),
+            org.junit.jupiter.params.provider.Arguments.of(200,"{}"),
+            org.junit.jupiter.params.provider.Arguments.of(200,"{\"filter\":[]}"));
+    }
+
     @Test void outlookSenderUpdateDoesNotMutateReadBackOrAddUnusedPredicates() throws Exception {
         var graph=mock(com.tidymail.mail.outlook.OutlookGraph.class);
         var provider=new OutlookRuleProvider(graph,json);
